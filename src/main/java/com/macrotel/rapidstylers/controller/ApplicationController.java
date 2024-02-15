@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.controller;
 
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.OTPData;
+import com.macrotel.rapidstylers.pojo.UserData;
 import com.macrotel.rapidstylers.service.AppService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -40,6 +41,12 @@ public class ApplicationController {
     @GetMapping("/verify_otp_code")
     public ResponseEntity verifyOtpCode(@RequestParam("otpCode") String otpCode){
         BaseResponse baseResponse = appService.verifyUserOTP(otpCode);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @PostMapping("/create_user_account")
+    public ResponseEntity createUserAccount(@Valid @RequestBody UserData userData){
+        BaseResponse baseResponse = appService.userSignUp(userData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }

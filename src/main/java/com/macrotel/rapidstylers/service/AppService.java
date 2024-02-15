@@ -3,9 +3,12 @@ package com.macrotel.rapidstylers.service;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.OTPEntity;
+import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.OTPData;
+import com.macrotel.rapidstylers.pojo.UserData;
 import com.macrotel.rapidstylers.repo.OTPRepo;
+import com.macrotel.rapidstylers.repo.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +30,8 @@ public class AppService {
     OTPRepo otpRepo;
     @Autowired
     EmailConfig emailConfig;
+    @Autowired
+    UserRepo userRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -115,5 +120,34 @@ public class AppService {
         return baseResponse;
     }
 
-    public BaseResponse userSignUp()
+    public BaseResponse userSignUp(UserData userData){
+        try{
+            //Verify if user verify email address or not
+            Optional<OTPEntity> verifyUserEmail = otpRepo.verifyOtpSuccess(userData.getEmailAddress());
+            if(verifyUserEmail.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Email Address is yet to be verified");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            //Check if the email already exist in the database of user account
+            Optional<UserEntity> isUserExist = userRepo.findByEmailAddress(userData.getEmailAddress());
+            if(isUserExist.isPresent()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Email Address already exist, Kindly choose another email address");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            UserEntity userEntity = new UserEntity(userData);
+            userRepo.save(userEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Account created successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+
+        }
+        return baseResponse;
+    }
 }
