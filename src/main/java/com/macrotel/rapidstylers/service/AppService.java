@@ -4,10 +4,12 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.entity.OTPEntity;
+import com.macrotel.rapidstylers.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.repo.OTPRepo;
+import com.macrotel.rapidstylers.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,8 @@ public class AppService {
     UserRepo userRepo;
     @Autowired
     IdentificationRepo identificationRepo;
+    @Autowired
+    ServiceRepo serviceRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -345,6 +349,103 @@ public class AppService {
             identificationRepo.delete(identificationEntity);
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage("Identification deleted successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+
+    public BaseResponse createServiceType (ServiceTypeData serviceTypeData){
+        try{
+            Optional<ServiceEntity> isServiceNameExist = serviceRepo.findByServiceName(serviceTypeData.getServiceName());
+            if(isServiceNameExist.isPresent()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Service Name already exist");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            ServiceEntity serviceEntity = new ServiceEntity();
+            serviceEntity.setServiceName(serviceTypeData.getServiceName());
+            serviceRepo.save(serviceEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(serviceTypeData.getServiceName()+ " successfully added to list of service");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listService(){
+        try{
+            List<ServiceEntity> getAllService = serviceRepo.findAll();
+            List<Object> result = new ArrayList<>();
+            for(ServiceEntity serviceEntity : getAllService){
+                HashMap<String, String> serviceMap = new HashMap<>();
+                serviceMap.put("id", String.valueOf(serviceEntity.getId()));
+                serviceMap.put("serviceName", serviceEntity.getServiceName());
+                serviceMap.put("status", serviceEntity.getStatus());
+                serviceMap.put("dateCreated", serviceEntity.getInsertedDt());
+                result.add(serviceMap);
+            }
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse updateService(ServiceTypeData serviceTypeData){
+        try{
+            //Get Identifications
+            if(serviceTypeData.getId().isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Service Id cannot be empty");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            Optional<ServiceEntity> isServiceExist = serviceRepo.findById(Long.parseLong(serviceTypeData.getId()));
+            if(isServiceExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("No Service exist for such id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            ServiceEntity serviceEntity = isServiceExist.get();
+            serviceEntity.setServiceName(serviceTypeData.getServiceName());
+            serviceRepo.save(serviceEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Service Updated Successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse deleteService(String id){
+        try{
+            Optional<ServiceEntity> getService = serviceRepo.findById(Long.parseLong(id));
+            if(getService.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("No Service available for such id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            ServiceEntity serviceEntity = getService.get();
+            serviceRepo.delete(serviceEntity);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Service deleted successful");
             baseResponse.setData(EMPTY_DATA);
         }
         catch (Exception ex){

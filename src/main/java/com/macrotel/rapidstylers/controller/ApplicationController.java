@@ -95,7 +95,32 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
+    @PostMapping("/create_service")
+    public ResponseEntity createService(@Valid @RequestBody ServiceTypeData serviceTypeData){
+        BaseResponse baseResponse = appService.createServiceType(serviceTypeData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
 
+    @GetMapping("/list_service")
+    public ResponseEntity listService(){
+        BaseResponse baseResponse = appService.listService();
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @GetMapping("/delete_service")
+    public ResponseEntity deleteService(@RequestParam("id") String id){
+        BaseResponse baseResponse = appService.deleteService(id);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @PostMapping("/update_service")
+    public ResponseEntity updateService(@Valid @RequestBody ServiceTypeData serviceTypeData){
+        BaseResponse baseResponse = appService.updateService(serviceTypeData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public BaseResponse handleValidationExceptions(
