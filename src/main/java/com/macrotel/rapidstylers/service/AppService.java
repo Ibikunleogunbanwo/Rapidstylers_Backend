@@ -2,10 +2,12 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.entity.OTPEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.OTPData;
+import com.macrotel.rapidstylers.pojo.SignInData;
 import com.macrotel.rapidstylers.pojo.UserData;
 import com.macrotel.rapidstylers.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
@@ -149,5 +151,42 @@ public class AppService {
 
         }
         return baseResponse;
+    }
+
+    public BaseResponse userSignIn(SignInData signInData){
+        try{
+            //Validate UserSign In
+            String emailAddress = signInData.getEmailAddress();
+            String password = appUtils.encryptPassword(signInData.getPassword());
+            Optional<UserEntity> userSignIn = userRepo.userAuthenticate(emailAddress,password);
+            if(userSignIn.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Email Address or Password");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            UserEntity userEntity = userSignIn.get();
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(userAccountDTO(userEntity));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    private UserAccountDTO userAccountDTO(UserEntity userEntity){
+        UserAccountDTO userAccountDTO = new UserAccountDTO();
+        userAccountDTO.setAddress(userEntity.getAddress());
+        userAccountDTO.setCountry(userEntity.getCountry());
+        userAccountDTO.setLastname(userEntity.getLastname());
+        userAccountDTO.setFirstname(userEntity.getFirstname());
+        userAccountDTO.setEmailAddress(userEntity.getEmailAddress());
+        userAccountDTO.setState(userEntity.getState());
+        userAccountDTO.setPhoneNumber(userEntity.getPhoneNumber());
+        userAccountDTO.setUserId(userEntity.getUserId());
+        userAccountDTO.setDateRegistered(userEntity.getInsertedDt());
+        return userAccountDTO;
     }
 }

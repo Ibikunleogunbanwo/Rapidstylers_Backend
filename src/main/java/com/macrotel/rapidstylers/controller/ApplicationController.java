@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.controller;
 
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.OTPData;
+import com.macrotel.rapidstylers.pojo.SignInData;
 import com.macrotel.rapidstylers.pojo.UserData;
 import com.macrotel.rapidstylers.service.AppService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +48,13 @@ public class ApplicationController {
     @PostMapping("/create_user_account")
     public ResponseEntity createUserAccount(@Valid @RequestBody UserData userData){
         BaseResponse baseResponse = appService.userSignUp(userData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @PostMapping("/user_sign_in")
+    public ResponseEntity userSignIn(@Valid @RequestBody SignInData signInData){
+        BaseResponse baseResponse = appService.userSignIn(signInData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
