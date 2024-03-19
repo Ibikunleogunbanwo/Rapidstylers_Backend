@@ -2,20 +2,21 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.dto.UserAccountDTO;
+import com.macrotel.rapidstylers.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.entity.OTPEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.*;
+import com.macrotel.rapidstylers.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Optional;
 import java.util.logging.Logger;
 
@@ -23,8 +24,9 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 @Service
 public class AppService {
-    BaseResponse baseResponse = new BaseResponse();
+    BaseResponse baseResponse = new BaseResponse(true);
     AppUtils appUtils = new AppUtils();
+    DTOService dtoService = new DTOService();
     private static final Logger LOG = Logger.getLogger(AppService.class.getName());
     @Autowired
     OTPRepo otpRepo;
@@ -32,6 +34,8 @@ public class AppService {
     EmailConfig emailConfig;
     @Autowired
     UserRepo userRepo;
+    @Autowired
+    IdentificationRepo identificationRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -166,7 +170,7 @@ public class AppService {
             UserEntity userEntity = userSignIn.get();
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(userAccountDTO(userEntity));
+            baseResponse.setData(dtoService.userAccountDTO(userEntity));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -192,7 +196,6 @@ public class AppService {
             otpEntity.setEmailAddress(emailAddress);
             otpEntity.setCode(otpCode);
             otpEntity.setPurpose("FORGET PASSWORD");
-            otpEntity.setInsertedDt(String.valueOf(LocalDate.now()));
             otpRepo.save(otpEntity);
 
             //Email Message
@@ -239,6 +242,7 @@ public class AppService {
                 baseResponse.setData(EMPTY_DATA);
                 return baseResponse;
             }
+
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(encryptPassword);
             userRepo.save(userPrevData);
@@ -253,17 +257,99 @@ public class AppService {
         return  baseResponse;
     }
 
-    private UserAccountDTO userAccountDTO(UserEntity userEntity){
-        UserAccountDTO userAccountDTO = new UserAccountDTO();
-        userAccountDTO.setAddress(userEntity.getAddress());
-        userAccountDTO.setCountry(userEntity.getCountry());
-        userAccountDTO.setLastname(userEntity.getLastname());
-        userAccountDTO.setFirstname(userEntity.getFirstname());
-        userAccountDTO.setEmailAddress(userEntity.getEmailAddress());
-        userAccountDTO.setState(userEntity.getState());
-        userAccountDTO.setPhoneNumber(userEntity.getPhoneNumber());
-        userAccountDTO.setUserId(userEntity.getUserId());
-        userAccountDTO.setDateRegistered(userEntity.getInsertedDt());
-        return userAccountDTO;
+    public BaseResponse createIdentificationType (IdentificationData identificationData){
+        try{
+            Optional<IdentificationEntity> isIdNameExist = identificationRepo.findByIdentificationName(identificationData.getIdentificationName());
+            if(isIdNameExist.isPresent()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Identification already exist");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            IdentificationEntity identificationEntity = new IdentificationEntity();
+            identificationEntity.setIdentificationName(identificationData.getIdentificationName());
+            identificationRepo.save(identificationEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(identificationData.getIdentificationName()+ " successfully added to list of identification");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listIdentification(){
+        try{
+            List<IdentificationEntity> getAllIdentification = identificationRepo.findAll();
+            List<Object> result = new ArrayList<>();
+            for(IdentificationEntity identificationEntity : getAllIdentification){
+                HashMap<String, String> idMap = new HashMap<>();
+                idMap.put("id", String.valueOf(identificationEntity.getId()));
+                idMap.put("identificationName", identificationEntity.getIdentificationName());
+                idMap.put("status", identificationEntity.getStatus());
+                idMap.put("dateCreated", identificationEntity.getInsertedDate());
+                result.add(idMap);
+            }
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse updateIdentification(IdentificationData identificationData){
+        try{
+            //Get Identifications
+            if(identificationData.getId().isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Identification Id cannot be empty");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            Optional<IdentificationEntity> isIdentificationExist = identificationRepo.findById(Long.parseLong(identificationData.getId()));
+            if(isIdentificationExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("No Identification available for such id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            IdentificationEntity identificationEntity = isIdentificationExist.get();
+            identificationEntity.setIdentificationName(identificationData.getIdentificationName());
+            identificationRepo.save(identificationEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Identification Updated Successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse deleteIdentification(String id){
+        try{
+            Optional<IdentificationEntity> getIdentification = identificationRepo.findById(Long.parseLong(id));
+            if(getIdentification.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("No Identification available for such id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            IdentificationEntity identificationEntity = getIdentification.get();
+            identificationRepo.delete(identificationEntity);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Identification deleted successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
     }
 }

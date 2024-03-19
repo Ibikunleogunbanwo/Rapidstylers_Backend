@@ -69,6 +69,32 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    @PostMapping("/create_identification")
+    public ResponseEntity createIdentification(@Valid @RequestBody IdentificationData identificationData){
+        BaseResponse baseResponse = appService.createIdentificationType(identificationData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @GetMapping("/list_identification")
+    public ResponseEntity listIdentification(){
+        BaseResponse baseResponse = appService.listIdentification();
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @GetMapping("/delete_identification")
+    public ResponseEntity deleteIdentification(@RequestParam("id") String id){
+        BaseResponse baseResponse = appService.deleteIdentification(id);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @PostMapping("/update_identification")
+    public ResponseEntity updateIdentification(@Valid @RequestBody IdentificationData identificationData){
+        BaseResponse baseResponse = appService.updateIdentification(identificationData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
 
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(MethodArgumentNotValidException.class)
