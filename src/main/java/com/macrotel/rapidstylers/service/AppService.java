@@ -5,15 +5,13 @@ import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.entity.OTPEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.pojo.OTPData;
-import com.macrotel.rapidstylers.pojo.SignInData;
-import com.macrotel.rapidstylers.pojo.UserData;
+import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -174,6 +172,85 @@ public class AppService {
             LOG.warning(ex.getMessage());
         }
         return baseResponse;
+    }
+
+    public BaseResponse resetPasswordMessage(OTPData otpData){
+        try{
+            String emailAddress = otpData.getEmailAddress();
+            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(emailAddress);
+            if(isEmailExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Email Address, Kindly create an account");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            UserEntity userEntity = isEmailExist.get();
+            String firstname = userEntity.getFirstname();
+            String otpCode = appUtils.randomDigit(6);
+            OTPEntity otpEntity = new OTPEntity();
+
+            otpEntity.setEmailAddress(emailAddress);
+            otpEntity.setCode(otpCode);
+            otpEntity.setPurpose("FORGET PASSWORD");
+            otpEntity.setInsertedDt(String.valueOf(LocalDate.now()));
+            otpRepo.save(otpEntity);
+
+            //Email Message
+            String emailSubject = "RapidStylers Password Reset Request";
+            String emailBody = "Dear " + firstname + ",<br><br>"
+                    + "We received a request to reset your RapidStylers account password."
+                    + "<br>To proceed with the password reset, please use the following OTP code:<br><br>"
+                    + "OTP Code: <strong>" + otpCode  + "</strong><br><br>"
+                    + "Enter this OTP code to complete the password reset process. If you didn't make this request, you can safely ignore this email."
+                    + "<br><br>Thank you,<br>The Rapid Stylers Team";
+            emailConfig.sendSimpleMail(emailAddress,emailSubject,emailBody);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Password Reset Initiated, Check Mail for OTP Code");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch(Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+    public BaseResponse resetPassword(ForgotPasswordData forgotPasswordData){
+        try{
+            String password = forgotPasswordData.getPassword();
+            String confirmPassword = forgotPasswordData.getConfirmPassword();
+            String emailAddress = forgotPasswordData.getEmailAddress();
+            if(password.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Password cannot be empty");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            if(!password.equals(confirmPassword)){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            String encryptPassword = appUtils.encryptPassword(password);
+            Optional<UserEntity> getUserData = userRepo.findByEmailAddress(emailAddress);
+            if(getUserData.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Email Address, Kindly create account");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            UserEntity userPrevData = getUserData.get();
+            userPrevData.setPassword(encryptPassword);
+            userRepo.save(userPrevData);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Password Change Successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return  baseResponse;
     }
 
     private UserAccountDTO userAccountDTO(UserEntity userEntity){

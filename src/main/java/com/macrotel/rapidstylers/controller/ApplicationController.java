@@ -1,9 +1,6 @@
 package com.macrotel.rapidstylers.controller;
 
-import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.pojo.OTPData;
-import com.macrotel.rapidstylers.pojo.SignInData;
-import com.macrotel.rapidstylers.pojo.UserData;
+import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.service.AppService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -58,6 +55,21 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
+
+    @PostMapping("/generate_reset_password_token")
+    public ResponseEntity resetPasswordToken(@Valid @RequestBody OTPData otpData){
+        BaseResponse baseResponse = appService.resetPasswordMessage(otpData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @PostMapping("/reset_user_password")
+    public ResponseEntity resetUserPassword(@Valid @RequestBody ForgotPasswordData forgotPasswordData){
+        BaseResponse baseResponse = appService.resetPassword(forgotPasswordData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public BaseResponse handleValidationExceptions(
