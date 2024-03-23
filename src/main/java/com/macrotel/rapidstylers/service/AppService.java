@@ -2,15 +2,9 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.IdentificationEntity;
-import com.macrotel.rapidstylers.entity.OTPEntity;
-import com.macrotel.rapidstylers.entity.ServiceEntity;
-import com.macrotel.rapidstylers.entity.UserEntity;
+import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.IdentificationRepo;
-import com.macrotel.rapidstylers.repo.OTPRepo;
-import com.macrotel.rapidstylers.repo.ServiceRepo;
-import com.macrotel.rapidstylers.repo.UserRepo;
+import com.macrotel.rapidstylers.repo.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
@@ -40,6 +34,8 @@ public class AppService {
     IdentificationRepo identificationRepo;
     @Autowired
     ServiceRepo serviceRepo;
+    @Autowired
+    StylerRepo stylerRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -402,7 +398,6 @@ public class AppService {
         }
         return baseResponse;
     }
-
     public BaseResponse updateService(ServiceTypeData serviceTypeData){
         try{
             //Get Identifications
@@ -446,6 +441,43 @@ public class AppService {
             serviceRepo.delete(serviceEntity);
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage("Service deleted successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+    public BaseResponse createStyler(StylerData stylerData){
+        try{
+            //Check if email already exit for a styler
+            Optional<StylerEntity> isEmailExist = stylerRepo.isEmailExist(stylerData.getEmailAddress());
+            if(isEmailExist.isPresent()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Email Address already exist, Kindly choose another email");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            //Check if identificationId and ServiceId exist
+            Optional<IdentificationEntity> isIdentificationExist = identificationRepo.findById(Long.parseLong(stylerData.getIdentificationTypeId()));
+            if(isIdentificationExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Identification Type, Contact Admin");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            Optional<ServiceEntity> isServiceTypeExist = serviceRepo.findById(Long.parseLong(stylerData.getServiceTypeId()));
+            if(isServiceTypeExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Service Type, Contact Admin");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            StylerEntity stylerEntity = new StylerEntity(stylerData);
+            stylerRepo.save(stylerEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Stylers Account Created Successful");
             baseResponse.setData(EMPTY_DATA);
         }
         catch (Exception ex){
