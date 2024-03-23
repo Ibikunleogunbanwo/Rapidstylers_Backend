@@ -485,4 +485,42 @@ public class AppService {
         }
         return baseResponse;
     }
+
+    public BaseResponse stylerLogin(SignInData signInData){
+        try{
+            String emailAddress = signInData.getEmailAddress();
+            String password = appUtils.encryptPassword(signInData.getPassword());
+            Optional<StylerEntity> stylerSignIn = stylerRepo.stylerAuthenticate(emailAddress,password);
+            if(stylerSignIn.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Email Address or Password");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            StylerEntity stylerEntity = stylerSignIn.get();
+            //Check the user stylerType
+            String serviceName = "";
+            Optional<ServiceEntity> getServiceType = serviceRepo.findById(Long.parseLong(stylerEntity.getServiceTypeId()));
+            if(getServiceType.isPresent()){
+                ServiceEntity serviceEntity = getServiceType.get();
+                serviceName = serviceEntity.getServiceName();
+            }
+            HashMap<String, String> result = new HashMap<>();
+            result.put("firstname", stylerEntity.getFirstname());
+            result.put("lastname", stylerEntity.getLastname());
+            result.put("emailAddress", stylerEntity.getEmailAddress());
+            result.put("serviceTypeId", stylerEntity.getServiceTypeId());
+            result.put("serviceTypeName", serviceName);
+            result.put("profileImageUrl", stylerEntity.getProfileImageUrl());
+            result.put("stylerId", stylerEntity.getStylerId());
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
 }

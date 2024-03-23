@@ -50,7 +50,7 @@ public class StylerEntity implements Serializable {
         this.businessAddress = stylerData.getBusinessAddress();
         this.profileImageUrl = stylerData.getProfileImageUrl();
         this.insertedDt = String.valueOf(LocalDate.now());
-        this.stylerId = stylerData.getFirstname().toUpperCase().charAt(0)+stylerData.getLastname().toUpperCase().charAt(0)+appUtils.randomDigit(4);
+        this.stylerId = stylerData.getFirstname().toUpperCase().charAt(0)+""+stylerData.getLastname().toUpperCase().charAt(0)+appUtils.randomDigit(4);
         this.status = "0";
         this.isOnline = "1";
     }

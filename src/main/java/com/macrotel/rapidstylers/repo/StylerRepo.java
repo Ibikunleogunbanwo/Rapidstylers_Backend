@@ -8,7 +8,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
-
-    @Query(value = "SELECT s FROM ServiceEntity s WHERE s.emailAddress =:emilAddress AND s.status= '0'")
+    @Query(value = "SELECT s FROM StylerEntity s WHERE s.emailAddress =:emailAddress AND s.status= '0'")
     Optional<StylerEntity> isEmailExist (@Param("emailAddress") String emailAddress);
+    @Query(value = "SELECT s FROM StylerEntity s WHERE s.emailAddress =:emailAddress AND s.password =:password AND s.status='0'")
+    Optional<StylerEntity> stylerAuthenticate(@Param("emailAddress") String emailAddress, @Param("password") String password);
 }
