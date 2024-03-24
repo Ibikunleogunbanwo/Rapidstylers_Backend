@@ -8,6 +8,7 @@ public class StylerAccountDTO {
     private String lastname;
     private String emailAddress;
     private String stylerId;
+    private String phoneNumber;
     private String serviceTypeId;
     private String serviceTypeName;
     private String visibilityStatus;
@@ -15,6 +16,5 @@ public class StylerAccountDTO {
     private String profileImageUrl;
     private String businessName;
     private String businessAddress;
-    private String businessImageUrl;
 
 }

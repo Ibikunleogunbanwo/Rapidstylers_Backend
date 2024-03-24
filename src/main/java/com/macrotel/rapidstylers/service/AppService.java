@@ -19,7 +19,8 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class AppService {
     BaseResponse baseResponse = new BaseResponse(true);
     AppUtils appUtils = new AppUtils();
-    DTOService dtoService = new DTOService();
+    @Autowired
+    DTOService dtoService;
     private static final Logger LOG = Logger.getLogger(AppService.class.getName());
     @Autowired
     OTPRepo otpRepo;
@@ -505,13 +506,14 @@ public class AppService {
         return baseResponse;
     }
 
-    public BaseResponse listAllStyles(){
+    public BaseResponse listAllStylers(){
         try{
             List<StylerEntity> getAllStylers = stylerRepo.findAll();
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getAllStylers){
                 result.add(dtoService.stylerAccountDTO(stylerEntity));
             }
+            Collections.reverse(result);
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage(SUCCESS_MESSAGE);
             baseResponse.setData(result);

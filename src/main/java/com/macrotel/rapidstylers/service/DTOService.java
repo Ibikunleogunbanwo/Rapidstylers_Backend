@@ -7,10 +7,11 @@ import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.repo.ServiceRepo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
 import java.util.Objects;
 import java.util.Optional;
-
+@Service
 public class DTOService {
     @Autowired
     ServiceRepo serviceRepo;
@@ -47,6 +48,7 @@ public class DTOService {
         stylerAccountDTO.setProfileImageUrl(stylerEntity.getProfileImageUrl());
         stylerAccountDTO.setBusinessName(stylerEntity.getBusinessName());
         stylerAccountDTO.setBusinessAddress(stylerEntity.getBusinessAddress());
+        stylerAccountDTO.setPhoneNumber(stylerEntity.getPhoneNumber());
         return stylerAccountDTO;
     }
 }
