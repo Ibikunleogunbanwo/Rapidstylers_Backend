@@ -350,8 +350,6 @@ public class AppService {
         }
         return baseResponse;
     }
-
-
     public BaseResponse createServiceType (ServiceTypeData serviceTypeData){
         try{
             Optional<ServiceEntity> isServiceNameExist = serviceRepo.findByServiceName(serviceTypeData.getServiceName());
@@ -374,7 +372,6 @@ public class AppService {
         }
         return baseResponse;
     }
-
     public BaseResponse listService(){
         try{
             List<ServiceEntity> getAllService = serviceRepo.findAll();
@@ -425,7 +422,6 @@ public class AppService {
         }
         return baseResponse;
     }
-
     public BaseResponse deleteService(String id){
         try{
             Optional<ServiceEntity> getService = serviceRepo.findById(Long.parseLong(id));
@@ -483,7 +479,6 @@ public class AppService {
         }
         return baseResponse;
     }
-
     public BaseResponse stylerLogin(SignInData signInData){
         try{
             String emailAddress = signInData.getEmailAddress();
@@ -505,7 +500,28 @@ public class AppService {
         }
         return baseResponse;
     }
+    public BaseResponse stylerLogOut(String stylerId){
+        try{
+            Optional<StylerEntity> getStylerData = stylerRepo.findByStylerId(stylerId);
+            if(getStylerData.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Styler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            StylerEntity stylerEntity = getStylerData.get();
+            stylerEntity.setIsOnline("1");
+            stylerRepo.save(stylerEntity);
 
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Styler is currently offline");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
     public BaseResponse listAllStylers(){
         try{
             List<StylerEntity> getAllStylers = stylerRepo.findAll();

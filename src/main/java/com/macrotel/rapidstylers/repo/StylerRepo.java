@@ -12,4 +12,6 @@ public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
     Optional<StylerEntity> isEmailExist (@Param("emailAddress") String emailAddress);
     @Query(value = "SELECT s FROM StylerEntity s WHERE s.emailAddress =:emailAddress AND s.password =:password AND s.status='0'")
     Optional<StylerEntity> stylerAuthenticate(@Param("emailAddress") String emailAddress, @Param("password") String password);
+
+    Optional<StylerEntity> findByStylerId(String stylerId);
 }
