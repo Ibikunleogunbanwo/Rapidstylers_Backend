@@ -10,10 +10,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.logging.Logger;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;
@@ -150,7 +147,7 @@ public class AppService {
             baseResponse.setData(EMPTY_DATA);
         }
         catch (Exception ex){
-
+            LOG.warning(ex.getMessage());
         }
         return baseResponse;
     }
@@ -498,22 +495,23 @@ public class AppService {
                 return baseResponse;
             }
             StylerEntity stylerEntity = stylerSignIn.get();
-            //Check the user stylerType
-            String serviceName = "";
-            Optional<ServiceEntity> getServiceType = serviceRepo.findById(Long.parseLong(stylerEntity.getServiceTypeId()));
-            if(getServiceType.isPresent()){
-                ServiceEntity serviceEntity = getServiceType.get();
-                serviceName = serviceEntity.getServiceName();
-            }
-            HashMap<String, String> result = new HashMap<>();
-            result.put("firstname", stylerEntity.getFirstname());
-            result.put("lastname", stylerEntity.getLastname());
-            result.put("emailAddress", stylerEntity.getEmailAddress());
-            result.put("serviceTypeId", stylerEntity.getServiceTypeId());
-            result.put("serviceTypeName", serviceName);
-            result.put("profileImageUrl", stylerEntity.getProfileImageUrl());
-            result.put("stylerId", stylerEntity.getStylerId());
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(dtoService.stylerAccountDTO(stylerEntity));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
 
+    public BaseResponse listAllStyles(){
+        try{
+            List<StylerEntity> getAllStylers = stylerRepo.findAll();
+            List<Object> result = new ArrayList<>();
+            for(StylerEntity stylerEntity : getAllStylers){
+                result.add(dtoService.stylerAccountDTO(stylerEntity));
+            }
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage(SUCCESS_MESSAGE);
             baseResponse.setData(result);
