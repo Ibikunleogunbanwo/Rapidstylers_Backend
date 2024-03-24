@@ -539,4 +539,22 @@ public class AppService {
         }
         return baseResponse;
     }
+
+    public BaseResponse searchStyler(String businessName){
+        try{
+            List<StylerEntity> getStylerByName = stylerRepo.searchStyler(businessName);
+            List<Object> result = new ArrayList<>();
+            for(StylerEntity stylerEntity : getStylerByName){
+                result.add(dtoService.stylerAccountDTO(stylerEntity));
+            }
+            Collections.reverse(result);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
 }
