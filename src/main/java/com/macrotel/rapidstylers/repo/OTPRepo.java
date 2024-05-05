@@ -14,6 +14,10 @@ public interface OTPRepo extends JpaRepository<OTPEntity,Long> {
     Optional<OTPEntity> checkSignUpValidityOtp(@Param("emailAddress") String emailAddress);
 
     Optional<OTPEntity> findByCode(String otpCode);
+
+    @Query(value = "SELECT o FROM OTPEntity o WHERE o.code =:otpCode AND o.isUsed='1'")
+    Optional<OTPEntity> checkUserCode(@Param("otpCode") String otpCode);
+
     @Query(value = "SELECT * FROM otp_codes " +
                     "WHERE email_address =:emailAddress AND purpose='USER SIGN UP' AND is_used='0' ORDER BY id DESC LIMIT 1", nativeQuery = true)
     Optional<OTPEntity> verifyOtpSuccess(@Param("emailAddress") String emailAddress);

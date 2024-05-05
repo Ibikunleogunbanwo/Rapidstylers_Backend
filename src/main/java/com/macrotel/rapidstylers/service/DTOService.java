@@ -1,10 +1,10 @@
 package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
+import com.macrotel.rapidstylers.dto.StylerPortfolioDTO;
+import com.macrotel.rapidstylers.dto.SubServiceDTO;
 import com.macrotel.rapidstylers.dto.UserAccountDTO;
-import com.macrotel.rapidstylers.entity.ServiceEntity;
-import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.entity.UserEntity;
+import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.repo.ServiceRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -50,5 +50,23 @@ public class DTOService {
         stylerAccountDTO.setBusinessAddress(stylerEntity.getBusinessAddress());
         stylerAccountDTO.setPhoneNumber(stylerEntity.getPhoneNumber());
         return stylerAccountDTO;
+    }
+
+    public SubServiceDTO subServiceDTO(SubServiceEntity subServiceEntity){
+        SubServiceDTO subServiceDTO = new SubServiceDTO();
+        subServiceDTO.setName(subServiceEntity.getName());
+        subServiceDTO.setStatus(subServiceEntity.getStatus().equals("0") ? "Active" : "Inactive");
+        subServiceDTO.setPrice(subServiceEntity.getPrice());
+        subServiceDTO.setCreatedAt(subServiceEntity.getCreatedAt());
+        return subServiceDTO;
+    }
+
+    public StylerPortfolioDTO stylerPortfolioDTO(StylerPortfolioEntity stylerPortfolioEntity){
+        StylerPortfolioDTO stylerPortfolioDTO = new StylerPortfolioDTO();
+        stylerPortfolioDTO.setName(stylerPortfolioEntity.getName());
+        stylerPortfolioDTO.setImageUrl(stylerPortfolioEntity.getImageUrl());
+        stylerPortfolioDTO.setStatus(stylerPortfolioEntity.getStatus().equals("0") ? "Active" : "Inactive");
+        stylerPortfolioDTO.setCreatedAt(stylerPortfolioEntity.getCreatedAt());
+        return stylerPortfolioDTO;
     }
 }

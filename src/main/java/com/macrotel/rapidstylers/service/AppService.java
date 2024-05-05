@@ -34,6 +34,10 @@ public class AppService {
     ServiceRepo serviceRepo;
     @Autowired
     StylerRepo stylerRepo;
+    @Autowired
+    SubServiceRepo subServiceRepo;
+    @Autowired
+    StylerPortfolioRepo stylerPortfolioRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -44,6 +48,14 @@ public class AppService {
 
     public BaseResponse generateSignUpOtpCode(OTPData otpData){
         try{
+            //Check if userEmail Address exit or not
+            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(otpData.getEmailAddress());
+            if(isEmailExist.isPresent()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Email Address already exist, Kindly choose another email");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
             //Check if user has requested for OTPCode in the past 1 minute;
             Optional<OTPEntity> getPreviousOtp = otpRepo.checkSignUpValidityOtp(otpData.getEmailAddress());
             if(getPreviousOtp.isPresent()){
@@ -88,7 +100,7 @@ public class AppService {
 
     public BaseResponse verifyUserOTP(String otpCode){
         try{
-            Optional<OTPEntity> isOTPExist = otpRepo.findByCode(otpCode);
+            Optional<OTPEntity> isOTPExist = otpRepo.checkUserCode(otpCode);
             if(isOTPExist.isEmpty()){
                 baseResponse.setStatusCode(ERROR_STATUS_CODE);
                 baseResponse.setMessage("Invalid OTP Code");
@@ -101,20 +113,21 @@ public class AppService {
             LocalDateTime currentTime = LocalDateTime.now();
             long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
             if (minutesDifference > 10) {
+                OTPData newOtpData = new OTPData();
+                newOtpData.setEmailAddress(otpData.getEmailAddress());
+                this.generateSignUpOtpCode(newOtpData);
                 baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("OTP Code has expired, Kindly generate another one");
+                baseResponse.setMessage("OTP Code has expired, Kindly check mail for another OTP Code");
                 baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
             } else {
-                otpData.setIsUsed("0");
-                otpRepo.save(otpData);
                 HashMap<String, String> otpValue = new HashMap<>();
                 otpValue.put("emailAddress", otpData.getEmailAddress());
-
                 baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-                baseResponse.setMessage("OTP Verify Successful");
+                baseResponse.setMessage("Email Address Verify Successful");
                 baseResponse.setData(otpValue);
             }
+            otpData.setIsUsed("0");
+            otpRepo.save(otpData);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -546,6 +559,118 @@ public class AppService {
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerByName){
                 result.add(dtoService.stylerAccountDTO(stylerEntity));
+            }
+            Collections.reverse(result);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse createSubService(SubServiceData subServiceData){
+        try{
+           //Check if styler account
+           Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(subServiceData.getStylerId()) ;
+           if(isStylerExist.isEmpty()){
+               baseResponse.setStatusCode(ERROR_STATUS_CODE);
+               baseResponse.setMessage("Invalid STyler Id");
+               baseResponse.setData(EMPTY_DATA);
+               return baseResponse;
+           }
+           //CHeck if sub service around exist with styler
+            Optional<SubServiceEntity> isSubServiceExist = subServiceRepo.isServiceExist(subServiceData.getStylerId(), subServiceData.getName());
+           if(isSubServiceExist.isPresent()){
+               baseResponse.setStatusCode(ERROR_STATUS_CODE);
+               baseResponse.setMessage("Sub Service name already exit for styler");
+               baseResponse.setData(EMPTY_DATA);
+               return baseResponse;
+           }
+           SubServiceEntity subServiceEntity = new SubServiceEntity(subServiceData);
+           subServiceRepo.save(subServiceEntity);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Sub Service created successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listStylerSubService(String stylerId){
+        try{
+            //Check if styler account exist
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
+            if(isStylerExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Styler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            List<SubServiceEntity> getStylerSubService = subServiceRepo.findByStylerId(stylerId);
+            List<Object> result = new ArrayList<>();
+            for(SubServiceEntity subServiceEntity : getStylerSubService){
+                result.add(dtoService.subServiceDTO(subServiceEntity));
+            }
+            Collections.reverse(result);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse createStylerPortfolio(StylerPortfolioData stylerPortfolioData){
+        try{
+            //Check if styler account
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerPortfolioData.getStylerId()) ;
+            if(isStylerExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid STyler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            //CHeck if sub service around exist with styler
+            Optional<StylerPortfolioEntity> isPortfolioExist = stylerPortfolioRepo.isPortfolioExist(stylerPortfolioData.getStylerId(), stylerPortfolioData.getName());
+            if(isPortfolioExist.isPresent()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Portfolio already exit for styler");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            StylerPortfolioEntity stylerPortfolioEntity = new StylerPortfolioEntity(stylerPortfolioData);
+            stylerPortfolioRepo.save(stylerPortfolioEntity);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Portfolio created successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listStylerPortfolio(String stylerId){
+        try{
+            //Check if styler account exist
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
+            if(isStylerExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Styler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            List<StylerPortfolioEntity> getStylerPortfolio = stylerPortfolioRepo.findByStylerId(stylerId);
+            List<Object> result = new ArrayList<>();
+            for(StylerPortfolioEntity stylerPortfolioEntity : getStylerPortfolio){
+                result.add(dtoService.stylerPortfolioDTO(stylerPortfolioEntity));
             }
             Collections.reverse(result);
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);

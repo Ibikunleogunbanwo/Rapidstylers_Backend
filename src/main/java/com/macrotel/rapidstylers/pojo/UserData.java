@@ -27,7 +27,7 @@ public class UserData {
     @NotEmpty(message = "Address cannot be empty")
     private String address;
     @NotEmpty(message = "PhoneNumber cannot be empty")
-    @Pattern(regexp = NUMBER_VALIDATION_REGEX, message = "Phone Number can only be digit")
+    @Pattern(regexp = PHONE_NUMBER_VALIDATION_REGEX, message = "Phone Number can only be digit")
     private String phoneNumber;
     @NotEmpty(message = "Password cannot be empty")
     @Pattern(regexp = PASSWORD_PATTERN, message = "Password should contain 1 uppercase, 1 lowercase, 1 number, 1 special character and 6 character length")

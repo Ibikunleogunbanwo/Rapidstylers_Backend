@@ -24,131 +24,155 @@ public class ApplicationController {
     AppService appService;
 
     @GetMapping("/testing")
-    public ResponseEntity testing(){
+    public ResponseEntity <BaseResponse> testing(){
         BaseResponse baseResponse = appService.testing();
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/generate_sign_up_otp_code")
-    public ResponseEntity generateSignUpOtpCode(@Valid @RequestBody OTPData otpData){
+    public ResponseEntity <BaseResponse> generateSignUpOtpCode(@Valid @RequestBody OTPData otpData){
         BaseResponse baseResponse = appService.generateSignUpOtpCode(otpData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @GetMapping("/verify_otp_code")
-    public ResponseEntity verifyOtpCode(@RequestParam("otpCode") String otpCode){
+    public ResponseEntity <BaseResponse> verifyOtpCode(@RequestParam("otpCode") String otpCode){
         BaseResponse baseResponse = appService.verifyUserOTP(otpCode);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/create_user_account")
-    public ResponseEntity createUserAccount(@Valid @RequestBody UserData userData){
+    public ResponseEntity <BaseResponse> createUserAccount(@Valid @RequestBody UserData userData){
         BaseResponse baseResponse = appService.userSignUp(userData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @PostMapping("/user_sign_in")
-    public ResponseEntity userSignIn(@Valid @RequestBody SignInData signInData){
+    public ResponseEntity <BaseResponse> userSignIn(@Valid @RequestBody SignInData signInData){
         BaseResponse baseResponse = appService.userSignIn(signInData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @PostMapping("/generate_reset_password_token")
-    public ResponseEntity resetPasswordToken(@Valid @RequestBody OTPData otpData){
+    public ResponseEntity <BaseResponse> resetPasswordToken(@Valid @RequestBody OTPData otpData){
         BaseResponse baseResponse = appService.resetPasswordMessage(otpData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/reset_user_password")
-    public ResponseEntity resetUserPassword(@Valid @RequestBody ForgotPasswordData forgotPasswordData){
+    public ResponseEntity <BaseResponse> resetUserPassword(@Valid @RequestBody ForgotPasswordData forgotPasswordData){
         BaseResponse baseResponse = appService.resetPassword(forgotPasswordData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @PostMapping("/create_identification")
-    public ResponseEntity createIdentification(@Valid @RequestBody IdentificationData identificationData){
+    public ResponseEntity <BaseResponse> createIdentification(@Valid @RequestBody IdentificationData identificationData){
         BaseResponse baseResponse = appService.createIdentificationType(identificationData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @GetMapping("/list_identification")
-    public ResponseEntity listIdentification(){
+    public ResponseEntity <BaseResponse> listIdentification(){
         BaseResponse baseResponse = appService.listIdentification();
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @GetMapping("/delete_identification")
-    public ResponseEntity deleteIdentification(@RequestParam("id") String id){
+    public ResponseEntity <BaseResponse> deleteIdentification(@RequestParam("id") String id){
         BaseResponse baseResponse = appService.deleteIdentification(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/update_identification")
-    public ResponseEntity updateIdentification(@Valid @RequestBody IdentificationData identificationData){
+    public ResponseEntity <BaseResponse> updateIdentification(@Valid @RequestBody IdentificationData identificationData){
         BaseResponse baseResponse = appService.updateIdentification(identificationData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/create_service")
-    public ResponseEntity createService(@Valid @RequestBody ServiceTypeData serviceTypeData){
+    public ResponseEntity <BaseResponse> createService(@Valid @RequestBody ServiceTypeData serviceTypeData){
         BaseResponse baseResponse = appService.createServiceType(serviceTypeData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @GetMapping("/list_service")
-    public ResponseEntity listService(){
+    public ResponseEntity <BaseResponse> listService(){
         BaseResponse baseResponse = appService.listService();
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @GetMapping("/delete_service")
-    public ResponseEntity deleteService(@RequestParam("id") String id){
+    public ResponseEntity <BaseResponse> deleteService(@RequestParam("id") String id){
         BaseResponse baseResponse = appService.deleteService(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/update_service")
-    public ResponseEntity updateService(@Valid @RequestBody ServiceTypeData serviceTypeData){
+    public ResponseEntity <BaseResponse> updateService(@Valid @RequestBody ServiceTypeData serviceTypeData){
         BaseResponse baseResponse = appService.updateService(serviceTypeData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @PostMapping("/create_styler")
-    public ResponseEntity createStyler(@Valid @RequestBody StylerData stylerData){
+    public ResponseEntity <BaseResponse> createStyler(@Valid @RequestBody StylerData stylerData){
         BaseResponse baseResponse = appService.createStyler(stylerData);
         HttpStatus status =  (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/styler_sign_in")
-    public ResponseEntity stylerSignIn(@Valid @RequestBody SignInData signInData){
+    public ResponseEntity <BaseResponse> stylerSignIn(@Valid @RequestBody SignInData signInData){
         BaseResponse baseResponse = appService.stylerLogin(signInData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @GetMapping("/list_all_stylers")
-    public ResponseEntity listAllStylers(){
+    public ResponseEntity <BaseResponse> listAllStylers(){
         BaseResponse baseResponse = appService.listAllStylers();
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @GetMapping("/styler_sign_out")
-    public ResponseEntity stylerSignOut(@RequestParam("stylerId") String stylerId){
+    public ResponseEntity <BaseResponse> stylerSignOut(@RequestParam("stylerId") String stylerId){
         BaseResponse baseResponse = appService.stylerLogOut(stylerId);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @GetMapping("/search_styler")
-    public ResponseEntity searchStyler(@RequestParam("businessName") String businessName){
+    public ResponseEntity <BaseResponse> searchStyler(@RequestParam("businessName") String businessName){
         BaseResponse baseResponse = appService.searchStyler(businessName);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @PostMapping("/create_sub_service")
+    public ResponseEntity <BaseResponse> createSubService(@Valid @RequestBody SubServiceData subServiceData){
+        BaseResponse baseResponse = appService.createSubService(subServiceData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @GetMapping("/list_sub_service")
+    public ResponseEntity <BaseResponse> listStylerSubService(@RequestParam("stylerId") String stylerId){
+        BaseResponse baseResponse = appService.listStylerSubService(stylerId);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @PostMapping("/create_portfolio")
+    public ResponseEntity <BaseResponse> createPortfolio(@Valid @RequestBody StylerPortfolioData stylerPortfolioData){
+        BaseResponse baseResponse = appService.createStylerPortfolio(stylerPortfolioData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @GetMapping("/list_portfolio")
+    public ResponseEntity<BaseResponse> listStylerPortfolio(@RequestParam("stylerId") String stylerId){
+        BaseResponse baseResponse = appService.listStylerPortfolio(stylerId);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
