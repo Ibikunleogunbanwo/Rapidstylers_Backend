@@ -1,9 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.dto.StylerPortfolioDTO;
-import com.macrotel.rapidstylers.dto.SubServiceDTO;
-import com.macrotel.rapidstylers.dto.UserAccountDTO;
+import com.macrotel.rapidstylers.dto.*;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.repo.ServiceRepo;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,5 +65,16 @@ public class DTOService {
         stylerPortfolioDTO.setStatus(stylerPortfolioEntity.getStatus().equals("0") ? "Active" : "Inactive");
         stylerPortfolioDTO.setCreatedAt(stylerPortfolioEntity.getCreatedAt());
         return stylerPortfolioDTO;
+    }
+
+    public StylerReviewDTO stylerReviewDTO(ReviewEntity reviewEntity){
+        StylerReviewDTO stylerReviewDTO = new StylerReviewDTO();
+        stylerReviewDTO.setUserName(reviewEntity.getUserName());
+        stylerReviewDTO.setUserId(reviewEntity.getUserId());
+        stylerReviewDTO.setStylerId(reviewEntity.getStylerId());
+        stylerReviewDTO.setMessage(reviewEntity.getMessage());
+        stylerReviewDTO.setRatingScore(String.valueOf(reviewEntity.getRatingScore()));
+        stylerReviewDTO.setCreatedAt(reviewEntity.getCreatedAt());
+        return stylerReviewDTO;
     }
 }

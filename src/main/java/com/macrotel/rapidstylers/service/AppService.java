@@ -38,6 +38,10 @@ public class AppService {
     SubServiceRepo subServiceRepo;
     @Autowired
     StylerPortfolioRepo stylerPortfolioRepo;
+    @Autowired
+    ReviewRepo reviewRepo;
+    @Autowired
+    BookAppointmentRepo bookAppointmentRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -682,4 +686,151 @@ public class AppService {
         }
         return baseResponse;
     }
+
+    public BaseResponse createStylerReview(ReviewData reviewData){
+        try{
+            //Check if user account exist
+            Optional<UserEntity> isUserExist= userRepo.findByUserId(reviewData.getUserId()) ;
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid User Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            //Check if styler account exist
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(reviewData.getStylerId()) ;
+            if(isStylerExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Styler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            //Get User data
+            UserEntity userEntity = isUserExist.get();
+            String userName = userEntity.getFirstname() +" " + userEntity.getLastname();
+            ReviewEntity reviewEntity = new ReviewEntity();
+            reviewEntity.setStylerId(reviewData.getStylerId());
+            reviewEntity.setUserId(reviewData.getUserId());
+            reviewEntity.setUserName(userName);
+            reviewEntity.setRatingScore(Integer.parseInt(reviewData.getRatingScore()));
+            reviewEntity.setMessage(reviewData.getReviewMessage());
+            reviewRepo.save(reviewEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Rating Submitted Successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listStylerReviews(String stylerId){
+        try{
+            //Check if styler account exist
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
+            if(isStylerExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Styler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            //Get Reviews
+            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerId(stylerId);
+            List<Object> result = new ArrayList<>();
+            for(ReviewEntity reviewEntity : getStylerReviews){
+                result.add(dtoService.stylerReviewDTO(reviewEntity));
+            }
+            Collections.reverse(result);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse getStylerDetails(String stylerId){
+        try {
+            //Check if styler account exist
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
+            if(isStylerExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Styler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            double ratingPercentage= 0;
+            //Get Styler Information
+            StylerEntity stylerEntity = isStylerExist.get();
+            //Get Styler Sub service information
+            List<SubServiceEntity> getStylerSubService = subServiceRepo.findByStylerId(stylerId);
+            List<Object> subServiceResult = new ArrayList<>();
+            for(SubServiceEntity subServiceEntity : getStylerSubService){
+                subServiceResult.add(dtoService.subServiceDTO(subServiceEntity));
+            }
+            //Get Styler Portfolio information
+            List<StylerPortfolioEntity> getStylerPortfolio = stylerPortfolioRepo.findByStylerId(stylerId);
+            List<Object> stylerPortfolioResult = new ArrayList<>();
+            for(StylerPortfolioEntity stylerPortfolioEntity : getStylerPortfolio){
+                stylerPortfolioResult.add(dtoService.stylerPortfolioDTO(stylerPortfolioEntity));
+            }
+            //Get Styler Portfolio reviews
+            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerId(stylerId);
+            List<Object> stylerReviewResult = new ArrayList<>();
+            int totalRating = 0;
+            double ratingCount = 0;
+            for(ReviewEntity reviewEntity : getStylerReviews){
+                 ratingCount += 1;
+                 totalRating += reviewEntity.getRatingScore();
+                stylerReviewResult.add(dtoService.stylerReviewDTO(reviewEntity));
+            }
+            ratingPercentage = ((totalRating/(ratingCount * 5)) *100);
+            Collections.reverse(stylerReviewResult);
+            Collections.reverse(stylerPortfolioResult);
+            Collections.reverse(subServiceResult);
+            HashMap<String, Object> stylerInformationMap = new HashMap<>();
+            stylerInformationMap.put("stylerInformation", dtoService.stylerAccountDTO(stylerEntity));
+            stylerInformationMap.put("stylerSubService" , subServiceResult);
+            stylerInformationMap.put("stylerPortfolio" , stylerPortfolioResult);
+            stylerInformationMap.put("stylerReviews" , stylerReviewResult);
+            stylerInformationMap.put("ratingPercentage", String.valueOf(ratingPercentage));
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(stylerInformationMap);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse getStylerByService(String serviceId){
+        try{
+            Optional<ServiceEntity> isServiceIdExist = serviceRepo.findById(Long.valueOf(serviceId));
+            if(isServiceIdExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid service Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            List<StylerEntity> getStylerData = stylerRepo.findByServiceTypeId(serviceId);
+            List<Object> result = new ArrayList<>();
+            for(StylerEntity stylerEntity : getStylerData){
+                result.add(dtoService.stylerAccountDTO(stylerEntity));
+            }
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return  baseResponse;
+    }
+
 }
