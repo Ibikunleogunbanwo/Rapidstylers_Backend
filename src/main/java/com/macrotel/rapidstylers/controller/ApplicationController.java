@@ -55,6 +55,12 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
+    @GetMapping("/user_data")
+    public ResponseEntity<BaseResponse> singleUserData(@RequestParam("userId") String userId){
+        BaseResponse baseResponse = appService.singleUserData(userId);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
 
     @PostMapping("/generate_reset_password_token")
     public ResponseEntity <BaseResponse> resetPasswordToken(@Valid @RequestBody OTPData otpData){
@@ -200,6 +206,33 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
+    @PostMapping("/book_appointment")
+    public ResponseEntity <BaseResponse> bookAppointment(@Valid @RequestBody BookAppointmentData bookAppointmentData){
+        BaseResponse baseResponse = appService.bookAppointment(bookAppointmentData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @GetMapping("/user_appointments")
+    public ResponseEntity<BaseResponse> userAppointments(@RequestParam("userId") String userId){
+        BaseResponse baseResponse = appService.listUserAppointment(userId);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @GetMapping("/user_pending_appointments")
+    public ResponseEntity<BaseResponse> userPendingAppointments(@RequestParam("userId") String userId){
+        BaseResponse baseResponse = appService.listUserPendingAppointment(userId);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @PostMapping("/update_user_data")
+    public ResponseEntity <BaseResponse> updateUserData(@Valid @RequestBody UpdateData updateData){
+        BaseResponse baseResponse = appService.updateUserData(updateData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public BaseResponse handleValidationExceptions(

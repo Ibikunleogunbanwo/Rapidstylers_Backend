@@ -193,6 +193,55 @@ public class AppService {
         return baseResponse;
     }
 
+    public BaseResponse singleUserData(String userId){
+        try{
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid User Id, Kindly create account");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            UserEntity userEntity = isUserExist.get();
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(dtoService.userAccountDTO(userEntity));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse updateUserData(UpdateData updateData){
+        try{
+            Optional<UserEntity> isUserExist = userRepo.findByEmailAddress(updateData.getEmailAddress());
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Email Address, Kindly create an account");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            UserEntity userEntity = isUserExist.get();
+            userEntity.setFirstname(updateData.getFirstname().isEmpty() ? userEntity.getFirstname() : updateData.getFirstname());
+            userEntity.setLastname(updateData.getLastname().isEmpty() ? userEntity.getLastname() : updateData.getLastname());
+            userEntity.setAddress(updateData.getAddress().isEmpty() ? userEntity.getAddress() : updateData.getAddress());
+            userEntity.setCountry(updateData.getCountry().isEmpty() ? userEntity.getCountry() : updateData.getCountry());
+            userEntity.setPhoneNumber(updateData.getPhoneNumber().isEmpty() ? userEntity.getPhoneNumber() : updateData.getPhoneNumber());
+            userEntity.setState(updateData.getState().isEmpty() ?  userEntity.getState() : updateData.getState());
+            userRepo.save(userEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Account Updated Successful");
+            baseResponse.setData(EMPTY_DATA);
+
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
     public BaseResponse resetPasswordMessage(OTPData otpData){
         try{
             String emailAddress = otpData.getEmailAddress();
@@ -833,4 +882,83 @@ public class AppService {
         return  baseResponse;
     }
 
+    public BaseResponse bookAppointment(BookAppointmentData bookAppointmentData){
+        try{
+            //Is User exist
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(bookAppointmentData.getUserId());
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid User Id, Kindly create account");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            //Check if styler account exist
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(bookAppointmentData.getStylerId()) ;
+            if(isStylerExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Styler Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+
+            BookAppointmentEntity bookAppointmentEntity = new BookAppointmentEntity(bookAppointmentData);
+            bookAppointmentRepo.save(bookAppointmentEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Appointment booked successfully");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listUserAppointment(String userId){
+        try{
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid User Id, Kindly create account");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            List<BookAppointmentEntity> getUserAppointment = bookAppointmentRepo.findByUserId(userId);
+            List<Object> result = new ArrayList<>();
+           for(BookAppointmentEntity bookAppointmentEntity : getUserAppointment){
+               result.add(dtoService.appointmentDTO(bookAppointmentEntity));
+           }
+           baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+           baseResponse.setMessage(SUCCESS_MESSAGE);
+           baseResponse.setData(result);
+        }
+        catch(Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listUserPendingAppointment(String userId){
+        try{
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid User Id, Kindly create account");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            List<BookAppointmentEntity> getUserAppointment = bookAppointmentRepo.userPendingAppointment(userId);
+            List<Object> result = new ArrayList<>();
+            for(BookAppointmentEntity bookAppointmentEntity : getUserAppointment){
+                result.add(dtoService.appointmentDTO(bookAppointmentEntity));
+            }
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
+        }
+        catch(Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
 }

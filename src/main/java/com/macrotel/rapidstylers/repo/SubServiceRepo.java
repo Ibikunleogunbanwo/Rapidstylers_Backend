@@ -12,5 +12,8 @@ public interface SubServiceRepo extends JpaRepository<SubServiceEntity,Long> {
     @Query("SELECT s FROM SubServiceEntity s WHERE s.stylerId =:stylerId AND s.name =:serviceName")
     Optional<SubServiceEntity> isServiceExist(@Param("stylerId") String stylerId, @Param("serviceName") String serviceName);
 
+    @Query("SELECT s FROM SubServiceEntity s WHERE s.stylerId =:stylerId AND s.id =:serviceId")
+    Optional<SubServiceEntity> isServiceExistById(@Param("stylerId") String stylerId, @Param("serviceId") Long serviceId);
+
     List<SubServiceEntity> findByStylerId(String stylerId);
 }
