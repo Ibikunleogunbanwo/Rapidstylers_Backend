@@ -46,5 +46,6 @@ public class StylerData {
     private String businessAddress;
     @NotEmpty(message = "Business Province cannot be empty")
     private String businessProvince;
+    private String description;
 
 }

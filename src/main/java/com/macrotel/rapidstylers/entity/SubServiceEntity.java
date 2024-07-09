@@ -31,6 +31,6 @@ public class SubServiceEntity implements Serializable {
         this.name =subServiceData.getName();
         this.price =  appUtils.currencyFormat(subServiceData.getPrice());
         this.status= "0";
-        this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss"));
     }
 }

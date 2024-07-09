@@ -32,6 +32,7 @@ public class StylerEntity implements Serializable {
     private String insertedDt;
     private String status;
     private String stylerId;
+    private String description;
 
     public StylerEntity() {
     }

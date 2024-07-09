@@ -42,7 +42,7 @@ public class BookAppointmentEntity implements Serializable {
         this.noOfPeople = bookAppointmentData.getNoOfPeople();
         this.price = appUtils.currencyFormat(bookAppointmentData.getPrice());
         this.status = "1";
-        this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss"));
         this.appointmentId = appUtils.randomAlphanumeric(5);
     }
 }

@@ -427,6 +427,8 @@ public class AppService {
             }
             ServiceEntity serviceEntity = new ServiceEntity();
             serviceEntity.setServiceName(serviceTypeData.getServiceName());
+            serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
+            serviceEntity.setDescription(serviceTypeData.getDescription());
             serviceRepo.save(serviceEntity);
 
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -448,6 +450,8 @@ public class AppService {
                 serviceMap.put("serviceName", serviceEntity.getServiceName());
                 serviceMap.put("status", serviceEntity.getStatus());
                 serviceMap.put("dateCreated", serviceEntity.getInsertedDt());
+                serviceMap.put("imageUrl", serviceEntity.getServiceImageUrl());
+                serviceMap.put("description", serviceEntity.getDescription());
                 result.add(serviceMap);
             }
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -477,6 +481,8 @@ public class AppService {
             }
             ServiceEntity serviceEntity = isServiceExist.get();
             serviceEntity.setServiceName(serviceTypeData.getServiceName());
+            serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
+            serviceEntity.setDescription(serviceTypeData.getDescription());
             serviceRepo.save(serviceEntity);
 
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -812,7 +818,7 @@ public class AppService {
                 baseResponse.setData(EMPTY_DATA);
                 return baseResponse;
             }
-            double ratingPercentage= 0;
+            int ratingPercentage= 0;
             //Get Styler Information
             StylerEntity stylerEntity = isStylerExist.get();
             //Get Styler Sub service information
@@ -837,7 +843,7 @@ public class AppService {
                  totalRating += reviewEntity.getRatingScore();
                 stylerReviewResult.add(dtoService.stylerReviewDTO(reviewEntity));
             }
-            ratingPercentage = ((totalRating/(ratingCount * 5)) *100);
+            ratingPercentage = (int) ((totalRating/(ratingCount * 5)) *100);
             Collections.reverse(stylerReviewResult);
             Collections.reverse(stylerPortfolioResult);
             Collections.reverse(subServiceResult);

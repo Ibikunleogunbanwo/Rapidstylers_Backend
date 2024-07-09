@@ -6,9 +6,9 @@ import java.util.HashMap;
 
 @Data
 public class AppointmentDTO {
-    private Object userData;
-    private Object stylerData;
-    private Object subServiceData;
+    private UserAccountDTO userData;
+    private StylerAccountDTO stylerData;
+    private SubServiceDTO subServiceData;
     private String appointmentDate;
     private String arrivalTime;
     private String serviceTime;

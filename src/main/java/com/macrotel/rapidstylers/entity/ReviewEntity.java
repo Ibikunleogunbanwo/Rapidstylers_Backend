@@ -22,6 +22,6 @@ public class ReviewEntity implements Serializable {
     private String userId;
 
     public ReviewEntity() {
-        this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss"));
     }
 }

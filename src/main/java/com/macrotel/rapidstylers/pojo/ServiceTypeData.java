@@ -13,4 +13,6 @@ public class ServiceTypeData {
     @Pattern(regexp = CHARACTER_VALIDATION_REGEX)
     private String serviceName;
     private String id;
+    private String imageUrl;
+    private String description;
 }

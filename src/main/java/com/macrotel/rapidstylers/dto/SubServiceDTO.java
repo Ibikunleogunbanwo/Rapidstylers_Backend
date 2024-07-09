@@ -5,6 +5,7 @@ import lombok.Data;
 @Data
 public class SubServiceDTO {
     private String name;
+    private String id;
     private String price;
     private String status;
     private String createdAt;

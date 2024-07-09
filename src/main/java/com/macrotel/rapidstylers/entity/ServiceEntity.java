@@ -4,7 +4,8 @@ import lombok.Data;
 
 import javax.persistence.*;
 import java.io.Serializable;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Data
 @Entity
@@ -16,9 +17,11 @@ public class ServiceEntity implements Serializable {
     private String serviceName;
     private String insertedDt;
     private String status;
+    private String serviceImageUrl;
+    private String description;
 
     public ServiceEntity() {
         this.status = "0";
-        this.insertedDt = String.valueOf(LocalDate.now());
+        this.insertedDt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy"));
     }
 }

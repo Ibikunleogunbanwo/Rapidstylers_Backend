@@ -16,5 +16,6 @@ public class StylerAccountDTO {
     private String profileImageUrl;
     private String businessName;
     private String businessAddress;
+    private String description;
 
 }

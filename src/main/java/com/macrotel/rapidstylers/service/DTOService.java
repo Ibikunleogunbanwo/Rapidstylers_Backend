@@ -55,12 +55,14 @@ public class DTOService {
         stylerAccountDTO.setBusinessName(stylerEntity.getBusinessName());
         stylerAccountDTO.setBusinessAddress(stylerEntity.getBusinessAddress());
         stylerAccountDTO.setPhoneNumber(stylerEntity.getPhoneNumber());
+        stylerAccountDTO.setDescription(stylerEntity.getDescription());
         return stylerAccountDTO;
     }
 
     public SubServiceDTO subServiceDTO(SubServiceEntity subServiceEntity){
         SubServiceDTO subServiceDTO = new SubServiceDTO();
         subServiceDTO.setName(subServiceEntity.getName());
+        subServiceDTO.setId(String.valueOf(subServiceEntity.getId()));
         subServiceDTO.setStatus(subServiceEntity.getStatus().equals("0") ? "Active" : "Inactive");
         subServiceDTO.setPrice(subServiceEntity.getPrice());
         subServiceDTO.setCreatedAt(subServiceEntity.getCreatedAt());
@@ -90,35 +92,29 @@ public class DTOService {
     public AppointmentDTO appointmentDTO(BookAppointmentEntity bookAppointmentEntity){
         AppointmentDTO appointmentDTO = new AppointmentDTO();
         //Get Userdata
-        List<Object> userResultMap = new ArrayList<>();
-        List<Object> stylerResultMap = new ArrayList<>();
-        List<Object> subServiceMap = new ArrayList<>();
         String subServiceName ="";
         Optional<UserEntity> userData = userRepo.findByUserId(bookAppointmentEntity.getUserId());
         if(userData.isPresent()){
             UserEntity userEntity = userData.get();
-            userResultMap.add(this.userAccountDTO(userEntity));
+            appointmentDTO.setUserData(this.userAccountDTO(userEntity));
         }
         //Get Styler data
         Optional<StylerEntity> stylerData = stylerRepo.findByStylerId(bookAppointmentEntity.getStylerId());
         if(stylerData.isPresent()){
             StylerEntity stylerEntity = stylerData.get();
-            stylerResultMap.add(this.stylerAccountDTO(stylerEntity));
+            appointmentDTO.setStylerData(this.stylerAccountDTO(stylerEntity));
         }
         //Get service data
         Optional<SubServiceEntity> subServiceData = subServiceRepo.isServiceExistById(bookAppointmentEntity.getStylerId(), Long.parseLong(bookAppointmentEntity.getSubServiceId()));
         if(subServiceData.isPresent()){
             SubServiceEntity subServiceEntity = subServiceData.get();
-            subServiceMap.add(this.subServiceDTO(subServiceEntity));
+            appointmentDTO.setSubServiceData(this.subServiceDTO(subServiceEntity));
         }
 
         appointmentDTO.setAppointmentDate(bookAppointmentEntity.getAppointmentDate());
         appointmentDTO.setAppointmentId(bookAppointmentEntity.getAppointmentId());
         appointmentDTO.setPrice(bookAppointmentEntity.getPrice());
         appointmentDTO.setServiceTime(bookAppointmentEntity.getServiceTime());
-        appointmentDTO.setUserData(userResultMap);
-        appointmentDTO.setStylerData(stylerResultMap);
-        appointmentDTO.setSubServiceData(subServiceMap);
         appointmentDTO.setArrivalTime(bookAppointmentEntity.getArrivalTime());
         appointmentDTO.setNoOfPeople(bookAppointmentEntity.getNoOfPeople());
         appointmentDTO.setStatus(bookAppointmentEntity.getStatus().equals("0") ?"Completed" : bookAppointmentEntity.getStatus().equals("1") ? "Pending" : "Rejected");
