@@ -13,6 +13,7 @@ public class ForgotPasswordData {
     private String password;
     @NotEmpty(message = "Confirm Password cannot be empty")
     private String confirmPassword;
+    private String oldPassword;
 
     public ForgotPasswordData() {
     }

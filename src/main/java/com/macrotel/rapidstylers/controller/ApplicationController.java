@@ -74,6 +74,12 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
+    @PostMapping("/update_user_password")
+    public ResponseEntity <BaseResponse> updateUserPassword(@Valid @RequestBody ForgotPasswordData forgotPasswordData){
+        BaseResponse baseResponse = appService.updateUserPassword(forgotPasswordData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
 
     @PostMapping("/create_identification")
     public ResponseEntity <BaseResponse> createIdentification(@Valid @RequestBody IdentificationData identificationData){

@@ -113,13 +113,18 @@ public class AppService {
             }
             OTPEntity otpData = isOTPExist.get();
             String previousOtpTime =  otpData.getInsertedDt();
+            String otpPurpose = otpData.getPurpose();
             LocalDateTime previousTime = LocalDateTime.parse(previousOtpTime, DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss"));
             LocalDateTime currentTime = LocalDateTime.now();
             long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
             if (minutesDifference > 10) {
                 OTPData newOtpData = new OTPData();
                 newOtpData.setEmailAddress(otpData.getEmailAddress());
-                this.generateSignUpOtpCode(newOtpData);
+                if(otpPurpose.equals("USER SIGN UP")){
+                    this.generateSignUpOtpCode(newOtpData);
+                } else if (otpPurpose.equals("FORGET PASSWORD")) {
+                    this.resetPasswordMessage(newOtpData);
+                }
                 baseResponse.setStatusCode(ERROR_STATUS_CODE);
                 baseResponse.setMessage("OTP Code has expired, Kindly check mail for another OTP Code");
                 baseResponse.setData(EMPTY_DATA);
@@ -266,12 +271,11 @@ public class AppService {
             String emailSubject = "RapidStylers Password Reset Request";
             String emailBody = "Dear " + firstname + ",<br><br>"
                     + "We received a request to reset your RapidStylers account password."
-                    + "<br>To proceed with the password reset, please use the following OTP code:<br><br>"
+                    + "<br>To proceed with the password reset, please use the following:<br><br>"
                     + "OTP Code: <strong>" + otpCode  + "</strong><br><br>"
                     + "Enter this OTP code to complete the password reset process. If you didn't make this request, you can safely ignore this email."
                     + "<br><br>Thank you,<br>The Rapid Stylers Team";
             emailConfig.sendSimpleMail(emailAddress,emailSubject,emailBody);
-
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage("Password Reset Initiated, Check Mail for OTP Code");
             baseResponse.setData(EMPTY_DATA);
@@ -286,12 +290,6 @@ public class AppService {
             String password = forgotPasswordData.getPassword();
             String confirmPassword = forgotPasswordData.getConfirmPassword();
             String emailAddress = forgotPasswordData.getEmailAddress();
-            if(password.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Password cannot be empty");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
-            }
             if(!password.equals(confirmPassword)){
                 baseResponse.setStatusCode(ERROR_STATUS_CODE);
                 baseResponse.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
@@ -320,7 +318,46 @@ public class AppService {
         }
         return  baseResponse;
     }
+    public BaseResponse updateUserPassword(ForgotPasswordData forgotPasswordData){
+        try{
+            String oldPassword = forgotPasswordData.getOldPassword();
+            String newPassword = forgotPasswordData.getPassword();
+            String confirmPassword = forgotPasswordData.getConfirmPassword();
+            String emailAddress = forgotPasswordData.getEmailAddress();
+            if(oldPassword.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Old Password cannot be empty");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            if(!newPassword.equals(confirmPassword)){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            Optional<UserEntity> getUserData = userRepo.userAuthenticate(emailAddress, appUtils.encryptPassword(oldPassword));
+            if(getUserData.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid Old Password");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            newPassword = appUtils.encryptPassword(newPassword);
 
+            UserEntity userPrevData = getUserData.get();
+            userPrevData.setPassword(newPassword);
+            userRepo.save(userPrevData);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Password Change Successful");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
     public BaseResponse createIdentificationType (IdentificationData identificationData){
         try{
             Optional<IdentificationEntity> isIdNameExist = identificationRepo.findByIdentificationName(identificationData.getIdentificationName());
