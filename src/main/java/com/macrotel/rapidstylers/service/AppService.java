@@ -344,13 +344,12 @@ public class AppService {
                 return baseResponse;
             }
             newPassword = appUtils.encryptPassword(newPassword);
-
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(newPassword);
             userRepo.save(userPrevData);
 
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Password Change Successful");
+            baseResponse.setMessage("Password Change Successfully");
             baseResponse.setData(EMPTY_DATA);
         }
         catch (Exception ex){
