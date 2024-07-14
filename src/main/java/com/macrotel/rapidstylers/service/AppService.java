@@ -1021,12 +1021,31 @@ public class AppService {
             feedbackEntity.setFeedBackType(userFeedbackData.getFeedbackType());
             feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
             feedbackEntity.setUserId(userFeedbackData.getUserId());
+            feedbackEntity.setMessage(userFeedbackData.getMessage());
             feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
             feedBackRepo.save(feedbackEntity);
 
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage("Your feedback has been submitted successful, Admin will take care of it.");
             baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse listUserFeedBack(){
+        try{
+            List<FeedbackEntity> getAllFeedBack = feedBackRepo.findAll();
+            List<Object> result = new ArrayList<>();
+            for(FeedbackEntity feedbackEntity : getAllFeedBack){
+                result.add(dtoService.feedBackDTO(feedbackEntity));
+            }
+            Collections.reverse(result);
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(SUCCESS_MESSAGE);
+            baseResponse.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());

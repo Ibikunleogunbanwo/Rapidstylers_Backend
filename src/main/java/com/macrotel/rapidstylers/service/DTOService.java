@@ -121,4 +121,19 @@ public class DTOService {
         appointmentDTO.setCreatedAt(bookAppointmentEntity.getCreatedAt());
         return appointmentDTO;
     }
+
+    public FeedBackDTO feedBackDTO(FeedbackEntity feedbackEntity){
+        FeedBackDTO feedBackDTO = new FeedBackDTO();
+        Optional<UserEntity> getUserDetails = userRepo.findByUserId(feedbackEntity.getUserId());
+        if(getUserDetails.isPresent()){
+            UserEntity userEntity = getUserDetails.get();
+            feedBackDTO.setUserData(this.userAccountDTO(userEntity));
+        }
+        feedBackDTO.setInsertedDt(feedbackEntity.getInsertedDt());
+        feedBackDTO.setMessage(feedbackEntity.getMessage());
+        feedBackDTO.setMessageType(feedbackEntity.getFeedBackType());
+        feedBackDTO.setId(String.valueOf(feedbackEntity.getId()));
+        feedBackDTO.setEmailAddress(feedbackEntity.getEmailAddress());
+        return feedBackDTO;
+    }
 }
