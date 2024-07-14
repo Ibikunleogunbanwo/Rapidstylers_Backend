@@ -219,10 +219,10 @@ public class AppService {
                 baseResponse.setData(EMPTY_DATA);
                 return baseResponse;
             }
-            UserEntity userEntity = isUserExist.get();
+
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(dtoService.userAccountDTO(userEntity));
+            baseResponse.setData(dtoService.userDataDTO(userId));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());

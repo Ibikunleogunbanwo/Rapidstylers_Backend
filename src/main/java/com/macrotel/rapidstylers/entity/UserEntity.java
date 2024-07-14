@@ -13,7 +13,7 @@ import java.time.LocalDate;
 @Table(name = "user_accounts")
 public class UserEntity implements Serializable {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
     private String firstname;
     private String lastname;

@@ -13,7 +13,7 @@ import java.time.format.DateTimeFormatter;
 @Table(name = "otp_codes")
 public class OTPEntity implements Serializable {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
     private String emailAddress;
     private String code;

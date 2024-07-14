@@ -1,15 +1,15 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.dto.*;
 import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.repo.ServiceRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
-import com.macrotel.rapidstylers.repo.SubServiceRepo;
-import com.macrotel.rapidstylers.repo.UserRepo;
+import com.macrotel.rapidstylers.repo.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+
+import static com.macrotel.rapidstylers.config.AppConstants.EMPTY_DATA;
 
 @Service
 public class DTOService {
@@ -21,6 +21,8 @@ public class DTOService {
     StylerRepo stylerRepo;
     @Autowired
     SubServiceRepo subServiceRepo;
+    @Autowired
+    CardDetailsRepo cardDetailsRepo;
     public UserAccountDTO userAccountDTO(UserEntity userEntity){
         UserAccountDTO userAccountDTO = new UserAccountDTO();
         userAccountDTO.setAddress(userEntity.getAddress());
@@ -135,5 +137,32 @@ public class DTOService {
         feedBackDTO.setId(String.valueOf(feedbackEntity.getId()));
         feedBackDTO.setEmailAddress(feedbackEntity.getEmailAddress());
         return feedBackDTO;
+    }
+
+    public CardDetailsDTO cardDetailsDTO(CardDetailsEntity cardDetailsEntity){
+        CardDetailsDTO cardDetailsDTO = new CardDetailsDTO();
+        cardDetailsDTO.setCardName(cardDetailsEntity.getCardName());
+        cardDetailsDTO.setCardNumber(cardDetailsEntity.getCardNumber());
+        cardDetailsDTO.setCvv(cardDetailsEntity.getCvv());
+        cardDetailsDTO.setExpiryDate(cardDetailsEntity.getExpiryDate());
+        return cardDetailsDTO;
+    }
+    public UserDataDTO userDataDTO (String userId) throws Exception {
+        UserDataDTO userDataDTO = new UserDataDTO();
+        //Get user details
+        Optional<UserEntity> getUserDetails = userRepo.findByUserId(userId);
+        if(getUserDetails.isPresent()){
+            UserEntity userEntity = getUserDetails.get();
+            userDataDTO.setUserData(this.userAccountDTO(userEntity));
+        }
+        //Get card details
+        Optional<CardDetailsEntity> getUserCardDetails = cardDetailsRepo.findByUserId(EncryptionConfig.encrypt(userId));
+        if(getUserCardDetails.isPresent()){
+            CardDetailsEntity cardDetailsEntity = getUserCardDetails.get();
+            userDataDTO.setUserCardData(this.cardDetailsDTO(cardDetailsEntity));
+        }
+
+
+        return userDataDTO;
     }
 }
