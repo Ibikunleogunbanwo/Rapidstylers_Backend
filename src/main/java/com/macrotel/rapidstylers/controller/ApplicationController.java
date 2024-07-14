@@ -239,6 +239,13 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    @PostMapping("/add_feedback")
+    public ResponseEntity<BaseResponse> addFeedBack(@Valid @RequestBody UserFeedbackData userFeedbackData){
+        BaseResponse baseResponse = appService.addUserFeedBack(userFeedbackData);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public BaseResponse handleValidationExceptions(

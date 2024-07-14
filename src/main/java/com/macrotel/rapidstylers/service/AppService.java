@@ -42,6 +42,8 @@ public class AppService {
     ReviewRepo reviewRepo;
     @Autowired
     BookAppointmentRepo bookAppointmentRepo;
+    @Autowired
+    FeedBackRepo feedBackRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -999,6 +1001,34 @@ public class AppService {
             baseResponse.setData(result);
         }
         catch(Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse addUserFeedBack (UserFeedbackData userFeedbackData){
+        try{
+            //Check if userId exist
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(userFeedbackData.getUserId());
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid User Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+            FeedbackEntity feedbackEntity = new FeedbackEntity();
+            feedbackEntity.setUserId(userFeedbackData.getUserId());
+            feedbackEntity.setFeedBackType(userFeedbackData.getFeedbackType());
+            feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
+            feedbackEntity.setUserId(userFeedbackData.getUserId());
+            feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
+            feedBackRepo.save(feedbackEntity);
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage("Your feedback has been submitted successful, Admin will take care of it.");
+            baseResponse.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return baseResponse;
