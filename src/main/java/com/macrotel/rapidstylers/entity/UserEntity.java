@@ -42,6 +42,5 @@ public class UserEntity implements Serializable {
         this.password= appUtils.encryptPassword(userData.getPassword());
         this.status = "0";
         this.insertedDt = String.valueOf(LocalDate.now());
-        this.userId = userData.getFirstname().toUpperCase().charAt(0)+appUtils.randomDigit(4)+userData.getLastname().toUpperCase().charAt(0);
     }
 }

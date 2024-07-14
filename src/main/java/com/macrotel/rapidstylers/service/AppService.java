@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
@@ -44,6 +45,8 @@ public class AppService {
     BookAppointmentRepo bookAppointmentRepo;
     @Autowired
     FeedBackRepo feedBackRepo;
+    @Autowired
+    CardDetailsRepo cardDetailsRepo;
 
     public BaseResponse testing(){
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
@@ -164,8 +167,15 @@ public class AppService {
                 baseResponse.setData(EMPTY_DATA);
                 return baseResponse;
             }
+            String userId = userData.getFirstname().toUpperCase().charAt(0)+appUtils.randomDigit(4)+userData.getLastname().toUpperCase().charAt(0);
             UserEntity userEntity = new UserEntity(userData);
+            userEntity.setUserId(userId);
             userRepo.save(userEntity);
+
+            //Create a space for user in the card_details table
+            CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
+            cardDetailsEntity.setUserId(EncryptionConfig.encrypt(userId));
+            cardDetailsRepo.save(cardDetailsEntity);
 
             baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
             baseResponse.setMessage("Account created successful");
@@ -1049,6 +1059,54 @@ public class AppService {
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
+        }
+        return baseResponse;
+    }
+
+    public BaseResponse updateUserCardDetails(CardDetailsData cardDetailsData){
+        try{
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(cardDetailsData.getUserId());
+            if(isUserExist.isEmpty()){
+                baseResponse.setStatusCode(ERROR_STATUS_CODE);
+                baseResponse.setMessage("Invalid User Id");
+                baseResponse.setData(EMPTY_DATA);
+                return baseResponse;
+            }
+
+            String message ="";
+            //Get the userPreviousCard Details
+            String encryptedUserId = EncryptionConfig.encrypt(cardDetailsData.getUserId());
+            String userCardName = EncryptionConfig.encrypt(cardDetailsData.getCardName());
+            String userCardNumber = EncryptionConfig.encrypt(cardDetailsData.getCardNumber());
+            String userCVV = EncryptionConfig.encrypt(cardDetailsData.getCvv());
+            String expiryDate = EncryptionConfig.encrypt(cardDetailsData.getExpiryDate());
+            Optional<CardDetailsEntity> getUserCardDetails = cardDetailsRepo.findByUserId(encryptedUserId);
+            if(getUserCardDetails.isPresent()) {
+                CardDetailsEntity userPrevCardDetails = getUserCardDetails.get();
+                userPrevCardDetails.setCardNumber(userCardNumber);
+                userPrevCardDetails.setCardName(userCardName);
+                userPrevCardDetails.setCvv(userCVV);
+                userPrevCardDetails.setExpiryDate(expiryDate);
+                cardDetailsRepo.save(userPrevCardDetails);
+                message ="Card details updated successfully";
+            }
+            else{
+                CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
+                cardDetailsEntity.setUserId(encryptedUserId);
+                cardDetailsEntity.setCardNumber(userCardNumber);
+                cardDetailsEntity.setCardName(userCardName);
+                cardDetailsEntity.setCvv(userCVV);
+                cardDetailsEntity.setExpiryDate(expiryDate);
+                cardDetailsRepo.save(cardDetailsEntity);
+                message = "Card details added successfully";
+            }
+
+            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
+            baseResponse.setMessage(message);
+            baseResponse.setData(EMPTY_DATA);
+        }
+         catch (Exception e) {
+            throw new RuntimeException(e);
         }
         return baseResponse;
     }

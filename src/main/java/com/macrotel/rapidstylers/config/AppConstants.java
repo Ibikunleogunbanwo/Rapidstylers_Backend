@@ -11,4 +11,6 @@ public class AppConstants {
     public static final String NUMBER_VALIDATION_REGEX = "^[0-9]+$";
     public static final String PHONE_NUMBER_VALIDATION_REGEX ="^[\\d+()]{1,20}$";
     public static final String PASSWORD_PATTERN = "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#&()-[{}]:;'?/*~$^+=<>.]).{6,20}$";
+    public static final String ALGORITHM = "AES";
+    public static final String ENCRYPTDECRYPTKEY = "D0n!T'T&mp3r@w1Th^&()";
 }
