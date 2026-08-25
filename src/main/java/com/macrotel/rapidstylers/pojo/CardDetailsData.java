@@ -6,14 +6,12 @@ import javax.validation.constraints.NotEmpty;
 
 @Data
 public class CardDetailsData {
-    @NotEmpty(message = "User Id cannot be empty")
+    // userId is derived from the JWT subject by the controller — never from the client.
     private String userId;
-    @NotEmpty(message = "Card Name cannot be empty")
+    @NotEmpty(message = "Cardholder name cannot be empty")
     private String cardName;
-    @NotEmpty(message = "Card Number cannot be empty")
-    private String cardNumber;
-    @NotEmpty(message = "CVV cannot be empty")
-    private String cvv;
-    @NotEmpty(message = "Expiry Date cannot be empty")
-    private String expiryDate;
+    // The Stripe PaymentMethod id produced by the frontend's confirmCardSetup
+    // call. Raw card numbers and CVVs are never sent to or stored by this API.
+    @NotEmpty(message = "Payment method is required")
+    private String paymentMethodId;
 }

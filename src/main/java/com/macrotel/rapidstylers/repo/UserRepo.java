@@ -9,6 +9,8 @@ import java.util.Optional;
 
 public interface UserRepo extends JpaRepository<UserEntity, Long> {
     Optional<UserEntity> findByEmailAddress(String emailAddress);
+
+    Optional<UserEntity> findByPhoneNumber(String phoneNumber);
     @Query(value = "SELECT u FROM UserEntity u WHERE u.emailAddress =:emailAddress AND u.password =:password AND u.status='0'")
     Optional<UserEntity> userAuthenticate(@Param("emailAddress") String emailAddress, @Param("password") String password);
 

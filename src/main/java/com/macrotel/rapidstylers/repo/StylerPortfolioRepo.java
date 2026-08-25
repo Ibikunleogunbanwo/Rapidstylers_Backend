@@ -13,4 +13,6 @@ public interface StylerPortfolioRepo extends JpaRepository<StylerPortfolioEntity
     Optional<StylerPortfolioEntity> isPortfolioExist(@Param("stylerId") String stylerId, @Param("portfolioName") String portfolioName);
 
     List<StylerPortfolioEntity> findByStylerId(String stylerId);
+
+    List<StylerPortfolioEntity> findByCategory(String category);
 }

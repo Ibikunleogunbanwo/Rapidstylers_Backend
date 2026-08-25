@@ -20,6 +20,8 @@ public class StylerPortfolioEntity implements Serializable {
     private String name;
     private String status;
     private String createdAt;
+    // Gallery category this work belongs to (e.g. braids, nail tech, makeup).
+    private String category;
 
     public StylerPortfolioEntity() {
     }
@@ -28,6 +30,7 @@ public class StylerPortfolioEntity implements Serializable {
         this.stylerId = stylerPortfolioData.getStylerId();
         this.imageUrl = stylerPortfolioData.getImageUrl();
         this.name = stylerPortfolioData.getName();
+        this.category = stylerPortfolioData.getCategory();
         this.status = "0";
         this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss"));
 

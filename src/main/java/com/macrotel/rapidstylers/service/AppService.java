@@ -3,14 +3,36 @@ package com.macrotel.rapidstylers.service;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
+import com.macrotel.rapidstylers.security.JwtUtil;
 import com.macrotel.rapidstylers.entity.*;
+import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.pojo.*;
+import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.repo.*;
+import com.stripe.model.Account;
+import com.stripe.model.AccountLink;
+import com.stripe.model.Balance;
+import com.stripe.model.Customer;
+import com.stripe.model.Event;
+import com.stripe.model.PaymentIntent;
+import com.stripe.net.RequestOptions;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.annotation.Transactional;
+import javax.annotation.PostConstruct;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 import java.util.*;
 import java.util.logging.Logger;
 
@@ -18,7 +40,6 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 @Service
 public class AppService {
-    BaseResponse baseResponse = new BaseResponse(true);
     AppUtils appUtils = new AppUtils();
     @Autowired
     DTOService dtoService;
@@ -42,31 +63,118 @@ public class AppService {
     @Autowired
     ReviewRepo reviewRepo;
     @Autowired
+    SavedStylistRepo savedStylistRepo;
+    @Autowired
+    NotificationRepo notificationRepo;
+    @Autowired
+    SupportTicketRepo supportTicketRepo;
+    @Autowired
+    AuditLogRepo auditLogRepo;
+    @Autowired
+    LoyaltyAccountRepo loyaltyAccountRepo;
+    @Autowired
+    ReferralRepo referralRepo;
+    @Autowired
     BookAppointmentRepo bookAppointmentRepo;
     @Autowired
     FeedBackRepo feedBackRepo;
     @Autowired
     CardDetailsRepo cardDetailsRepo;
+    @Autowired
+    BlogPostRepo blogPostRepo;
+    @Autowired
+    AvailabilityRepo availabilityRepo;
+    @Autowired
+    AvailabilityExceptionRepo availabilityExceptionRepo;
+    @Autowired
+    BookingSlotLockRepo bookingSlotLockRepo;
+    @Autowired
+    JwtUtil jwtUtil;
+    @Autowired
+    StripeService stripeService;
+    @Value("${app.stripe.commission-percent:10}")
+    private double stripeCommissionPercent;
+    @Autowired
+    PlatformSettingRepo platformSettingRepo;
+    // Runtime commission (admin-configurable). null = use the @Value default.
+    private volatile Double cachedCommissionPercent;
+    @Autowired
+    GeocodingService geocodingService;
+    @Autowired
+    LocationCacheService locationCacheService;
+    @Autowired
+    LocationService locationService;
+    @Autowired
+    RateLimiterService rateLimiterService;
+    @Autowired
+    LoginAttemptService loginAttemptService;
+    @Autowired
+    OutboxEventService outboxEventService;
+
+    // Global rate-limit budgets (shared across OTP generation, OTP verification
+    // and login so failures on one surface lock out the others).
+    private static final int AUTH_WINDOW_SECONDS = 900;   // 15 min
+    private static final int AUTH_MAX_FAILURES = 5;       // per email
+    private static final int AUTH_IP_MAX_FAILURES = 20;   // per IP
+    private static final int OTP_GEN_WINDOW_SECONDS = 900;
+    private static final int OTP_GEN_MAX = 3;             // per email
+    private static final int OTP_VERIFY_WINDOW_SECONDS = 900;
+    private static final int OTP_VERIFY_MAX = 10;         // per IP
+    // Booking starts and slot holds use 15-minute granularity; each service's
+    // configured duration determines how much of the stylist's calendar is blocked.
+    private static final int SLOT_GRANULARITY_MINUTES = 15;
+
+    @Value("${app.admin.email:}")
+    private String adminEmail;
+
+    @Value("${app.admin.password:}")
+    private String adminPassword;
+
+    @Value("${app.time-zone:America/Edmonton}")
+    private String appTimeZone;
+
+    @Value("${app.booking.completion-grace-minutes:0}")
+    private long completionGraceMinutes;
 
     public BaseResponse testing(){
-        baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-        baseResponse.setMessage("API is working well");
-        baseResponse.setData(EMPTY_DATA);
-        return baseResponse;
+        BaseResponse response = new BaseResponse(true);
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage("API is working well");
+        response.setData(EMPTY_DATA);
+        return response;
     }
 
     public BaseResponse generateSignUpOtpCode(OTPData otpData){
+        BaseResponse response = new BaseResponse(true);
         try{
-            //Check if userEmail Address exit or not
+            // Check email across BOTH tables
             Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(otpData.getEmailAddress());
-            if(isEmailExist.isPresent()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Email Address already exist, Kindly choose another email");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(otpData.getEmailAddress());
+            if(isEmailExist.isPresent() || isStylerEmailExist.isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Email Address already exists, Kindly choose another email");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Global rate limiting: failed login/verify attempts block further
+            // OTP sends for this email, and OTP generation itself is capped.
+            String email = otpData.getEmailAddress();
+            String ip = rateLimiterService.clientIp();
+            if (rateLimiterService.isBlocked("auth:" + email, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if (rateLimiterService.isBlocked("otp_gen:" + email, OTP_GEN_WINDOW_SECONDS, OTP_GEN_MAX)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many OTP requests. Please try again in a few minutes.");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             //Check if user has requested for OTPCode in the past 1 minute;
-            Optional<OTPEntity> getPreviousOtp = otpRepo.checkSignUpValidityOtp(otpData.getEmailAddress());
+            Optional<OTPEntity> getPreviousOtp = otpRepo.checkSignUpValidityOtp(email, "USER SIGN UP");
             if(getPreviousOtp.isPresent()){
                 OTPEntity previousOtp = getPreviousOtp.get();
                 String previousTimer = previousOtp.getInsertedDt();
@@ -74,15 +182,16 @@ public class AppService {
                 LocalDateTime currentTime = LocalDateTime.now();
                 long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
                 if (minutesDifference < 1) {
-                    baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                    baseResponse.setMessage("OTP Code was generated earlier, Kindly wait for another minute to regenerate another one");
-                    baseResponse.setData(EMPTY_DATA);
-                    return baseResponse;
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("OTP Code was generated earlier, Kindly wait for another minute to regenerate another one");
+                    response.setData(EMPTY_DATA);
+                    return response;
                 }
             }
+            rateLimiterService.record("otp_gen:" + email, OTP_GEN_WINDOW_SECONDS);
             String otpCode = appUtils.randomDigit(6);
             OTPEntity otpEntity = new OTPEntity();
-            otpEntity.setEmailAddress(otpData.getEmailAddress());
+            otpEntity.setEmailAddress(email);
             otpEntity.setPurpose("USER SIGN UP");
             otpEntity.setCode(otpCode);
             otpRepo.save(otpEntity);
@@ -97,26 +206,47 @@ public class AppService {
                     + "Thank you,<br>The Rapid Stylers Team";
             emailConfig.sendSimpleMail(otpData.getEmailAddress(),emailSubject,emailBody);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse verifyUserOTP(String otpCode){
+        BaseResponse response = new BaseResponse(true);
+        String ip = rateLimiterService.clientIp();
         try{
+            // Per-IP brute-force cap — applies to every attempt, valid or not.
+            if (rateLimiterService.isBlocked("otp_verify:" + ip, OTP_VERIFY_WINDOW_SECONDS, OTP_VERIFY_MAX)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many verification attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            rateLimiterService.record("otp_verify:" + ip, OTP_VERIFY_WINDOW_SECONDS);
             Optional<OTPEntity> isOTPExist = otpRepo.checkUserCode(otpCode);
             if(isOTPExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid OTP Code");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                // Email is unknown for a bad code — count failures against the IP.
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid OTP Code");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             OTPEntity otpData = isOTPExist.get();
+            String emailAddress = otpData.getEmailAddress();
+            // Lockout: failed logins/verifies for this email block verification too.
+            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             String previousOtpTime =  otpData.getInsertedDt();
             String otpPurpose = otpData.getPurpose();
             LocalDateTime previousTime = LocalDateTime.parse(previousOtpTime, DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss"));
@@ -124,21 +254,24 @@ public class AppService {
             long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
             if (minutesDifference > 10) {
                 OTPData newOtpData = new OTPData();
-                newOtpData.setEmailAddress(otpData.getEmailAddress());
+                newOtpData.setEmailAddress(emailAddress);
                 if(otpPurpose.equals("USER SIGN UP")){
                     this.generateSignUpOtpCode(newOtpData);
                 } else if (otpPurpose.equals("FORGET PASSWORD")) {
                     this.resetPasswordMessage(newOtpData);
                 }
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("OTP Code has expired, Kindly check mail for another OTP Code");
-                baseResponse.setData(EMPTY_DATA);
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("OTP Code has expired, Kindly check mail for another OTP Code");
+                response.setData(EMPTY_DATA);
             } else {
                 HashMap<String, String> otpValue = new HashMap<>();
-                otpValue.put("emailAddress", otpData.getEmailAddress());
-                baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-                baseResponse.setMessage("Email Address Verify Successful");
-                baseResponse.setData(otpValue);
+                otpValue.put("emailAddress", emailAddress);
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("Email Address Verify Successful");
+                response.setData(otpValue);
+                // Successful verification clears the failure budget for this email/IP.
+                rateLimiterService.clear("auth:" + emailAddress);
+                rateLimiterService.clear("auth_ip:" + ip);
             }
             otpData.setIsUsed("0");
             otpRepo.save(otpData);
@@ -146,26 +279,45 @@ public class AppService {
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse userSignUp(UserData userData){
+        BaseResponse response = new BaseResponse(true);
         try{
+            // Locked-out email (failed logins/verifies) cannot create an account.
+            if (rateLimiterService.isBlocked("auth:" + userData.getEmailAddress(), AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + rateLimiterService.clientIp(), AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             //Verify if user verify email address or not
             Optional<OTPEntity> verifyUserEmail = otpRepo.verifyOtpSuccess(userData.getEmailAddress());
             if(verifyUserEmail.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Email Address is yet to be verified");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Email Address is yet to be verified");
+                response.setData(EMPTY_DATA);
+                return response;
             }
-            //Check if the email already exist in the database of user account
+            //Check if the email already exist in EITHER table
             Optional<UserEntity> isUserExist = userRepo.findByEmailAddress(userData.getEmailAddress());
-            if(isUserExist.isPresent()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Email Address already exist, Kindly choose another email address");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByEmailAddress(userData.getEmailAddress());
+            if(isUserExist.isPresent() || isStylerExist.isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Email Address already exists, Kindly choose another email address");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            //Check phone number across both tables
+            Optional<UserEntity> isPhoneExist = userRepo.findByPhoneNumber(userData.getPhoneNumber());
+            Optional<StylerEntity> isStylerPhoneExist = stylerRepo.findByPhoneNumber(userData.getPhoneNumber());
+            if(isPhoneExist.isPresent() || isStylerPhoneExist.isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Phone number already registered");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             String userId = userData.getFirstname().toUpperCase().charAt(0)+appUtils.randomDigit(4)+userData.getLastname().toUpperCase().charAt(0);
             UserEntity userEntity = new UserEntity(userData);
@@ -177,67 +329,207 @@ public class AppService {
             cardDetailsEntity.setUserId(EncryptionConfig.encrypt(userId));
             cardDetailsRepo.save(cardDetailsEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Account created successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Account created successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    /**
+     * Unified sign-in for all three roles. Tries admin (env-configured), then
+     * styler, then customer; returns the account data with its role and a
+     * role-scoped JWT so the frontend can route to the right dashboard.
+     */
+    public BaseResponse signIn(SignInData signInData){
+        BaseResponse response = new BaseResponse(true); // local — never leak stale state on error
+        try{
+            String emailAddress = signInData.getEmailAddress();
+            String password = signInData.getPassword();
+            String ip = rateLimiterService.clientIp();
+
+            // Global lockout: failed logins/verifies (email or IP) block sign-in.
+            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("UNKNOWN", null, emailAddress, ip, "LOCKED_OUT");
+                return response;
+            }
+
+            // 1. Admin (environment-configured credentials)
+            if(adminEmail != null && !adminEmail.isEmpty()
+                    && adminEmail.equalsIgnoreCase(emailAddress)
+                    && adminPassword.equals(password)){
+                Map<String, Object> adminData = new LinkedHashMap<>();
+                adminData.put("role", "ADMIN");
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage(SUCCESS_MESSAGE);
+                response.setToken(jwtUtil.generateToken("admin", "ADMIN"));
+                response.setData(adminData);
+                rateLimiterService.clear("auth:" + emailAddress);
+                rateLimiterService.clear("auth_ip:" + ip);
+                recordLoginSuccess("ADMIN", "admin", emailAddress, ip);
+                return response;
+            }
+
+            // 2. Styler (vendor)
+            Optional<StylerEntity> styler = stylerRepo.findByEmailAddress(emailAddress);
+            if(styler.isPresent() && appUtils.passwordMatches(password, styler.get().getPassword())){
+                StylerEntity stylerEntity = styler.get();
+                // Verification gate — rejected/suspended professionals cannot sign in.
+                if(VERIFICATION_REJECTED.equals(stylerEntity.getVerificationStatus())){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("Your professional account was not approved. Please contact support.");
+                    response.setData(EMPTY_DATA);
+                    recordLoginFailure("STYLER", stylerEntity.getStylerId(), emailAddress, ip, "ACCOUNT_REJECTED");
+                    return response;
+                }
+                if(VERIFICATION_SUSPENDED.equals(stylerEntity.getVerificationStatus())){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("Your professional account is suspended. Please contact support.");
+                    response.setData(EMPTY_DATA);
+                    recordLoginFailure("STYLER", stylerEntity.getStylerId(), emailAddress, ip, "ACCOUNT_SUSPENDED");
+                    return response;
+                }
+                if(stylerEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
+                    stylerEntity.setPassword(appUtils.encryptPassword(password));
+                }
+                stylerEntity.setIsOnline("0");
+                stylerRepo.save(stylerEntity);
+                Map<String, Object> stylerData = new LinkedHashMap<>();
+                stylerData.put("role", "STYLER");
+                stylerData.put("account", dtoService.stylerAccountDTO(stylerEntity));
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage(SUCCESS_MESSAGE);
+                response.setToken(jwtUtil.generateToken(stylerEntity.getStylerId(), "STYLER"));
+                response.setData(stylerData);
+                rateLimiterService.clear("auth:" + emailAddress);
+                rateLimiterService.clear("auth_ip:" + ip);
+                recordLoginSuccess("STYLER", stylerEntity.getStylerId(), emailAddress, ip);
+                return response;
+            }
+
+            // 3. Customer
+            Optional<UserEntity> user = userRepo.findByEmailAddress(emailAddress);
+            if(user.isPresent() && "0".equals(user.get().getStatus())
+                    && appUtils.passwordMatches(password, user.get().getPassword())){
+                UserEntity userEntity = user.get();
+                if(userEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
+                    userEntity.setPassword(appUtils.encryptPassword(password));
+                    userRepo.save(userEntity);
+                }
+                Map<String, Object> userData = new LinkedHashMap<>();
+                userData.put("role", "CUSTOMER");
+                userData.put("account", dtoService.userAccountDTO(userEntity));
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage(SUCCESS_MESSAGE);
+                response.setToken(jwtUtil.generateToken(userEntity.getUserId(), "CUSTOMER"));
+                response.setData(userData);
+                rateLimiterService.clear("auth:" + emailAddress);
+                rateLimiterService.clear("auth_ip:" + ip);
+                recordLoginSuccess("CUSTOMER", userEntity.getUserId(), emailAddress, ip);
+                return response;
+            }
+
+            // Failed login — count toward the shared lockout budget.
+            rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
+            rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+            recordLoginFailure(accountType(styler, user), accountId(styler, user), emailAddress, ip, "INVALID_CREDENTIALS");
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Invalid Email Address or Password");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
     }
 
     public BaseResponse userSignIn(SignInData signInData){
+        BaseResponse response = new BaseResponse(true);
         try{
-            //Validate UserSign In
+            //Validate UserSign In — fetch by email, verify in Java (BCrypt with legacy MD5 fallback)
             String emailAddress = signInData.getEmailAddress();
-            String password = appUtils.encryptPassword(signInData.getPassword());
-            Optional<UserEntity> userSignIn = userRepo.userAuthenticate(emailAddress,password);
-            if(userSignIn.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Email Address or Password");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+            String password = signInData.getPassword();
+            String ip = rateLimiterService.clientIp();
+            // Global lockout: failed logins/verifies (email or IP) block sign-in.
+            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("CUSTOMER", null, emailAddress, ip, "LOCKED_OUT");
+                return response;
+            }
+            Optional<UserEntity> userSignIn = userRepo.findByEmailAddress(emailAddress);
+            if(userSignIn.isEmpty()
+                    || !"0".equals(userSignIn.get().getStatus())
+                    || !appUtils.passwordMatches(password, userSignIn.get().getPassword())){
+                rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                recordLoginFailure("CUSTOMER", userSignIn.map(UserEntity::getUserId).orElse(null),
+                        emailAddress, ip, "INVALID_CREDENTIALS");
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Email Address or Password");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             UserEntity userEntity = userSignIn.get();
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(dtoService.userAccountDTO(userEntity));
+            // Upgrade a legacy MD5 hash to BCrypt on first successful login
+            if(userEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
+                userEntity.setPassword(appUtils.encryptPassword(password));
+                userRepo.save(userEntity);
+            }
+            rateLimiterService.clear("auth:" + emailAddress);
+            rateLimiterService.clear("auth_ip:" + ip);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setToken(jwtUtil.generateToken(userEntity.getUserId(), "CUSTOMER"));
+            response.setData(dtoService.userAccountDTO(userEntity));
+            recordLoginSuccess("CUSTOMER", userEntity.getUserId(), emailAddress, ip);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse singleUserData(String userId){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid User Id, Kindly create account");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid User Id, Kindly create account");
+                response.setData(EMPTY_DATA);
+                return response;
             }
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(dtoService.userDataDTO(userId));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(dtoService.userDataDTO(userId));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
-    public BaseResponse updateUserData(UpdateData updateData){
+    public BaseResponse updateUserData(UpdateData updateData, String accountId){
+        BaseResponse response = new BaseResponse(true);
         try{
-            Optional<UserEntity> isUserExist = userRepo.findByEmailAddress(updateData.getEmailAddress());
+            // Ownership: the account being edited is the authenticated token subject, never the request body.
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(accountId);
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Email Address, Kindly create an account");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid User Id, Kindly create an account");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             UserEntity userEntity = isUserExist.get();
             userEntity.setFirstname(updateData.getFirstname().isEmpty() ? userEntity.getFirstname() : updateData.getFirstname());
@@ -248,27 +540,44 @@ public class AppService {
             userEntity.setState(updateData.getState().isEmpty() ?  userEntity.getState() : updateData.getState());
             userRepo.save(userEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Account Updated Successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Account Updated Successful");
+            response.setData(EMPTY_DATA);
 
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse resetPasswordMessage(OTPData otpData){
+        BaseResponse response = new BaseResponse(true);
         try{
             String emailAddress = otpData.getEmailAddress();
             Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(emailAddress);
             if(isEmailExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Email Address, Kindly create an account");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Email Address, Kindly create an account");
+                response.setData(EMPTY_DATA);
+                return response;
             }
+            // Same global budget as signup OTPs: lockouts and caps apply here too.
+            String ip = rateLimiterService.clientIp();
+            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if (rateLimiterService.isBlocked("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS, OTP_GEN_MAX)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many OTP requests. Please try again in a few minutes.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            rateLimiterService.record("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS);
             UserEntity userEntity = isEmailExist.get();
             String firstname = userEntity.getFirstname();
             String otpCode = appUtils.randomDigit(6);
@@ -288,111 +597,115 @@ public class AppService {
                     + "Enter this OTP code to complete the password reset process. If you didn't make this request, you can safely ignore this email."
                     + "<br><br>Thank you,<br>The Rapid Stylers Team";
             emailConfig.sendSimpleMail(emailAddress,emailSubject,emailBody);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Password Reset Initiated, Check Mail for OTP Code");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Password Reset Initiated, Check Mail for OTP Code");
+            response.setData(EMPTY_DATA);
         }
         catch(Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse resetPassword(ForgotPasswordData forgotPasswordData){
+        BaseResponse response = new BaseResponse(true);
         try{
             String password = forgotPasswordData.getPassword();
             String confirmPassword = forgotPasswordData.getConfirmPassword();
             String emailAddress = forgotPasswordData.getEmailAddress();
             if(!password.equals(confirmPassword)){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             String encryptPassword = appUtils.encryptPassword(password);
             Optional<UserEntity> getUserData = userRepo.findByEmailAddress(emailAddress);
             if(getUserData.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Email Address, Kindly create account");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Email Address, Kindly create account");
+                response.setData(EMPTY_DATA);
+                return response;
             }
 
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(encryptPassword);
             userRepo.save(userPrevData);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Password Change Successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Password Change Successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return  baseResponse;
+        return response;
     }
-    public BaseResponse updateUserPassword(ForgotPasswordData forgotPasswordData){
+    public BaseResponse updateUserPassword(ForgotPasswordData forgotPasswordData, String accountId){
+        BaseResponse response = new BaseResponse(true);
         try{
             String oldPassword = forgotPasswordData.getOldPassword();
             String newPassword = forgotPasswordData.getPassword();
             String confirmPassword = forgotPasswordData.getConfirmPassword();
-            String emailAddress = forgotPasswordData.getEmailAddress();
             if(oldPassword.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Old Password cannot be empty");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Old Password cannot be empty");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             if(!newPassword.equals(confirmPassword)){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
+                response.setData(EMPTY_DATA);
+                return response;
             }
-            Optional<UserEntity> getUserData = userRepo.userAuthenticate(emailAddress, appUtils.encryptPassword(oldPassword));
-            if(getUserData.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Old Password");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+            // Ownership: the password being changed belongs to the authenticated token subject.
+            Optional<UserEntity> getUserData = userRepo.findByUserId(accountId);
+            if(getUserData.isEmpty() || !appUtils.passwordMatches(oldPassword, getUserData.get().getPassword())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Old Password");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             newPassword = appUtils.encryptPassword(newPassword);
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(newPassword);
             userRepo.save(userPrevData);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Password Change Successfully");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Password Change Successfully");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse createIdentificationType (IdentificationData identificationData){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<IdentificationEntity> isIdNameExist = identificationRepo.findByIdentificationName(identificationData.getIdentificationName());
             if(isIdNameExist.isPresent()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Identification already exist");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Identification already exist");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             IdentificationEntity identificationEntity = new IdentificationEntity();
             identificationEntity.setIdentificationName(identificationData.getIdentificationName());
             identificationRepo.save(identificationEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(identificationData.getIdentificationName()+ " successfully added to list of identification");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(identificationData.getIdentificationName()+ " successfully added to list of identification");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse listIdentification(){
+        BaseResponse response = new BaseResponse(true);
         try{
             List<IdentificationEntity> getAllIdentification = identificationRepo.findAll();
             List<Object> result = new ArrayList<>();
@@ -404,91 +717,95 @@ public class AppService {
                 idMap.put("dateCreated", identificationEntity.getInsertedDate());
                 result.add(idMap);
             }
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse updateIdentification(IdentificationData identificationData){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Get Identifications
             if(identificationData.getId().isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Identification Id cannot be empty");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Identification Id cannot be empty");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             Optional<IdentificationEntity> isIdentificationExist = identificationRepo.findById(Long.parseLong(identificationData.getId()));
             if(isIdentificationExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("No Identification available for such id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No Identification available for such id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             IdentificationEntity identificationEntity = isIdentificationExist.get();
             identificationEntity.setIdentificationName(identificationData.getIdentificationName());
             identificationRepo.save(identificationEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Identification Updated Successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Identification Updated Successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse deleteIdentification(String id){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<IdentificationEntity> getIdentification = identificationRepo.findById(Long.parseLong(id));
             if(getIdentification.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("No Identification available for such id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No Identification available for such id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             IdentificationEntity identificationEntity = getIdentification.get();
             identificationRepo.delete(identificationEntity);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Identification deleted successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Identification deleted successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse createServiceType (ServiceTypeData serviceTypeData){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<ServiceEntity> isServiceNameExist = serviceRepo.findByServiceName(serviceTypeData.getServiceName());
             if(isServiceNameExist.isPresent()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Service Name already exist");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Service Name already exist");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             ServiceEntity serviceEntity = new ServiceEntity();
-            serviceEntity.setServiceName(serviceTypeData.getServiceName());
+            serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
-            serviceEntity.setDescription(serviceTypeData.getDescription());
+            serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(serviceTypeData.getServiceName()+ " successfully added to list of service");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(serviceTypeData.getServiceName()+ " successfully added to list of service");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse listService(){
+        BaseResponse response = new BaseResponse(true);
         try{
             List<ServiceEntity> getAllService = serviceRepo.findAll();
             List<Object> result = new ArrayList<>();
@@ -502,221 +819,753 @@ public class AppService {
                 serviceMap.put("description", serviceEntity.getDescription());
                 result.add(serviceMap);
             }
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse updateService(ServiceTypeData serviceTypeData){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Get Identifications
             if(serviceTypeData.getId().isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Service Id cannot be empty");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Service Id cannot be empty");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             Optional<ServiceEntity> isServiceExist = serviceRepo.findById(Long.parseLong(serviceTypeData.getId()));
             if(isServiceExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("No Service exist for such id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No Service exist for such id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             ServiceEntity serviceEntity = isServiceExist.get();
-            serviceEntity.setServiceName(serviceTypeData.getServiceName());
+            serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
-            serviceEntity.setDescription(serviceTypeData.getDescription());
+            serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Service Updated Successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Service Updated Successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse deleteService(String id){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<ServiceEntity> getService = serviceRepo.findById(Long.parseLong(id));
             if(getService.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("No Service available for such id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No Service available for such id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             ServiceEntity serviceEntity = getService.get();
             serviceRepo.delete(serviceEntity);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Service deleted successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Service deleted successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
-    public BaseResponse createStyler(StylerData stylerData){
+    public BaseResponse listBlogPosts(){
+        BaseResponse response = new BaseResponse(true);
         try{
-            //Check if email already exit for a styler
-            Optional<StylerEntity> isEmailExist = stylerRepo.isEmailExist(stylerData.getEmailAddress());
-            if(isEmailExist.isPresent()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Email Address already exist, Kindly choose another email");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+            List<BlogPostEntity> allPosts = blogPostRepo.findAll();
+            allPosts.sort(Comparator.comparing(BlogPostEntity::getId).reversed());
+            List<Object> result = new ArrayList<>();
+            for(BlogPostEntity post : allPosts){
+                HashMap<String, String> postMap = new HashMap<>();
+                postMap.put("id", String.valueOf(post.getId()));
+                postMap.put("title", post.getTitle());
+                postMap.put("category", post.getCategory());
+                postMap.put("imageUrl", post.getImageUrl());
+                postMap.put("author", post.getAuthor());
+                postMap.put("dateCreated", post.getInsertedDt());
+                result.add(postMap);
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+    public BaseResponse singleBlogPost(String id){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<BlogPostEntity> post = blogPostRepo.findById(Long.parseLong(id));
+            if(post.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No blog article found for such id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            BlogPostEntity blogPost = post.get();
+            HashMap<String, String> postMap = new HashMap<>();
+            postMap.put("id", String.valueOf(blogPost.getId()));
+            postMap.put("title", blogPost.getTitle());
+            postMap.put("category", blogPost.getCategory());
+            postMap.put("content", blogPost.getContent());
+            postMap.put("imageUrl", blogPost.getImageUrl());
+            postMap.put("author", blogPost.getAuthor());
+            postMap.put("dateCreated", blogPost.getInsertedDt());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(postMap);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+    public BaseResponse createBlogPost(BlogPostData blogPostData){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(blogPostData.getTitle() == null || blogPostData.getTitle().isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Blog title cannot be empty");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            BlogPostEntity post = new BlogPostEntity();
+            post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
+            post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
+            post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
+            post.setImageUrl(blogPostData.getImageUrl());
+            post.setAuthor(blogPostData.getAuthor() == null || blogPostData.getAuthor().isEmpty()
+                    ? "RapidStylers Team" : AppUtils.sanitizeText(blogPostData.getAuthor()));
+            blogPostRepo.save(post);
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Blog article created successfully");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+    public BaseResponse updateBlogPost(BlogPostData blogPostData){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(blogPostData.getId() == null || blogPostData.getId().isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Blog article id cannot be empty");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            Optional<BlogPostEntity> isPostExist = blogPostRepo.findById(Long.parseLong(blogPostData.getId()));
+            if(isPostExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No blog article exist for such id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            BlogPostEntity post = isPostExist.get();
+            post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
+            post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
+            post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
+            post.setImageUrl(blogPostData.getImageUrl());
+            if(blogPostData.getAuthor() != null && !blogPostData.getAuthor().isEmpty()){
+                post.setAuthor(AppUtils.sanitizeText(blogPostData.getAuthor()));
+            }
+            blogPostRepo.save(post);
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Blog article updated successfully");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+    public BaseResponse deleteBlogPost(String id){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<BlogPostEntity> getPost = blogPostRepo.findById(Long.parseLong(id));
+            if(getPost.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No blog article available for such id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            blogPostRepo.delete(getPost.get());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Blog article deleted successfully");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+    /**
+     * Send OTP for stylist registration — checks the STYLER table (not user table).
+     */
+    public BaseResponse stylerGenerateOtp(OTPData otpData){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            // Check email across BOTH tables
+            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(otpData.getEmailAddress());
+            Optional<UserEntity> isUserEmailExist = userRepo.findByEmailAddress(otpData.getEmailAddress());
+            if(isStylerEmailExist.isPresent() || isUserEmailExist.isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Email Address already exists, Kindly choose another email");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Global rate limiting (shared with login/verify failures and the
+            // customer flow): lockouts block further sends, generation is capped.
+            String emailAddress = otpData.getEmailAddress();
+            String ip = rateLimiterService.clientIp();
+            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if (rateLimiterService.isBlocked("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS, OTP_GEN_MAX)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many OTP requests. Please try again in a few minutes.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Rate limit: 1 OTP per minute (purpose-scoped so this actually fires)
+            Optional<OTPEntity> getPreviousOtp = otpRepo.checkSignUpValidityOtp(emailAddress, "STYLER SIGN UP");
+            if(getPreviousOtp.isPresent()){
+                OTPEntity previousOtp = getPreviousOtp.get();
+                String previousTimer = previousOtp.getInsertedDt();
+                LocalDateTime previousTime = LocalDateTime.parse(previousTimer, DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss"));
+                LocalDateTime currentTime = LocalDateTime.now();
+                long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
+                if (minutesDifference < 1) {
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("OTP Code was generated earlier, Kindly wait for another minute to regenerate another one");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+            }
+            rateLimiterService.record("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS);
+            String otpCode = appUtils.randomDigit(6);
+            OTPEntity otpEntity = new OTPEntity();
+            otpEntity.setEmailAddress(emailAddress);
+            otpEntity.setPurpose("STYLER SIGN UP");
+            otpEntity.setCode(otpCode);
+            otpRepo.save(otpEntity);
+
+            // Send email
+            String emailSubject = "RapidStylers! Stylist Email Verification";
+            String emailBody = "Dear Stylist,<br><br>"
+                    + "Thank you for registering with RapidStylers!"
+                    + "<br>To verify your email, please use the following OTP code:<br><br>"
+                    + "OTP Code: <strong>" + otpCode  + "</strong><br><br>"
+                    + "Please enter this OTP code to complete your registration.<br><br>"
+                    + "Thank you,<br>The Rapid Stylers Team";
+            emailConfig.sendSimpleMail(otpData.getEmailAddress(), emailSubject, emailBody);
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * Verify stylist OTP — same logic as user OTP but with STYLER SIGN UP purpose.
+     */
+    public BaseResponse stylerVerifyOtp(String otpCode){
+        BaseResponse response = new BaseResponse(true);
+        String ip = rateLimiterService.clientIp();
+        try{
+            // Per-IP brute-force cap — applies to every attempt, valid or not.
+            if (rateLimiterService.isBlocked("otp_verify:" + ip, OTP_VERIFY_WINDOW_SECONDS, OTP_VERIFY_MAX)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many verification attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            rateLimiterService.record("otp_verify:" + ip, OTP_VERIFY_WINDOW_SECONDS);
+            Optional<OTPEntity> isOTPExist = otpRepo.checkUserCode(otpCode);
+            if(isOTPExist.isEmpty()){
+                // Email is unknown for a bad code — count failures against the IP.
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid OTP Code");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            OTPEntity otpData = isOTPExist.get();
+            String emailAddress = otpData.getEmailAddress();
+            // Lockout: failed logins/verifies for this email block verification too.
+            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            String previousOtpTime = otpData.getInsertedDt();
+            String otpPurpose = otpData.getPurpose();
+            LocalDateTime previousTime = LocalDateTime.parse(previousOtpTime, DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss"));
+            LocalDateTime currentTime = LocalDateTime.now();
+            long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
+            if (minutesDifference > 10) {
+                // Auto-regenerate
+                OTPData newOtpData = new OTPData();
+                newOtpData.setEmailAddress(emailAddress);
+                if(otpPurpose.equals("STYLER SIGN UP")){
+                    this.stylerGenerateOtp(newOtpData);
+                }
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("OTP Code has expired, Kindly check mail for another OTP Code");
+                response.setData(EMPTY_DATA);
+            } else {
+                HashMap<String, String> otpValue = new HashMap<>();
+                otpValue.put("emailAddress", emailAddress);
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("Email Address Verified Successfully");
+                response.setData(otpValue);
+                // Successful verification clears the failure budget for this email/IP.
+                rateLimiterService.clear("auth:" + emailAddress);
+                rateLimiterService.clear("auth_ip:" + ip);
+            }
+            otpData.setIsUsed("0");
+            otpRepo.save(otpData);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    public BaseResponse createStyler(StylerData stylerData){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            //Check email across BOTH tables
+            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(stylerData.getEmailAddress());
+            Optional<UserEntity> isUserEmailExist = userRepo.findByEmailAddress(stylerData.getEmailAddress());
+            if(isStylerEmailExist.isPresent() || isUserEmailExist.isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Email Address already exists, Kindly choose another email");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Locked-out email (failed logins/verifies) cannot create an account.
+            if (rateLimiterService.isBlocked("auth:" + stylerData.getEmailAddress(), AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + rateLimiterService.clientIp(), AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Enforce email verification: a STYLER SIGN UP OTP must have been verified.
+            Optional<OTPEntity> verifiedOtp = otpRepo.verifyOtpSuccessForPurpose(stylerData.getEmailAddress(), "STYLER SIGN UP");
+            if(verifiedOtp.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Email Address is yet to be verified");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            //Check phone number across both tables
+            Optional<StylerEntity> isStylerPhoneExist = stylerRepo.findByPhoneNumber(stylerData.getPhoneNumber());
+            Optional<UserEntity> isUserPhoneExist = userRepo.findByPhoneNumber(stylerData.getPhoneNumber());
+            if(isStylerPhoneExist.isPresent() || isUserPhoneExist.isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Phone number already registered");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             //Check if identificationId and ServiceId exist
             Optional<IdentificationEntity> isIdentificationExist = identificationRepo.findById(Long.parseLong(stylerData.getIdentificationTypeId()));
             if(isIdentificationExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Identification Type, Contact Admin");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Identification Type, Contact Admin");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             Optional<ServiceEntity> isServiceTypeExist = serviceRepo.findById(Long.parseLong(stylerData.getServiceTypeId()));
             if(isServiceTypeExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Service Type, Contact Admin");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Service Type, Contact Admin");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             StylerEntity stylerEntity = new StylerEntity(stylerData);
+
+            // Geocode address → lat/lng if not already provided
+            if(stylerEntity.getLatitude() == null || stylerEntity.getLongitude() == null){
+                String addressToGeocode = buildAddress(stylerData);
+                java.util.Map<String, Object> geo = geocodingService.geocode(addressToGeocode);
+                if(geo != null){
+                    stylerEntity.setLatitude((Double) geo.get("latitude"));
+                    stylerEntity.setLongitude((Double) geo.get("longitude"));
+                    if(stylerEntity.getCity() == null || stylerEntity.getCity().isEmpty()){
+                        stylerEntity.setCity((String) geo.getOrDefault("city", ""));
+                    }
+                }
+            }
+
             stylerRepo.save(stylerEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Stylers Account Created Successful");
-            baseResponse.setData(EMPTY_DATA);
+            // Index in Redis geospatial cache for fast radius search
+            if(stylerEntity.getLatitude() != null && stylerEntity.getLongitude() != null){
+                locationCacheService.indexStyler(stylerEntity.getStylerId(), stylerEntity.getLongitude(), stylerEntity.getLatitude());
+            }
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Stylers Account Created Successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse stylerLogin(SignInData signInData){
+        BaseResponse response = new BaseResponse(true);
         try{
             String emailAddress = signInData.getEmailAddress();
-            String password = appUtils.encryptPassword(signInData.getPassword());
-            Optional<StylerEntity> stylerSignIn = stylerRepo.stylerAuthenticate(emailAddress,password);
-            if(stylerSignIn.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Email Address or Password");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+            String password = signInData.getPassword();
+            String ip = rateLimiterService.clientIp();
+            // Global lockout: failed logins/verifies (email or IP) block sign-in.
+            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("STYLER", null, emailAddress, ip, "LOCKED_OUT");
+                return response;
+            }
+            Optional<StylerEntity> stylerSignIn = stylerRepo.findByEmailAddress(emailAddress);
+            if(stylerSignIn.isEmpty()
+                    || !appUtils.passwordMatches(password, stylerSignIn.get().getPassword())){
+                rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                recordLoginFailure("STYLER", stylerSignIn.map(StylerEntity::getStylerId).orElse(null),
+                        emailAddress, ip, "INVALID_CREDENTIALS");
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Email Address or Password");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             StylerEntity stylerEntity = stylerSignIn.get();
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(dtoService.stylerAccountDTO(stylerEntity));
+            // Verification gate — rejected/suspended professionals cannot sign in.
+            if(VERIFICATION_REJECTED.equals(stylerEntity.getVerificationStatus())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Your professional account was not approved. Please contact support.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("STYLER", stylerEntity.getStylerId(), emailAddress, ip, "ACCOUNT_REJECTED");
+                return response;
+            }
+            if(VERIFICATION_SUSPENDED.equals(stylerEntity.getVerificationStatus())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Your professional account is suspended. Please contact support.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("STYLER", stylerEntity.getStylerId(), emailAddress, ip, "ACCOUNT_SUSPENDED");
+                return response;
+            }
+            // Upgrade a legacy MD5 hash to BCrypt on first successful login
+            if(stylerEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
+                stylerEntity.setPassword(appUtils.encryptPassword(password));
+                stylerRepo.save(stylerEntity);
+            }
+            stylerEntity.setIsOnline("0");
+            stylerRepo.save(stylerEntity);
+            rateLimiterService.clear("auth:" + emailAddress);
+            rateLimiterService.clear("auth_ip:" + ip);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setToken(jwtUtil.generateToken(stylerEntity.getStylerId(), "STYLER"));
+            response.setData(dtoService.stylerAccountDTO(stylerEntity));
+            recordLoginSuccess("STYLER", stylerEntity.getStylerId(), emailAddress, ip);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
     public BaseResponse stylerLogOut(String stylerId){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<StylerEntity> getStylerData = stylerRepo.findByStylerId(stylerId);
             if(getStylerData.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Styler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             StylerEntity stylerEntity = getStylerData.get();
             stylerEntity.setIsOnline("1");
             stylerRepo.save(stylerEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Styler is currently offline");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Styler is currently offline");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
+    // ── Professional verification workflow (admin) ─────────────────────
+
+    private boolean isApprovedStyler(StylerEntity styler){
+        return VERIFICATION_APPROVED.equals(styler.getVerificationStatus());
+    }
+
+    private String stylerServiceName(String serviceTypeId){
+        if(serviceTypeId == null || serviceTypeId.isEmpty()) return "";
+        try{
+            Optional<ServiceEntity> svc = serviceRepo.findById(Long.valueOf(serviceTypeId));
+            return svc.map(ServiceEntity::getServiceName).orElse("");
+        }
+        catch (NumberFormatException e){
+            return "";
+        }
+    }
+
+    public BaseResponse getStylerVerificationQueue(){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            List<StylerEntity> allStylers = stylerRepo.findAll();
+            List<Object> result = new ArrayList<>();
+            for(StylerEntity styler : allStylers){
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("stylerId", styler.getStylerId());
+                entry.put("firstname", styler.getFirstname());
+                entry.put("lastname", styler.getLastname());
+                entry.put("emailAddress", styler.getEmailAddress());
+                entry.put("phoneNumber", styler.getPhoneNumber());
+                entry.put("businessName", styler.getBusinessName());
+                entry.put("serviceTypeId", styler.getServiceTypeId());
+                entry.put("serviceTypeName", stylerServiceName(styler.getServiceTypeId()));
+                entry.put("city", styler.getCity());
+                entry.put("province", styler.getProvince());
+                entry.put("identificationId", styler.getIdentificationId());
+                entry.put("identificationImageUrl", styler.getIdentificationImageUrl());
+                entry.put("profileImageUrl", styler.getProfileImageUrl());
+                entry.put("verificationStatus", styler.getVerificationStatus());
+                entry.put("dateRegistered", styler.getInsertedDt());
+                result.add(entry);
+            }
+            Collections.reverse(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    public BaseResponse updateStylerVerification(VerificationActionData verificationActionData){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            String stylerId = verificationActionData.getStylerId();
+            String action = verificationActionData.getAction() == null ? "" : verificationActionData.getAction().trim().toUpperCase();
+            // Accept both the verb (APPROVE) and the state (APPROVED) forms.
+            if(VERIFICATION_APPROVED.equals(action) || "APPROVE".equals(action)){
+                action = VERIFICATION_APPROVED;
+            } else if(VERIFICATION_REJECTED.equals(action) || "REJECT".equals(action)){
+                action = VERIFICATION_REJECTED;
+            } else if(VERIFICATION_SUSPENDED.equals(action) || "SUSPEND".equals(action)){
+                action = VERIFICATION_SUSPENDED;
+            } else {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid verification action. Use APPROVE, REJECT or SUSPEND");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            if(stylerOpt.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            String pastTense = action.equals(VERIFICATION_APPROVED) ? "approved" : action.equals(VERIFICATION_REJECTED) ? "rejected" : "suspended";
+            StylerEntity styler = stylerOpt.get();
+            String previousStatus = styler.getVerificationStatus();
+            styler.setVerificationStatus(action);
+            stylerRepo.save(styler);
+            if(!Objects.equals(previousStatus, action)){
+                notifySavedCustomers(stylerId, "VERIFICATION", "Professional verification updated",
+                        "The verification status for " + (styler.getBusinessName() == null ? "your saved professional" : styler.getBusinessName())
+                                + " is now " + action.toLowerCase(Locale.ROOT) + ".");
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Styler " + pastTense + " successfully");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
     public BaseResponse listAllStylers(){
+        BaseResponse response = new BaseResponse(true);
         try{
             List<StylerEntity> getAllStylers = stylerRepo.findAll();
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getAllStylers){
-                result.add(dtoService.stylerAccountDTO(stylerEntity));
+                if(isApprovedStyler(stylerEntity)){
+                    result.add(dtoService.stylerAccountDTO(stylerEntity));
+                }
             }
             Collections.reverse(result);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse searchStyler(String businessName){
+        BaseResponse response = new BaseResponse(true);
         try{
             List<StylerEntity> getStylerByName = stylerRepo.searchStyler(businessName);
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerByName){
-                result.add(dtoService.stylerAccountDTO(stylerEntity));
+                if(isApprovedStyler(stylerEntity)){
+                    result.add(dtoService.stylerAccountDTO(stylerEntity));
+                }
             }
             Collections.reverse(result);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    public BaseResponse searchStylerByProvince(String province){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            List<StylerEntity> getStylerByProvince = stylerRepo.findByProvinceIgnoreCase(province);
+            List<Object> result = new ArrayList<>();
+            for(StylerEntity stylerEntity : getStylerByProvince){
+                if(isApprovedStyler(stylerEntity)){
+                    result.add(dtoService.stylerAccountDTO(stylerEntity));
+                }
+            }
+            Collections.reverse(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
     }
 
     public BaseResponse createSubService(SubServiceData subServiceData){
+        BaseResponse response = new BaseResponse(true);
         try{
            //Check if styler account
            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(subServiceData.getStylerId()) ;
            if(isStylerExist.isEmpty()){
-               baseResponse.setStatusCode(ERROR_STATUS_CODE);
-               baseResponse.setMessage("Invalid STyler Id");
-               baseResponse.setData(EMPTY_DATA);
-               return baseResponse;
+               response.setStatusCode(ERROR_STATUS_CODE);
+               response.setMessage("Invalid STyler Id");
+               response.setData(EMPTY_DATA);
+               return response;
            }
            //CHeck if sub service around exist with styler
             Optional<SubServiceEntity> isSubServiceExist = subServiceRepo.isServiceExist(subServiceData.getStylerId(), subServiceData.getName());
            if(isSubServiceExist.isPresent()){
-               baseResponse.setStatusCode(ERROR_STATUS_CODE);
-               baseResponse.setMessage("Sub Service name already exit for styler");
-               baseResponse.setData(EMPTY_DATA);
-               return baseResponse;
+               response.setStatusCode(ERROR_STATUS_CODE);
+               response.setMessage("Sub Service name already exit for styler");
+               response.setData(EMPTY_DATA);
+               return response;
+           }
+           int durationMinutes = subServiceData.getDurationMinutes();
+           if(durationMinutes % SLOT_GRANULARITY_MINUTES != 0){
+               return errorResponse(response, "Duration must be in 15-minute increments");
            }
            SubServiceEntity subServiceEntity = new SubServiceEntity(subServiceData);
            subServiceRepo.save(subServiceEntity);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Sub Service created successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Sub Service created successful");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    /** Updates a service owned by the authenticated stylist and notifies saved customers when its price changes. */
+    public BaseResponse updateSubService(String stylerId, ServiceUpdateData data){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<SubServiceEntity> existing = subServiceRepo.isServiceExistById(stylerId, data.getId());
+            if(existing.isEmpty()) return errorResponse(response, "Service not found");
+            int duration = data.getDurationMinutes() == null ? DEFAULT_SERVICE_DURATION_MINUTES : data.getDurationMinutes();
+            if(duration < MIN_SERVICE_DURATION_MINUTES || duration > MAX_SERVICE_DURATION_MINUTES || duration % SLOT_GRANULARITY_MINUTES != 0){
+                return errorResponse(response, "Duration must be in 15-minute increments between 15 and 480 minutes");
+            }
+            SubServiceEntity service = existing.get();
+            String previousPrice = service.getPrice();
+            service.setName(AppUtils.sanitizeText(data.getName().trim()));
+            service.setPrice(appUtils.currencyFormat(data.getPrice()));
+            service.setDurationMinutes(duration);
+            subServiceRepo.save(service);
+            if(!Objects.equals(previousPrice, service.getPrice())){
+                notifySavedCustomers(stylerId, "PRICE", "Saved professional price changed",
+                        "The price for " + service.getName() + " is now $" + service.getPrice() + ".");
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Service updated successfully");
+            response.setData(dtoService.subServiceDTO(service));
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    public BaseResponse listOwnStylerSubService(String stylerId){
+        return listStylerSubService(stylerId);
     }
 
     public BaseResponse listStylerSubService(String stylerId){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Check if styler account exist
             Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
             if(isStylerExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Styler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             List<SubServiceEntity> getStylerSubService = subServiceRepo.findByStylerId(stylerId);
             List<Object> result = new ArrayList<>();
@@ -724,55 +1573,106 @@ public class AppService {
                 result.add(dtoService.subServiceDTO(subServiceEntity));
             }
             Collections.reverse(result);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse createStylerPortfolio(StylerPortfolioData stylerPortfolioData){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Check if styler account
             Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerPortfolioData.getStylerId()) ;
             if(isStylerExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid STyler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid STyler Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
-            //CHeck if sub service around exist with styler
-            Optional<StylerPortfolioEntity> isPortfolioExist = stylerPortfolioRepo.isPortfolioExist(stylerPortfolioData.getStylerId(), stylerPortfolioData.getName());
-            if(isPortfolioExist.isPresent()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Portfolio already exit for styler");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+            // Category must be a gallery category (normalized to lowercase).
+            String category = stylerPortfolioData.getCategory() == null ? "" : stylerPortfolioData.getCategory().trim().toLowerCase();
+            if(!GALLERY_CATEGORIES.contains(category)){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid category. Choose one of: " + String.join(", ", GALLERY_CATEGORIES));
+                response.setData(EMPTY_DATA);
+                return response;
             }
+            // Skip exact duplicate uploads (same image URL).
+            List<StylerPortfolioEntity> existing = stylerPortfolioRepo.findByStylerId(stylerPortfolioData.getStylerId());
+            for(StylerPortfolioEntity item : existing){
+                if(item.getImageUrl() != null && item.getImageUrl().equals(stylerPortfolioData.getImageUrl())){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("This image is already in your portfolio");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+            }
+            // Cap portfolio size so the gallery can grow organically without flooding.
+            if(existing.size() >= MAX_STYLER_PORTFOLIO_IMAGES){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Portfolio limit reached (max " + MAX_STYLER_PORTFOLIO_IMAGES + " images)");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Name is optional — default to the category name.
+            String name = stylerPortfolioData.getName() == null || stylerPortfolioData.getName().isBlank()
+                    ? category : stylerPortfolioData.getName().trim();
+            stylerPortfolioData.setName(name);
+            stylerPortfolioData.setCategory(category);
             StylerPortfolioEntity stylerPortfolioEntity = new StylerPortfolioEntity(stylerPortfolioData);
             stylerPortfolioRepo.save(stylerPortfolioEntity);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Portfolio created successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Work added to your portfolio");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    /** Portfolio of the authenticated stylist (identity from the token). */
+    public BaseResponse listOwnStylerPortfolio(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            List<StylerPortfolioEntity> portfolio = stylerPortfolioRepo.findByStylerId(stylerId);
+            Collections.reverse(portfolio);
+            List<Object> result = new ArrayList<>();
+            for(StylerPortfolioEntity entity : portfolio){
+                result.add(dtoService.stylerPortfolioDTO(entity));
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
     }
 
     public BaseResponse listStylerPortfolio(String stylerId){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Check if styler account exist
             Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
             if(isStylerExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Styler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             List<StylerPortfolioEntity> getStylerPortfolio = stylerPortfolioRepo.findByStylerId(stylerId);
             List<Object> result = new ArrayList<>();
@@ -780,33 +1680,279 @@ public class AppService {
                 result.add(dtoService.stylerPortfolioDTO(stylerPortfolioEntity));
             }
             Collections.reverse(result);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
+    /**
+     * Every portfolio image across all stylists, for the admin moderation view,
+     * decorated with the owning stylist's identity.
+     */
+    public BaseResponse listAllPortfolios(){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            List<StylerPortfolioEntity> portfolios = stylerPortfolioRepo.findAll();
+            List<Object> result = new ArrayList<>();
+            for(StylerPortfolioEntity item : portfolios){
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("id", item.getId());
+                entry.put("stylerId", item.getStylerId());
+                entry.put("imageUrl", item.getImageUrl());
+                entry.put("name", item.getName());
+                entry.put("category", item.getCategory());
+                entry.put("createdAt", item.getCreatedAt());
+                Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(item.getStylerId());
+                if(stylerOpt.isPresent()){
+                    StylerEntity styler = stylerOpt.get();
+                    entry.put("businessName", styler.getBusinessName());
+                    entry.put("firstname", styler.getFirstname());
+                    entry.put("lastname", styler.getLastname());
+                    entry.put("emailAddress", styler.getEmailAddress());
+                    entry.put("verificationStatus", styler.getVerificationStatus());
+                }
+                result.add(entry);
+            }
+            Collections.reverse(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * Admin deletes a stylist's gallery image and emails the stylist so they
+     * know their work was removed and why.
+     */
+    public BaseResponse adminDeletePortfolioImage(Long portfolioId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerPortfolioEntity> itemOpt = stylerPortfolioRepo.findById(portfolioId);
+            if(itemOpt.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid portfolio image");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            StylerPortfolioEntity item = itemOpt.get();
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(item.getStylerId());
+            String stylerEmail = null;
+            String stylerName = "Stylist";
+            if(stylerOpt.isPresent()){
+                stylerEmail = stylerOpt.get().getEmailAddress();
+                stylerName = (stylerOpt.get().getFirstname() + " " + stylerOpt.get().getLastname()).trim();
+            }
+            String category = item.getCategory() == null ? "" : item.getCategory();
+            stylerPortfolioRepo.delete(item);
+            // Notify the stylist their work was removed (best effort — never fail the delete on mail).
+            if(stylerEmail != null && !stylerEmail.isBlank()){
+                try{
+                    String subject = "Your " + category + " photo was removed from the gallery";
+                    String body = "Dear " + stylerName + ",<br><br>"
+                            + "One of your portfolio photos" + (category.isBlank() ? "" : " (category: " + category + ")")
+                            + " has been removed from the RapidStylers gallery by our moderation team."
+                            + "<br><br>If you believe this was done in error, please reach out to support."
+                            + "<br><br>Thank you,<br>The RapidStylers Team";
+                    emailConfig.sendSimpleMail(stylerEmail, subject, body);
+                } catch (Exception mailEx){
+                    LOG.warning("Portfolio delete mail failed: " + mailEx.getMessage());
+                }
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Image removed from the gallery and the stylist has been notified");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * Emails both parties about an appointment event with role-appropriate
+     * wording. Uses the appointment's stored user/styler ids to look up
+     * current addresses and names.
+     */
+    private void sendAppointmentNotification(BookAppointmentEntity appointment, String eventLabel,
+                                             String customerHeadline, String customerDetail,
+                                             String stylerHeadline, String stylerDetail){
+        try{
+            if(outboxEventService != null){
+                outboxEventService.appointmentNotification(appointment, eventLabel, customerHeadline,
+                        customerDetail, stylerHeadline, stylerDetail);
+                return;
+            }
+            String serviceName = "Service";
+            if(appointment.getSubServiceId() != null && !appointment.getSubServiceId().isEmpty()){
+                try{
+                    Optional<SubServiceEntity> sub = subServiceRepo.isServiceExistById(appointment.getStylerId(), Long.parseLong(appointment.getSubServiceId()));
+                    if(sub.isPresent() && sub.get().getName() != null){
+                        serviceName = sub.get().getName();
+                    }
+                } catch (Exception ignored){}
+            }
+            String when = (appointment.getAppointmentDate() == null ? "" : appointment.getAppointmentDate())
+                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank() ? "" : " at " + appointment.getArrivalTime());
+            String price = appointment.getPrice() == null ? "" : appointment.getPrice();
+            String servicePrice = appointment.getServicePrice() == null ? price : appointment.getServicePrice();
+            String travelFee = appointment.getTravelFee() == null ? "0.00" : appointment.getTravelFee();
+
+            String customerName = "there";
+            Optional<UserEntity> userOpt = userRepo.findByUserId(appointment.getUserId());
+            if(userOpt.isPresent()){
+                customerName = (userOpt.get().getFirstname() + " " + userOpt.get().getLastname()).trim();
+                if(customerName.isBlank()) customerName = "there";
+            }
+            String stylistName = "Stylist";
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
+            if(stylerOpt.isPresent()){
+                stylistName = (stylerOpt.get().getFirstname() + " " + stylerOpt.get().getLastname()).trim();
+                if(stylistName.isBlank()) stylistName = stylerOpt.get().getBusinessName();
+            }
+
+            String subject = "RapidStylers — Appointment " + eventLabel;
+            String details = "<p>Service: " + serviceName + "<br>"
+                    + "Date: " + when + "<br>"
+                    + "Service price: $" + (servicePrice.isBlank() ? "—" : servicePrice) + "<br>"
+                    + "Travel fee: $" + travelFee + "<br>"
+                    + "Total: $" + (price.isBlank() ? "—" : price) + "<br>"
+                    + "Appointment ref: " + appointment.getAppointmentId() + "</p>"
+                    + "<p>Thank you,<br>The RapidStylers Team</p>";
+
+            String customerEmail = userOpt.map(UserEntity::getEmailAddress).orElse(null);
+            if(customerEmail != null && !customerEmail.isBlank()){
+                String body = "<p>Dear " + customerName + ",</p><p><strong>" + customerHeadline + "</strong></p>"
+                        + "<p>" + customerDetail + "</p>" + details;
+                emailConfig.sendSimpleMail(customerEmail, subject, body);
+            }
+            String stylerEmail = stylerOpt.map(StylerEntity::getEmailAddress).orElse(null);
+            if(stylerEmail != null && !stylerEmail.isBlank()){
+                String body = "<p>Dear " + stylistName + ",</p><p><strong>" + stylerHeadline + "</strong></p>"
+                        + "<p>" + stylerDetail + "</p>" + details;
+                emailConfig.sendSimpleMail(stylerEmail, subject, body);
+            }
+        }
+        catch (Exception ex){
+            LOG.warning("Appointment notification mail failed: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Sends payment receipts to the customer and stylist when a PaymentIntent
+     * is captured. Goes through the outbox (Kafka -> NotificationEventConsumer)
+     * when available, falling back to a direct email for tests.
+     */
+    private void sendPaymentReceipt(BookAppointmentEntity appointment){
+        try{
+            if(outboxEventService != null){
+                outboxEventService.paymentSucceeded(appointment);
+                return;
+            }
+            String serviceName = "Service";
+            if(appointment.getSubServiceId() != null && !appointment.getSubServiceId().isEmpty()){
+                try{
+                    Optional<SubServiceEntity> sub = subServiceRepo.isServiceExistById(appointment.getStylerId(), Long.parseLong(appointment.getSubServiceId()));
+                    if(sub.isPresent() && sub.get().getName() != null){
+                        serviceName = sub.get().getName();
+                    }
+                } catch (Exception ignored){}
+            }
+            String when = (appointment.getAppointmentDate() == null ? "" : appointment.getAppointmentDate())
+                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank() ? "" : " at " + appointment.getArrivalTime());
+            String paid = appointment.getPaymentAmount() == null
+                    ? (appointment.getPrice() == null ? "—" : appointment.getPrice()) : appointment.getPaymentAmount();
+            String details = "<p>Service: " + serviceName + "<br>"
+                    + "Date: " + when + "<br>"
+                    + "Total paid: $" + paid + "<br>"
+                    + "Appointment ref: " + appointment.getAppointmentId() + "</p>"
+                    + "<p>Thank you,<br>The RapidStylers Team</p>";
+            String subject = "RapidStylers — Payment receipt";
+
+            Optional<UserEntity> userOpt = userRepo.findByUserId(appointment.getUserId());
+            String customerEmail = userOpt.map(UserEntity::getEmailAddress).orElse(null);
+            if(customerEmail != null && !customerEmail.isBlank()){
+                String name = userOpt.map(u -> (u.getFirstname() + " " + u.getLastname()).trim()).orElse("there");
+                emailConfig.sendSimpleMail(customerEmail, subject,
+                        "<p>Dear " + (name.isBlank() ? "there" : name) + ",</p>"
+                                + "<p><strong>Payment received</strong> — thank you for your business.</p>" + details);
+            }
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
+            String stylerEmail = stylerOpt.map(StylerEntity::getEmailAddress).orElse(null);
+            if(stylerEmail != null && !stylerEmail.isBlank()){
+                String name = stylerOpt.map(s -> (s.getFirstname() + " " + s.getLastname()).trim()).orElse("Stylist");
+                if(name.isBlank()) name = stylerOpt.map(StylerEntity::getBusinessName).orElse("Stylist");
+                emailConfig.sendSimpleMail(stylerEmail, subject,
+                        "<p>Dear " + name + ",</p>"
+                                + "<p><strong>Payment received</strong> — the client's payment has been received.</p>" + details);
+            }
+        }
+        catch (Exception ex){
+            LOG.warning("Payment receipt mail failed: " + ex.getMessage());
+        }
+    }
+
+    @Transactional
     public BaseResponse createStylerReview(ReviewData reviewData){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Check if user account exist
             Optional<UserEntity> isUserExist= userRepo.findByUserId(reviewData.getUserId()) ;
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid User Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid User Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             //Check if styler account exist
             Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(reviewData.getStylerId()) ;
             if(isStylerExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Styler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Reviews are only valid for a COMPLETED booking with this stylist,
+            // and the booking must belong to the authenticated customer.
+            Optional<BookAppointmentEntity> bookingOpt = bookAppointmentRepo.findByAppointmentId(reviewData.getBookingId());
+            if(bookingOpt.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid booking reference");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            BookAppointmentEntity booking = bookingOpt.get();
+            if(!booking.getUserId().equals(reviewData.getUserId())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("You can only review your own bookings");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if(!booking.getStylerId().equals(reviewData.getStylerId())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This booking is not with this stylist");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if(!"0".equals(booking.getStatus())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("You can only review a completed appointment");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if(reviewRepo.findByBookingId(reviewData.getBookingId()).isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("You have already reviewed this booking");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             //Get User data
             UserEntity userEntity = isUserExist.get();
@@ -814,57 +1960,407 @@ public class AppService {
             ReviewEntity reviewEntity = new ReviewEntity();
             reviewEntity.setStylerId(reviewData.getStylerId());
             reviewEntity.setUserId(reviewData.getUserId());
+            reviewEntity.setBookingId(reviewData.getBookingId());
             reviewEntity.setUserName(userName);
-            reviewEntity.setRatingScore(Integer.parseInt(reviewData.getRatingScore()));
-            reviewEntity.setMessage(reviewData.getReviewMessage());
+            int rating = Integer.parseInt(reviewData.getRatingScore());
+            if(rating < 1 || rating > 5){
+                return errorResponse(response, "Rating Score must be between 1 and 5");
+            }
+            reviewEntity.setMessage(AppUtils.sanitizeText(reviewData.getReviewMessage()));
+            reviewEntity.setModerationStatus("PENDING");
+            reviewEntity.setRatingScore(rating);
             reviewRepo.save(reviewEntity);
+            audit("" + reviewData.getUserId(), "CUSTOMER", "CREATE_REVIEW", "REVIEW", reviewData.getBookingId(), "Review submitted");
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Rating Submitted Successful");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Rating Submitted Successful");
+            response.setData(EMPTY_DATA);
+        }
+        catch (DataIntegrityViolationException ex){
+            throw ex;
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    public BaseResponse getReviewModerationQueue(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(reviewRepo.findByModerationStatusOrderByCreatedAtDesc("PENDING"));
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse updateReviewModeration(Long reviewId, String action, String adminId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(reviewId == null){
+                return errorResponse(response, "Review id is required");
+            }
+            Optional<ReviewEntity> review = reviewRepo.findById(reviewId);
+            String status = action == null ? "" : action.trim().toUpperCase(Locale.ROOT);
+            if(review.isEmpty() || !Arrays.asList("APPROVED", "REJECTED").contains(status)) return errorResponse(response, "Invalid review or moderation action");
+            review.get().setModerationStatus(status);
+            reviewRepo.save(review.get());
+            audit(adminId, "ADMIN", "MODERATE_REVIEW", "REVIEW", String.valueOf(reviewId), status);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Review moderation updated");
+            response.setData(EMPTY_DATA);
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
     }
 
     public BaseResponse listStylerReviews(String stylerId){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Check if styler account exist
             Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
             if(isStylerExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Styler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             //Get Reviews
-            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerId(stylerId);
+            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerIdAndModerationStatus(stylerId, "APPROVED");
             List<Object> result = new ArrayList<>();
             for(ReviewEntity reviewEntity : getStylerReviews){
                 result.add(dtoService.stylerReviewDTO(reviewEntity));
             }
             Collections.reverse(result);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    /** True when no active booking overlaps the requested service duration. */
+    private boolean isWindowFree(String stylerId, String appointmentDate, String arrivalTime, int requestedDurationMinutes){
+        final LocalDate requestedDate;
+        final LocalTime proposed;
+        try {
+            requestedDate = parseBookingDate(appointmentDate);
+            proposed = parseBookingTime(arrivalTime);
+        } catch (DateTimeParseException ex) {
+            return false; // fail closed for service-layer callers that bypass DTO validation
+        }
+
+        // Canonical rows are the source of truth. The legacy query keeps old
+        // rows visible until their temporal columns are backfilled.
+        List<BookAppointmentEntity> dayBookings = new ArrayList<>();
+        List<BookAppointmentEntity> canonical = bookAppointmentRepo.findByStylerIdAndAppointmentDateValue(stylerId, requestedDate);
+        List<BookAppointmentEntity> legacy = bookAppointmentRepo.findByStylerIdAndAppointmentDate(stylerId, appointmentDate);
+        if(canonical != null) dayBookings.addAll(canonical);
+        if(legacy != null){
+            for(BookAppointmentEntity booking : legacy){
+                if(dayBookings.stream().noneMatch(existing -> Objects.equals(existing.getId(), booking.getId()))){
+                    dayBookings.add(booking);
+                }
+            }
+        }
+        if(dayBookings.isEmpty()) return true;
+        for(BookAppointmentEntity booking : dayBookings){
+            String status = booking.getStatus();
+            // Cancelled (4) and rejected (2) free the slot; pending/accepted/completed block it.
+            if("2".equals(status) || "4".equals(status)) continue;
+            LocalTime start = booking.getAppointmentStartTime();
+            if(start == null){
+                try {
+                    start = parseBookingTime(booking.getArrivalTime());
+                } catch (DateTimeParseException ex) {
+                    return false; // an active malformed legacy row must never be bypassed
+                }
+            }
+            int bookingDuration = booking.getDurationMinutes() == null
+                    ? DEFAULT_SERVICE_DURATION_MINUTES : booking.getDurationMinutes();
+            LocalTime end = start.plusMinutes(bookingDuration);
+            if(proposed.isBefore(end) && proposed.plusMinutes(requestedDurationMinutes).isAfter(start)){
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** True when the complete requested service fits inside weekly hours. */
+    private boolean timeWithinAvailability(String stylerId, String appointmentDate, String arrivalTime, int requestedDurationMinutes){
+        List<AvailabilityEntity> rows = availabilityRepo.findByStylerId(stylerId);
+        if(rows == null || rows.isEmpty()){
+            return true; // no hours set — the stylist confirms each request manually
+        }
+        try{
+            int jsWeekday = LocalDate.parse(appointmentDate).getDayOfWeek().getValue() % 7; // 0 = Sunday
+            String targetDay = String.valueOf(jsWeekday);
+            LocalTime requested = parseBookingTime(arrivalTime);
+            for(AvailabilityEntity row : rows){
+                if(targetDay.equals(row.getDayOfWeek())){
+                    LocalTime start = parseAvailabilityTime(row.getStartTime());
+                    LocalTime end = parseAvailabilityTime(row.getEndTime());
+                    if(!start.isBefore(end)) return false;
+                    if(!requested.isBefore(start) && requested.plusMinutes(requestedDurationMinutes).compareTo(end) <= 0){
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        catch (DateTimeParseException ex){
+            return false; // fail closed: malformed date/time or hours can never bypass availability
+        }
+    }
+
+    private LocalDate parseBookingDate(String value){
+        return LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE);
+    }
+
+    /**
+     * Canonical booking/search times are 24-hour HH:mm (aligned with the
+     * availability API). The 12-hour h:mm a fallback only tolerates legacy
+     * rows written before the format alignment so they never hard-block
+     * availability/conflict checks.
+     */
+    private LocalTime parseBookingTime(String value){
+        String normalized = value.trim().toUpperCase(Locale.ENGLISH);
+        try {
+            return LocalTime.parse(normalized, DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH));
+        } catch (DateTimeParseException ex) {
+            return LocalTime.parse(normalized, DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH));
+        }
+    }
+
+    private LocalTime parseAvailabilityTime(String value){
+        return LocalTime.parse(value.trim(), DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH));
+    }
+
+    /** Returns the stylist's weekly availability as [{dayOfWeek, startTime, endTime}] sorted by day. */
+    public BaseResponse stylerAvailability(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(availabilitySlots(stylerId));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Replaces the stylist's weekly availability with the supplied slots (delete-all + insert). */
+    public BaseResponse updateStylerAvailability(String stylerId, List<AvailabilityData> slots){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if(slots == null || slots.isEmpty()){
+                availabilityRepo.deleteByStylerId(stylerId);
+                notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+                        "The working hours for your saved professional have been cleared. Open their profile to view the latest schedule.");
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("Availability cleared — no working hours set");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Validate every slot before touching the DB. Element-level bean
+            // constraints do not cascade into a @Valid List, so enforce them
+            // here: day 0-6, HH:mm 24-hour times, end strictly after start.
+            for(AvailabilityData slot : slots){
+                String day = slot.getDayOfWeek();
+                String start = slot.getStartTime();
+                String end = slot.getEndTime();
+                if(day == null || !day.trim().matches("[0-6]")){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("Day of week must be 0 (Sunday) to 6 (Saturday)");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+                if(start == null || end == null
+                        || !start.matches("^([01]?[0-9]|2[0-3]):[0-5][0-9]$")
+                        || !end.matches("^([01]?[0-9]|2[0-3]):[0-5][0-9]$")){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("Start and end times must be in HH:mm 24-hour format");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+                if(start.compareTo(end) >= 0){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("End time must be after start time for every working day");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+            }
+            availabilityRepo.deleteByStylerId(stylerId);
+            List<AvailabilityEntity> toSave = new ArrayList<>();
+            for(AvailabilityData slot : slots){
+                toSave.add(new AvailabilityEntity(stylerId, slot));
+            }
+            availabilityRepo.saveAll(toSave);
+            notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+                    "The working hours for your saved professional have been updated. Open their profile to view the latest schedule.");
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Availability updated successfully");
+            response.setData(availabilitySlots(stylerId));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Returns the stylist's date-based exceptions [{blockedDate, reason}] sorted by date. */
+    public BaseResponse stylerAvailabilityExceptions(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(exceptionSlots(stylerId));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Adds a date-based exception (vacation, sick day) for the stylist. */
+    public BaseResponse addAvailabilityException(String stylerId, ExceptionData exceptionData){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Check for duplicate date
+            if(availabilityExceptionRepo.findByStylerIdAndBlockedDate(stylerId, exceptionData.getBlockedDate()).isPresent()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This date is already marked as unavailable");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            AvailabilityExceptionEntity entity = new AvailabilityExceptionEntity(stylerId, exceptionData);
+            availabilityExceptionRepo.save(entity);
+            notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+                    "Your saved professional marked " + exceptionData.getBlockedDate() + " as unavailable.");
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Date marked as unavailable");
+            response.setData(exceptionSlots(stylerId));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Removes a date-based exception (restores availability for that date). */
+    public BaseResponse deleteAvailabilityException(String stylerId, Long exceptionId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            availabilityExceptionRepo.deleteByStylerIdAndId(stylerId, exceptionId);
+            notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+                    "A previously unavailable date was restored for your saved professional.");
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Date restored to available");
+            response.setData(exceptionSlots(stylerId));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** True when the requested date is not blocked by a vacation/sick exception. */
+    private boolean isDateNotException(String stylerId, String appointmentDate){
+        return !availabilityExceptionRepo.findByStylerIdAndBlockedDate(stylerId, appointmentDate).isPresent();
+    }
+
+    /** Shared helper: stylist's exception dates as a sorted list of maps. */
+    private List<Object> exceptionSlots(String stylerId){
+        List<AvailabilityExceptionEntity> rows = availabilityExceptionRepo.findByStylerId(stylerId);
+        List<Object> result = new ArrayList<>();
+        if(rows == null || rows.isEmpty()){
+            return result;
+        }
+        rows.sort(Comparator.comparing(AvailabilityExceptionEntity::getBlockedDate));
+        for(AvailabilityExceptionEntity row : rows){
+            HashMap<String, String> slot = new HashMap<>();
+            slot.put("id", String.valueOf(row.getId()));
+            slot.put("blockedDate", row.getBlockedDate());
+            slot.put("reason", row.getReason());
+            result.add(slot);
+        }
+        return result;
+    }
+
+    /** Shared helper: stylist's weekly slots as a sorted list of maps, or empty list when none set. */
+    private List<Object> availabilitySlots(String stylerId){
+        List<AvailabilityEntity> rows = availabilityRepo.findByStylerId(stylerId);
+        List<Object> result = new ArrayList<>();
+        if(rows == null || rows.isEmpty()){
+            return result;
+        }
+        rows.sort(Comparator.comparing(AvailabilityEntity::getDayOfWeek));
+        for(AvailabilityEntity row : rows){
+            HashMap<String, String> slot = new HashMap<>();
+            slot.put("dayOfWeek", row.getDayOfWeek());
+            slot.put("startTime", row.getStartTime());
+            slot.put("endTime", row.getEndTime());
+            result.add(slot);
+        }
+        return result;
     }
 
     public BaseResponse getStylerDetails(String stylerId){
+        BaseResponse response = new BaseResponse(true);
         try {
             //Check if styler account exist
             Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
             if(isStylerExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Styler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Only approved professionals are publicly visible
+            if(!isApprovedStyler(isStylerExist.get())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This professional is not yet available");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             int ratingPercentage= 0;
             //Get Styler Information
@@ -882,7 +2378,7 @@ public class AppService {
                 stylerPortfolioResult.add(dtoService.stylerPortfolioDTO(stylerPortfolioEntity));
             }
             //Get Styler Portfolio reviews
-            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerId(stylerId);
+            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerIdAndModerationStatus(stylerId, "APPROVED");
             List<Object> stylerReviewResult = new ArrayList<>();
             int totalRating = 0;
             double ratingCount = 0;
@@ -901,151 +2397,1176 @@ public class AppService {
             stylerInformationMap.put("stylerPortfolio" , stylerPortfolioResult);
             stylerInformationMap.put("stylerReviews" , stylerReviewResult);
             stylerInformationMap.put("ratingPercentage", String.valueOf(ratingPercentage));
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(stylerInformationMap);
+            // Real appointment tally for the profile stats — no more hardcoded "500".
+            List<BookAppointmentEntity> stylerAppointments = bookAppointmentRepo.findByStylerId(stylerId);
+            stylerInformationMap.put("appointmentCount", String.valueOf(stylerAppointments == null ? 0 : stylerAppointments.size()));
+            // Weekly availability so the booking modal can show/enforce real working hours.
+            stylerInformationMap.put("availability", availabilitySlots(stylerId));
+            // Date-based exceptions (vacation, sick day) so the modal can gray out blocked days.
+            stylerInformationMap.put("exceptions", exceptionSlots(stylerId));
+            // Active bookings (date + arrival time) so the modal can gray out taken
+            // windows. Cancelled (4) and rejected (2) appointments free the slot.
+            List<Object> bookedSlots = new ArrayList<>();
+            if(stylerAppointments != null){
+                for(BookAppointmentEntity appointment : stylerAppointments){
+                    if("2".equals(appointment.getStatus()) || "4".equals(appointment.getStatus())) continue;
+                    HashMap<String, String> slot = new HashMap<>();
+                    slot.put("appointmentDate", appointment.getAppointmentDate());
+                    slot.put("arrivalTime", appointment.getArrivalTime());
+                    slot.put("status", appointment.getStatus());
+                    slot.put("durationMinutes", String.valueOf(appointment.getDurationMinutes() == null
+                            ? DEFAULT_SERVICE_DURATION_MINUTES : appointment.getDurationMinutes()));
+                    bookedSlots.add(slot);
+                }
+            }
+            stylerInformationMap.put("bookedSlots", bookedSlots);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(stylerInformationMap);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    /** Saves an approved stylist for the authenticated customer. */
+    public BaseResponse saveStylist(String userId, String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(userRepo.findByUserId(userId).isEmpty()){
+                return errorResponse(response, "Invalid User Id");
+            }
+            Optional<StylerEntity> styler = stylerRepo.findByStylerId(stylerId);
+            if(styler.isEmpty() || !isApprovedStyler(styler.get())){
+                return errorResponse(response, "This professional is not available");
+            }
+            if(savedStylistRepo.findByUserIdAndStylerId(userId, stylerId).isEmpty()){
+                savedStylistRepo.save(new SavedStylistEntity(userId, stylerId));
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Professional saved");
+            response.setData(Collections.singletonMap("saved", true));
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Removes a saved stylist only from the authenticated customer's collection. */
+    public BaseResponse removeSavedStylist(String userId, String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            savedStylistRepo.deleteByUserIdAndStylerId(userId, stylerId);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Professional removed from saved list");
+            response.setData(Collections.singletonMap("saved", false));
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Returns the authenticated customer's saved stylists with live profile DTOs. */
+    public BaseResponse listSavedStylists(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(userRepo.findByUserId(userId).isEmpty()){
+                return errorResponse(response, "Invalid User Id");
+            }
+            List<Object> result = new ArrayList<>();
+            for(SavedStylistEntity saved : savedStylistRepo.findByUserIdOrderByCreatedAtDesc(userId)){
+                stylerRepo.findByStylerId(saved.getStylerId())
+                        .filter(this::isApprovedStyler)
+                        .ifPresent(styler -> result.add(dtoService.stylerAccountDTO(styler)));
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Returns customer notifications and the unread count for the authenticated account. */
+    public BaseResponse listNotifications(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(userRepo.findByUserId(userId).isEmpty()){
+                return errorResponse(response, "Invalid User Id");
+            }
+            List<Map<String, Object>> result = new ArrayList<>();
+            for(NotificationEntity notification : notificationRepo.findByUserIdOrderByCreatedAtDesc(userId)){
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("id", notification.getId());
+                item.put("stylerId", notification.getStylerId());
+                item.put("type", notification.getType());
+                item.put("title", notification.getTitle());
+                item.put("message", notification.getMessage());
+                item.put("read", notification.isRead());
+                item.put("createdAt", notification.getCreatedAt());
+                result.add(item);
+            }
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("items", result);
+            data.put("unreadCount", notificationRepo.countByUserIdAndReadFalse(userId));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Marks one notification as read, scoped to the authenticated customer. */
+    public BaseResponse markNotificationRead(String userId, Long notificationId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<NotificationEntity> notification = notificationRepo.findByIdAndUserId(notificationId, userId);
+            if(notification.isEmpty()) return errorResponse(response, "Notification not found");
+            notification.get().setRead(true);
+            notificationRepo.save(notification.get());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Notification marked as read");
+            response.setData(Collections.emptyMap());
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Marks all notifications read for the authenticated customer. */
+    public BaseResponse markAllNotificationsRead(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            List<NotificationEntity> notifications = notificationRepo.findByUserIdOrderByCreatedAtDesc(userId);
+            notifications.forEach(notification -> notification.setRead(true));
+            notificationRepo.saveAll(notifications);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Notifications marked as read");
+            response.setData(Collections.emptyMap());
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Reads and updates saved-stylist notification preferences for one customer. */
+    public BaseResponse getNotificationPreferences(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<UserEntity> user = userRepo.findByUserId(userId);
+            if(user.isEmpty()) return errorResponse(response, "Invalid User Id");
+            Map<String, Boolean> data = new LinkedHashMap<>();
+            data.put("availability", !Boolean.FALSE.equals(user.get().getNotifySavedAvailability()));
+            data.put("price", !Boolean.FALSE.equals(user.get().getNotifySavedPrice()));
+            data.put("verification", !Boolean.FALSE.equals(user.get().getNotifySavedVerification()));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    public BaseResponse updateNotificationPreferences(String userId, NotificationPreferencesData data){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<UserEntity> user = userRepo.findByUserId(userId);
+            if(user.isEmpty()) return errorResponse(response, "Invalid User Id");
+            UserEntity entity = user.get();
+            if(data.getAvailability() != null) entity.setNotifySavedAvailability(data.getAvailability());
+            if(data.getPrice() != null) entity.setNotifySavedPrice(data.getPrice());
+            if(data.getVerification() != null) entity.setNotifySavedVerification(data.getVerification());
+            userRepo.save(entity);
+            return getNotificationPreferences(userId);
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Creates an in-app event and sends optional email for every saved customer. */
+    private void notifySavedCustomers(String stylerId, String type, String title, String message){
+        if(notificationRepo == null || savedStylistRepo == null) return;
+        try {
+            List<SavedStylistEntity> allSaved = savedStylistRepo.findAll();
+            for(SavedStylistEntity saved : allSaved){
+                if(!stylerId.equals(saved.getStylerId())) continue;
+                Optional<UserEntity> user = userRepo.findByUserId(saved.getUserId());
+                if(user.isEmpty()) continue;
+                notificationRepo.save(new NotificationEntity(saved.getUserId(), stylerId, type, title, message));
+                boolean emailEnabled = ("AVAILABILITY".equals(type) && !Boolean.FALSE.equals(user.get().getNotifySavedAvailability()))
+                        || ("PRICE".equals(type) && !Boolean.FALSE.equals(user.get().getNotifySavedPrice()))
+                        || ("VERIFICATION".equals(type) && !Boolean.FALSE.equals(user.get().getNotifySavedVerification()));
+                if(emailEnabled && user.get().getEmailAddress() != null && !user.get().getEmailAddress().isBlank()){
+                    try {
+                        emailConfig.sendSimpleMail(user.get().getEmailAddress(), title, "Dear "
+                                + user.get().getFirstname() + ",<br><br>" + message
+                                + "<br><br>The RapidStylers Team");
+                    } catch (Exception mailEx) {
+                        LOG.warning("Saved stylist notification email failed: " + mailEx.getMessage());
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            LOG.warning("Saved stylist notification failed: " + ex.getMessage());
+        }
+    }
+
+    public BaseResponse createSupportTicket(String userId, SupportTicketData data){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(userRepo.findByUserId(userId).isEmpty()) return errorResponse(response, "Invalid User Id");
+            SupportTicketEntity ticket = supportTicketRepo.save(new SupportTicketEntity(userId,
+                    AppUtils.sanitizeText(data.getSubject().trim()), AppUtils.sanitizeText(data.getMessage().trim())));
+            audit(userId, "CUSTOMER", "CREATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), ticket.getSubject());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Support ticket created");
+            response.setData(ticket.getId());
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse listSupportTickets(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(userRepo.findByUserId(userId).isEmpty()) return errorResponse(response, "Invalid User Id");
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(supportTicketRepo.findByUserIdOrderByUpdatedAtDesc(userId));
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse listAllSupportTickets(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(supportTicketRepo.findAll());
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse updateSupportTicket(SupportTicketActionData data, String adminId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<SupportTicketEntity> ticketOpt = supportTicketRepo.findById(data.getTicketId());
+            String status = data.getStatus().trim().toUpperCase(Locale.ROOT);
+            if(ticketOpt.isEmpty() || !Arrays.asList("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED").contains(status)) return errorResponse(response, "Invalid support ticket or status");
+            SupportTicketEntity ticket = ticketOpt.get();
+            ticket.setStatus(status);
+            ticket.setAdminResponse(AppUtils.sanitizeText(data.getAdminResponse()));
+            ticket.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            supportTicketRepo.save(ticket);
+            audit(adminId, "ADMIN", "UPDATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), status);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Support ticket updated");
+            response.setData(ticket);
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse getCommissionSetting(String adminId){
+        BaseResponse response = new BaseResponse(true);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("commissionPercent", effectiveCommissionPercent());
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setData(data);
+        return response;
+    }
+
+    public BaseResponse updateCommissionSetting(String adminId, double percent){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(percent < 0 || percent > 100){
+                return errorResponse(response, "Commission must be between 0 and 100");
+            }
+            PlatformSettingEntity setting = platformSettingRepo.findBySettingKey(COMMISSION_SETTING_KEY)
+                    .orElseGet(() -> new PlatformSettingEntity(COMMISSION_SETTING_KEY, "10"));
+            setting.setSettingValue(String.valueOf(percent));
+            platformSettingRepo.save(setting);
+            cachedCommissionPercent = percent;
+            audit(adminId, "ADMIN", "UPDATE_COMMISSION", "SETTINGS", COMMISSION_SETTING_KEY, String.valueOf(percent));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Commission updated");
+            response.setData(EMPTY_DATA);
+        } catch(Exception ex){
+            LOG.warning("Commission update failed: " + ex.getMessage());
+            return errorResponse(response, "Could not update commission");
+        }
+        return response;
+    }
+
+    /** Admin-only: sends a test email through the same EmailConfig path used for real notifications. */
+    public BaseResponse sendTestEmail(String adminId, String recipient){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(recipient == null || recipient.isBlank()
+                    || !recipient.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")){
+                return errorResponse(response, "Enter a valid recipient email address");
+            }
+            String result = emailConfig.sendSimpleMail(recipient, "RapidStylers test email",
+                    "<h2>RapidStylers</h2><p>This is a test email sent from the admin console to verify email delivery.</p>");
+            if("Mail Sent Successfully...".equals(result)){
+                audit(adminId, "ADMIN", "SEND_TEST_EMAIL", "EMAIL", recipient, "sent");
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("Test email sent to " + recipient);
+                response.setData(EMPTY_DATA);
+            } else {
+                return errorResponse(response, "Email provider rejected the send — check the backend log");
+            }
+        } catch(Exception ex){
+            LOG.warning("Test email failed: " + ex.getMessage());
+            return errorResponse(response, "Could not send test email");
+        }
+        return response;
+    }
+
+    public BaseResponse getAdminKpis(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("customers", userRepo.count());
+            data.put("stylists", stylerRepo.count());
+            data.put("approvedStylists", stylerRepo.findAll().stream().filter(this::isApprovedStyler).count());
+            data.put("appointments", bookAppointmentRepo.count());
+            data.put("pendingAppointments", bookAppointmentRepo.findAll().stream().filter(a -> "1".equals(a.getStatus())).count());
+            data.put("completedAppointments", bookAppointmentRepo.findAll().stream().filter(a -> "0".equals(a.getStatus())).count());
+            data.put("openSupportTickets", supportTicketRepo.countByStatus("OPEN"));
+            data.put("reviews", reviewRepo.count());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse listAuditLogs(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(auditLogRepo.findTop100ByOrderByCreatedAtDesc());
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse getLoyaltyAccount(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(userRepo.findByUserId(userId).isEmpty()) return errorResponse(response, "Invalid User Id");
+            LoyaltyAccountEntity account = loyaltyAccountRepo.findByUserId(userId).orElseGet(() -> new LoyaltyAccountEntity(userId, "RS-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT)));
+            if(account.getId() == null) loyaltyAccountRepo.save(account);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(account);
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
+    public BaseResponse createReferral(String userId, String referralCode){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            if(referralCode == null || referralCode.trim().isEmpty()){
+                return errorResponse(response, "Referral code cannot be empty");
+            }
+            Optional<LoyaltyAccountEntity> referrer = loyaltyAccountRepo.findByReferralCode(referralCode.trim().toUpperCase(Locale.ROOT));
+            if(referrer.isEmpty() || referrer.get().getUserId().equals(userId)) return errorResponse(response, "Invalid referral code");
+            if(referralRepo.findByReferredUserId(userId).isPresent()) return errorResponse(response, "Referral already applied");
+            ReferralEntity referral = referralRepo.save(new ReferralEntity(referrer.get().getUserId(), userId, referralCode.trim().toUpperCase(Locale.ROOT)));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Referral applied");
+            response.setData(referral);
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
     }
 
     public BaseResponse getStylerByService(String serviceId){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<ServiceEntity> isServiceIdExist = serviceRepo.findById(Long.valueOf(serviceId));
             if(isServiceIdExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid service Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid service Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             List<StylerEntity> getStylerData = stylerRepo.findByServiceTypeId(serviceId);
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerData){
-                result.add(dtoService.stylerAccountDTO(stylerEntity));
+                if(isApprovedStyler(stylerEntity)){
+                    result.add(dtoService.stylerAccountDTO(stylerEntity));
+                }
             }
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return  baseResponse;
+        return response;
     }
 
+    public BaseResponse estimateBooking(BookAppointmentData bookAppointmentData){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<StylerEntity> styler = stylerRepo.findByStylerId(bookAppointmentData.getStylerId());
+            if(styler.isEmpty()){
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            if(!isApprovedStyler(styler.get())){
+                return errorResponse(response, "This professional is not yet available for booking");
+            }
+            Optional<SubServiceEntity> subService = subServiceRepo.isServiceExistById(
+                    bookAppointmentData.getStylerId(), Long.parseLong(bookAppointmentData.getSubServiceId()));
+            if(subService.isEmpty()){
+                return errorResponse(response, "Invalid service for this stylist");
+            }
+            TravelPricing pricing = calculateTravelPricing(bookAppointmentData, styler.get(), subService.get().getPrice());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(pricing.toMap());
+        } catch(NumberFormatException ex){
+            return errorResponse(response, "Invalid service for this stylist");
+        } catch(IllegalArgumentException ex){
+            return errorResponse(response, ex.getMessage());
+        }
+        return response;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public BaseResponse bookAppointment(BookAppointmentData bookAppointmentData){
+        BaseResponse response = new BaseResponse(true);
         try{
-            //Is User exist
+            LocalDate appointmentDate = parseBookingDate(bookAppointmentData.getAppointmentDate());
+            LocalTime appointmentStart = parseBookingTime(bookAppointmentData.getArrivalTime());
+            if(appointmentDate.isBefore(LocalDate.now(applicationZone()))){
+                return errorResponse(response, "Appointment date cannot be in the past");
+            }
+            // The marketplace exposes quarter-hour boundaries; reject unsupported API values too.
+            if(appointmentStart.getMinute() % SLOT_GRANULARITY_MINUTES != 0){
+                return errorResponse(response, "Arrival time must start on a 15-minute boundary");
+            }
+
             Optional<UserEntity> isUserExist = userRepo.findByUserId(bookAppointmentData.getUserId());
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid User Id, Kindly create account");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                return errorResponse(response, "Invalid User Id, Kindly create account");
             }
-            //Check if styler account exist
-            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(bookAppointmentData.getStylerId()) ;
+            // This row lock serializes all booking attempts for one stylist before
+            // the availability/conflict read and the unique slot inserts.
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerIdForUpdate(bookAppointmentData.getStylerId());
             if(isStylerExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid Styler Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            if(!isApprovedStyler(isStylerExist.get())){
+                return errorResponse(response, "This professional is not yet available for booking");
+            }
+            // With payments live, a stylist must have finished Connect onboarding
+            // to receive payouts — the marketplace blocks booking until then.
+            if(stripeService.isConfigured() && !"COMPLETE".equals(isStylerExist.get().getConnectOnboardingStatus())){
+                return errorResponse(response, "This professional is not yet available for online booking");
             }
 
-            BookAppointmentEntity bookAppointmentEntity = new BookAppointmentEntity(bookAppointmentData);
-            bookAppointmentRepo.save(bookAppointmentEntity);
+            String subServiceId = bookAppointmentData.getSubServiceId();
+            if(subServiceId == null || subServiceId.trim().isEmpty()){
+                return errorResponse(response, "A service must be selected");
+            }
+            String price;
+            int durationMinutes;
+            TravelPricing pricing;
+            try {
+                Optional<SubServiceEntity> subService = subServiceRepo.isServiceExistById(
+                        bookAppointmentData.getStylerId(), Long.parseLong(subServiceId));
+                if(subService.isEmpty()){
+                    return errorResponse(response, "Invalid service for this stylist");
+                }
+                // The client price and duration are never trusted.
+                price = subService.get().getPrice();
+                durationMinutes = serviceDuration(subService.get().getDurationMinutes());
+                pricing = calculateTravelPricing(bookAppointmentData, isStylerExist.get(), price);
+            } catch(NumberFormatException ex){
+                return errorResponse(response, "Invalid service for this stylist");
+            }
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Appointment booked successfully");
-            baseResponse.setData(EMPTY_DATA);
+            List<String> activeStatuses = Arrays.asList("1", "3");
+            boolean canonicalDuplicate = !bookAppointmentRepo
+                    .findByUserIdAndStylerIdAndAppointmentDateValueAndAppointmentStartTimeAndStatusIn(
+                            bookAppointmentData.getUserId(), bookAppointmentData.getStylerId(),
+                            appointmentDate, appointmentStart, activeStatuses)
+                    .isEmpty();
+            boolean legacyDuplicate = !bookAppointmentRepo.findDuplicateBooking(
+                    bookAppointmentData.getUserId(), bookAppointmentData.getStylerId(),
+                    bookAppointmentData.getAppointmentDate(), bookAppointmentData.getArrivalTime()).isEmpty();
+            if(canonicalDuplicate || legacyDuplicate){
+                return errorResponse(response, "You already have a booking request for this date and time");
+            }
+            if(!isWindowFree(bookAppointmentData.getStylerId(),
+                    bookAppointmentData.getAppointmentDate(), bookAppointmentData.getArrivalTime(), durationMinutes)){
+                return errorResponse(response, "The stylist already has a booking in this time window — please pick a different time");
+            }
+            if(!timeWithinAvailability(bookAppointmentData.getStylerId(),
+                    bookAppointmentData.getAppointmentDate(), bookAppointmentData.getArrivalTime(), durationMinutes)){
+                return errorResponse(response, "The stylist is not available at this time — please pick a time within their working hours");
+            }
+            if(!isDateNotException(bookAppointmentData.getStylerId(), bookAppointmentData.getAppointmentDate())){
+                return errorResponse(response, "The stylist is unavailable on this date — please choose another day");
+            }
+
+            bookAppointmentData.setPrice(pricing.totalPrice);
+            BookAppointmentEntity appointment = new BookAppointmentEntity(bookAppointmentData, durationMinutes);
+            appointment.setServicePrice(pricing.servicePrice);
+            appointment.setTravelFee(pricing.travelFee);
+            appointment.setIncludedTravelKm(pricing.includedTravelKm);
+            appointment.setTravelDistanceKm(pricing.travelDistanceKm);
+            appointment.setBillableTravelKm(pricing.billableTravelKm);
+            appointment.setExtraTravelRatePerKm(pricing.extraTravelRatePerKm);
+            appointment.setPrice(pricing.totalPrice);
+
+            // Stripe: authorize the booking amount against the customer's saved card.
+            // Funds are held, not moved, until the stylist completes the appointment.
+            if(stripeService.isConfigured()){
+                Optional<CardDetailsEntity> card = cardDetailsRepo.findByUserId(bookAppointmentData.getUserId());
+                if(card.isEmpty() || card.get().getStripeCustomerId() == null || card.get().getStripePaymentMethodId() == null){
+                    return paymentErrorResponse(response, "NO_PAYMENT_METHOD",
+                            "Please add a payment method to your account before booking");
+                }
+                try {
+                    String connectAccountId = isStylerExist.get().getStripeConnectAccountId();
+                    String destination = connectAccountId == null || connectAccountId.isBlank() ? null : connectAccountId;
+                    long amountCents = centsFromPrice(pricing.totalPrice);
+                    PaymentIntent intent = stripeService.authorizeBookingPayment(
+                            card.get().getStripeCustomerId(), card.get().getStripePaymentMethodId(),
+                            amountCents, appointment.getAppointmentId(), destination, commissionCents(amountCents));
+                    appointment.setPaymentIntentId(intent.getId());
+                    appointment.setPaymentStatus("PENDING");
+                    appointment.setPaymentAmount(pricing.totalPrice);
+                } catch(com.stripe.exception.CardException ex){
+                    // Distinguish card problems so the frontend can prompt the
+                    // customer to update their saved card instead of showing a generic error.
+                    if("expired_card".equals(ex.getCode())){
+                        return paymentErrorResponse(response, "CARD_EXPIRED",
+                                "Your saved card has expired. Please update your card and try again.");
+                    }
+                    String detail = ex.getDeclineCode() == null || ex.getDeclineCode().isBlank()
+                            ? "" : " (" + ex.getDeclineCode().replace('_', ' ') + ")";
+                    return paymentErrorResponse(response, "CARD_DECLINED",
+                            "Your card was declined" + detail + ". Please update your card and try again.");
+                } catch(com.stripe.exception.StripeException ex){
+                    LOG.warning("Payment authorization failed: " + ex.getMessage());
+                    return paymentErrorResponse(response, "PAYMENT_ERROR",
+                            "Payment could not be authorized — please check your card or try again");
+                }
+            }
+            bookAppointmentRepo.saveAndFlush(appointment);
+            reserveBookingSlots(appointment, appointmentDate, appointmentStart, durationMinutes);
+            audit(bookAppointmentData.getUserId(), "CUSTOMER", "CREATE_BOOKING", "APPOINTMENT",
+                    appointment.getAppointmentId(), "Booking request created");
+
+            sendAppointmentNotification(appointment, "Request",
+                    "Booking request received",
+                    "Your booking request has been received and is awaiting the professional's confirmation.",
+                    "New booking request",
+                    "A client has requested an appointment. Please confirm or decline it from your dashboard.");
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Appointment booked successfully");
+            response.setData(EMPTY_DATA);
         }
-        catch (Exception ex){
+        catch(DataIntegrityViolationException ex){
+            // Let the transactional proxy roll back the appointment and slot
+            // rows together. The controller advice returns the conflict response.
+            LOG.warning("Booking slot collision: " + ex.getMessage());
+            throw ex;
+        }
+        catch(DateTimeParseException ex){
+            return errorResponse(response, "Invalid appointment date or arrival time");
+        }
+        catch(IllegalArgumentException ex){
+            return errorResponse(response, ex.getMessage());
+        }
+        return response;
+    }
+
+    private int serviceDuration(Integer durationMinutes){
+        int duration = durationMinutes == null ? DEFAULT_SERVICE_DURATION_MINUTES : durationMinutes;
+        if(duration < MIN_SERVICE_DURATION_MINUTES || duration > MAX_SERVICE_DURATION_MINUTES
+                || duration % SLOT_GRANULARITY_MINUTES != 0){
+            throw new IllegalArgumentException("This service has an invalid duration configuration");
+        }
+        return duration;
+    }
+
+    private TravelPricing calculateTravelPricing(BookAppointmentData data, StylerEntity styler, String rawServicePrice){
+        int people = parsePeople(data.getNoOfPeople());
+        BigDecimal serviceUnitPrice = amount(rawServicePrice);
+        BigDecimal servicePrice = serviceUnitPrice.multiply(BigDecimal.valueOf(people)).setScale(2, RoundingMode.HALF_UP);
+        double includedKm = styler.getIncludedTravelKm() == null ? 15.0 : styler.getIncludedTravelKm();
+        BigDecimal ratePerKm = amount(styler.getExtraTravelRatePerKm() == null ? "0.00" : styler.getExtraTravelRatePerKm());
+        double distanceKm = 0.0;
+        double billableKm = 0.0;
+        BigDecimal travelFee = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+        if(isHomeService(data.getServiceTime())){
+            if(data.getTravelDistanceKm() == null){
+                throw new IllegalArgumentException("Travel distance is required for home service bookings");
+            }
+            distanceKm = roundKm(data.getTravelDistanceKm());
+            if(distanceKm < 0){
+                throw new IllegalArgumentException("Travel distance cannot be negative");
+            }
+            if(styler.getMaxServiceDistanceKm() != null && distanceKm > styler.getMaxServiceDistanceKm()){
+                throw new IllegalArgumentException("This professional does not serve that distance");
+            }
+            billableKm = roundKm(Math.max(0.0, distanceKm - includedKm));
+            travelFee = ratePerKm.multiply(BigDecimal.valueOf(billableKm)).setScale(2, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal total = servicePrice.add(travelFee).setScale(2, RoundingMode.HALF_UP);
+        return new TravelPricing(
+                money(servicePrice),
+                money(travelFee),
+                includedKm,
+                distanceKm,
+                billableKm,
+                money(ratePerKm),
+                money(total));
+    }
+
+    private int parsePeople(String noOfPeople){
+        try {
+            int people = Integer.parseInt(noOfPeople == null ? "1" : noOfPeople.trim());
+            return Math.max(people, 1);
+        } catch(NumberFormatException ex){
+            return 1;
+        }
+    }
+
+    private boolean isHomeService(String serviceTime){
+        return "homeService".equalsIgnoreCase(serviceTime);
+    }
+
+    private BigDecimal amount(String value){
+        String normalized = value == null ? "0" : value.replace(",", "").trim();
+        return new BigDecimal(normalized).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String money(BigDecimal value){
+        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private double roundKm(double value){
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    /**
+     * Handles signature-verified Stripe webhook events. Capture/release are
+     * normally done synchronously in the appointment transitions; this covers
+     * async outcomes (e.g. delayed card actions) so payment state stays true.
+     */
+    public void handleStripeWebhook(String payload, String signatureHeader){
+        Event event = stripeService.verifyWebhookEvent(payload, signatureHeader);
+        if("payment_intent.captured".equals(event.getType())){
+            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
+            bookAppointmentRepo.findByPaymentIntentId(intent.getId()).ifPresent(a -> {
+                // The synchronous capture in the completion transition already sends
+                // receipts — only email again if this webhook is the first to see it.
+                boolean alreadyCaptured = "CAPTURED".equals(a.getPaymentStatus());
+                a.setPaymentStatus("CAPTURED");
+                bookAppointmentRepo.save(a);
+                if(!alreadyCaptured){
+                    sendPaymentReceipt(a);
+                }
+                audit("system", "SYSTEM", "PAYMENT_CAPTURED", "APPOINTMENT", a.getAppointmentId(), "Payment captured");
+            });
+        } else if("account.updated".equals(event.getType())){
+            handleAccountUpdated((Account) event.getData().getObject());
+        } else if("payment_intent.canceled".equals(event.getType())){
+            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
+            bookAppointmentRepo.findByPaymentIntentId(intent.getId()).ifPresent(a -> {
+                a.setPaymentStatus("RELEASED");
+                bookAppointmentRepo.save(a);
+                audit("system", "SYSTEM", "PAYMENT_RELEASED", "APPOINTMENT", a.getAppointmentId(), "Payment hold released");
+            });
+        }
+    }
+
+    /** Loads the admin-configured commission from the DB (seeded by the .env default on first boot). */
+    @PostConstruct
+    void loadCommissionSetting(){
+        try {
+            if(platformSettingRepo == null) return;
+            platformSettingRepo.findBySettingKey(COMMISSION_SETTING_KEY).ifPresent(setting -> {
+                try {
+                    cachedCommissionPercent = Double.parseDouble(setting.getSettingValue());
+                } catch(NumberFormatException ignored){}
+            });
+        } catch(Exception ex){
+            LOG.warning("Commission setting load failed: " + ex.getMessage());
+        }
+    }
+
+    /** Effective commission percent: admin setting when present, else the .env default. */
+    private double effectiveCommissionPercent(){
+        Double cached = cachedCommissionPercent;
+        return cached != null ? cached : stripeCommissionPercent;
+    }
+
+    /** Platform commission in minor units, based on the effective commission percent. */
+    private long commissionCents(long amountCents){
+        double percent = effectiveCommissionPercent();
+        if(percent <= 0 || amountCents <= 0) return 0L;
+        return Math.round(amountCents * percent / 100.0);
+    }
+
+    /**
+     * Applies the account.updated webhook: updates the styler's Connect
+     * onboarding status and emails them when onboarding completes or is
+     * rejected (only on actual transitions, so retries never re-send).
+     */
+    void handleAccountUpdated(Account account){
+        String status;
+        String disabledReason = null;
+        if(Boolean.TRUE.equals(account.getDetailsSubmitted())){
+            if(Boolean.TRUE.equals(account.getPayoutsEnabled())){
+                status = "COMPLETE";
+            } else if(account.getRequirements() != null && account.getRequirements().getDisabledReason() != null){
+                status = "REJECTED";
+                disabledReason = account.getRequirements().getDisabledReason();
+            } else {
+                status = "PENDING";
+            }
+        } else {
+            status = "PENDING";
+        }
+        String finalStatus = status;
+        String finalDisabledReason = disabledReason;
+        stylerRepo.findByStripeConnectAccountId(account.getId()).ifPresent(s -> {
+            String previous = s.getConnectOnboardingStatus();
+            s.setConnectOnboardingStatus(finalStatus);
+            // Persist the rejection reason so the Payouts page can show it; clear it
+            // once the account is verified or still in progress.
+            s.setConnectDisabledReason("REJECTED".equals(finalStatus) ? finalDisabledReason : null);
+            stylerRepo.save(s);
+            audit("system", "SYSTEM", "CONNECT_ACCOUNT_UPDATED", "STYLER", s.getStylerId(), finalStatus);
+            if("COMPLETE".equals(finalStatus) && !"COMPLETE".equals(previous)){
+                sendConnectStatusEmail(s, "RapidStylers - Payouts are ready",
+                        "Your payout account is connected",
+                        "Your Stripe account is connected and payouts are enabled. Your share of "
+                                + "completed appointments will be paid on Stripe's regular payout schedule.");
+            } else if("REJECTED".equals(finalStatus) && !"REJECTED".equals(previous)){
+                String reason = finalDisabledReason == null ? "" : " (" + finalDisabledReason.replace('_', ' ') + ")";
+                sendConnectStatusEmail(s, "RapidStylers - Payout setup needs attention",
+                        "Your payout account could not be verified",
+                        "Stripe could not verify your payout account" + reason
+                                + ". Please reconnect from your dashboard or contact support.");
+            }
+        });
+    }
+
+    private void sendConnectStatusEmail(StylerEntity styler, String subject, String headline, String detail){
+        try{
+            if(styler.getEmailAddress() == null || styler.getEmailAddress().isBlank()) return;
+            String name = (styler.getFirstname() + " " + styler.getLastname()).trim();
+            if(name.isBlank()) name = styler.getBusinessName() == null ? "Stylist" : styler.getBusinessName();
+            emailConfig.sendSimpleMail(styler.getEmailAddress(), subject,
+                    "<p>Dear " + name + ",</p><p><strong>" + headline + "</strong></p>"
+                            + "<p>" + detail + "</p><p>Thank you,<br>The RapidStylers Team</p>");
+        } catch(Exception ex){
+            LOG.warning("Connect status email failed: " + ex.getMessage());
+        }
+    }
+
+    /** Converts a display price like "165.00" into Stripe's minor-unit amount (cents). */
+    private long centsFromPrice(String price){
+        if(price == null || price.trim().isEmpty()) return 0L;
+        try {
+            return new BigDecimal(price.replaceAll("[^0-9.]", ""))
+                    .multiply(BigDecimal.valueOf(100)).longValue();
+        } catch(Exception ex){
+            return 0L;
+        }
+    }
+
+    private static class TravelPricing {
+        private final String servicePrice;
+        private final String travelFee;
+        private final Double includedTravelKm;
+        private final Double travelDistanceKm;
+        private final Double billableTravelKm;
+        private final String extraTravelRatePerKm;
+        private final String totalPrice;
+
+        private TravelPricing(String servicePrice, String travelFee, Double includedTravelKm,
+                              Double travelDistanceKm, Double billableTravelKm,
+                              String extraTravelRatePerKm, String totalPrice) {
+            this.servicePrice = servicePrice;
+            this.travelFee = travelFee;
+            this.includedTravelKm = includedTravelKm;
+            this.travelDistanceKm = travelDistanceKm;
+            this.billableTravelKm = billableTravelKm;
+            this.extraTravelRatePerKm = extraTravelRatePerKm;
+            this.totalPrice = totalPrice;
+        }
+
+        private Map<String, Object> toMap(){
+            Map<String, Object> data = new HashMap<>();
+            data.put("servicePrice", servicePrice);
+            data.put("travelFee", travelFee);
+            data.put("includedTravelKm", includedTravelKm);
+            data.put("travelDistanceKm", travelDistanceKm);
+            data.put("billableTravelKm", billableTravelKm);
+            data.put("extraTravelRatePerKm", extraTravelRatePerKm);
+            data.put("totalPrice", totalPrice);
+            return data;
+        }
+    }
+
+    private void reserveBookingSlots(BookAppointmentEntity appointment, LocalDate date, LocalTime start, int durationMinutes){
+        List<BookingSlotLockEntity> locks = new ArrayList<>();
+        for(int offset = 0; offset < durationMinutes; offset += SLOT_GRANULARITY_MINUTES){
+            LocalDateTime slotDateTime = LocalDateTime.of(date, start).plusMinutes(offset);
+            locks.add(new BookingSlotLockEntity(appointment.getStylerId(),
+                    slotDateTime.toLocalDate(), slotDateTime.toLocalTime(), appointment.getAppointmentId()));
+        }
+        // Unique(styler_id, date, slot_start) is the final database-level race guard.
+        bookingSlotLockRepo.saveAllAndFlush(locks);
+    }
+
+    private boolean appointmentStartHasPassed(BookAppointmentEntity appointment){
+        LocalDate date = appointment.getAppointmentDateValue();
+        LocalTime start = appointment.getAppointmentStartTime();
+        if(date == null || start == null){
+            try {
+                date = parseBookingDate(appointment.getAppointmentDate());
+                start = parseBookingTime(appointment.getArrivalTime());
+            } catch(Exception ex){
+                return false;
+            }
+        }
+        ZonedDateTime scheduled = ZonedDateTime.of(date, start, applicationZone());
+        return !ZonedDateTime.now(applicationZone()).isBefore(scheduled.plusMinutes(completionGraceMinutes));
+    }
+
+    private BaseResponse errorResponse(BaseResponse response, String message){
+        response.setStatusCode(ERROR_STATUS_CODE);
+        response.setMessage(message);
+        response.setData(EMPTY_DATA);
+        return response;
+    }
+
+    /** Error response that also exposes a machine-readable paymentError code for the UI. */
+    private BaseResponse paymentErrorResponse(BaseResponse response, String paymentError, String message){
+        response.setStatusCode(ERROR_STATUS_CODE);
+        response.setMessage(message);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("paymentError", paymentError);
+        response.setData(data);
+        return response;
+    }
+
+    private void audit(String actorId, String actorRole, String action, String resourceType, String resourceId, String details){
+        try {
+            if(auditLogRepo != null){
+                auditLogRepo.save(new AuditLogEntity(actorId, actorRole, action, resourceType, resourceId, details));
+            }
+        } catch(Exception ex){
+            LOG.warning("Audit log write failed: " + ex.getMessage());
+        }
+    }
+
+    private void awardCompletionPoints(String userId, String appointmentId){
+        try {
+            LoyaltyAccountEntity account = loyaltyAccountRepo.findByUserId(userId)
+                    .orElseGet(() -> new LoyaltyAccountEntity(userId, "RS-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT)));
+            account.addPoints(10);
+            loyaltyAccountRepo.save(account);
+            referralRepo.findByReferredUserId(userId).ifPresent(referral -> {
+                if("PENDING".equals(referral.getStatus())){
+                    referral.setStatus("COMPLETED");
+                    referralRepo.save(referral);
+                    loyaltyAccountRepo.findByUserId(referral.getReferrerUserId()).ifPresent(referrer -> {
+                        referrer.addPoints(25);
+                        loyaltyAccountRepo.save(referrer);
+                    });
+                }
+            });
+            audit("system", "SYSTEM", "AWARD_LOYALTY", "APPOINTMENT", appointmentId, "Completion points awarded");
+        } catch(Exception ex){
+            LOG.warning("Loyalty award failed: " + ex.getMessage());
+        }
+    }
+
+    private ZoneId applicationZone(){
+        try {
+            return ZoneId.of(appTimeZone == null || appTimeZone.isBlank() ? "America/Edmonton" : appTimeZone);
+        } catch(Exception ex){
+            return ZoneId.of("America/Edmonton");
+        }
+    }
+
+    public BaseResponse stylerAppointments(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            List<BookAppointmentEntity> appointments = bookAppointmentRepo.findByStylerId(stylerId);
+            List<Object> result = new ArrayList<>();
+            for(BookAppointmentEntity entity : appointments){
+                result.add(dtoService.appointmentDTO(entity));
+            }
+            Collections.reverse(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        }
+        catch(Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse acceptAppointment(String stylerId, String appointmentId){
+        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "3", new String[]{"1"}, "Appointment confirmed");
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse declineAppointment(String stylerId, String appointmentId){
+        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "2", new String[]{"1"}, "Appointment rejected");
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse completeAppointment(String stylerId, String appointmentId){
+        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "0", new String[]{"3"}, "Appointment marked as completed");
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse cancelAppointment(String userId, String appointmentId){
+        return transitionAppointment(userId, ActorRole.CUSTOMER, appointmentId, "4", new String[]{"1", "3"}, "Appointment cancelled");
+    }
+
+    private enum ActorRole { STYLER, CUSTOMER }
+
+    /**
+     * Loads an appointment, verifies the actor owns the correct side of it,
+     * and applies a status transition only when the current state is allowed.
+     * Status codes: 1 pending, 3 accepted, 2 rejected, 0 completed, 4 cancelled.
+     */
+    private BaseResponse transitionAppointment(String ownerId, ActorRole actorRole, String appointmentId,
+                                               String newStatus, String[] allowedFrom, String successMessage){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<BookAppointmentEntity> isExist = bookAppointmentRepo.findByAppointmentId(appointmentId);
+            if(isExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Appointment Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            BookAppointmentEntity appointment = isExist.get();
+            boolean ownsAppointment = actorRole == ActorRole.STYLER
+                    ? ownerId.equals(appointment.getStylerId())
+                    : ownerId.equals(appointment.getUserId());
+            if(!ownsAppointment){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("You do not have permission to update this appointment");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if("0".equals(newStatus) && !appointmentStartHasPassed(appointment)){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("An appointment can only be completed after its scheduled start time");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            boolean allowed = false;
+            for(String from : allowedFrom){
+                if(from.equals(appointment.getStatus())){
+                    allowed = true;
+                    break;
+                }
+            }
+            if(!allowed){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This appointment cannot be updated from its current state");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if("0".equals(newStatus) && appointment.getPaymentIntentId() != null && stripeService.isConfigured()){
+                // Settle the authorized hold only when the service is completed.
+                try {
+                    stripeService.captureBookingPayment(appointment.getPaymentIntentId());
+                    appointment.setPaymentStatus("CAPTURED");
+                    // Receipts for both parties once the payment actually settles.
+                    sendPaymentReceipt(appointment);
+                } catch(Exception ex){
+                    LOG.warning("Payment capture failed: " + ex.getMessage());
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("Payment capture failed — the appointment was not completed. Please contact support.");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+            }
+            appointment.setStatus(newStatus);
+            bookAppointmentRepo.save(appointment);
+            if("2".equals(newStatus) || "4".equals(newStatus)){
+                // Rejected and customer-cancelled bookings release their held slots.
+                bookingSlotLockRepo.deleteByAppointmentId(appointment.getAppointmentId());
+                // Also release the authorized payment hold so the card is never charged.
+                if(appointment.getPaymentIntentId() != null && stripeService.isConfigured()){
+                    try {
+                        stripeService.releaseBookingPayment(appointment.getPaymentIntentId());
+                        appointment.setPaymentStatus("RELEASED");
+                        bookAppointmentRepo.save(appointment);
+                    } catch(Exception ex){
+                        LOG.warning("Payment hold release failed: " + ex.getMessage());
+                    }
+                }
+            }
+            if("0".equals(newStatus)){
+                awardCompletionPoints(appointment.getUserId(), appointment.getAppointmentId());
+            }
+            audit(ownerId, actorRole == ActorRole.STYLER ? "STYLER" : "CUSTOMER", "APPOINTMENT_" + newStatus,
+                    "APPOINTMENT", appointmentId, successMessage);
+
+            // Notify both parties about the outcome.
+            if("3".equals(newStatus)){
+                sendAppointmentNotification(appointment, "Confirmed",
+                        "Your appointment has been confirmed",
+                        "The professional has accepted your booking request. See you at your appointment!",
+                        "Appointment confirmed",
+                        "You have confirmed this client's booking request.");
+            } else if("2".equals(newStatus)){
+                sendAppointmentNotification(appointment, "Declined",
+                        "Your appointment request was declined",
+                        "The professional could not take this booking. Please book another slot.",
+                        "Appointment declined",
+                        "You have declined this client's booking request.");
+            } else if("0".equals(newStatus)){
+                sendAppointmentNotification(appointment, "Completed",
+                        "Your appointment has been completed",
+                        "Thanks for using RapidStylers. We hope you enjoyed your session — a review is welcome.",
+                        "Appointment completed",
+                        "You have marked this appointment as completed.");
+            } else if("4".equals(newStatus)){
+                sendAppointmentNotification(appointment, "Cancelled",
+                        "Your appointment was cancelled",
+                        "Your appointment has been cancelled. Check your dashboard for updates.",
+                        "Appointment cancelled",
+                        "This appointment has been cancelled by the client.");
+            }
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(successMessage);
+            response.setData(EMPTY_DATA);
+        }
+        catch (RuntimeException ex){
+            // Persistence failures must escape the transaction so status changes
+            // and slot releases roll back together.
+            LOG.warning(ex.getMessage());
+            throw ex;
+        }
+        catch(Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
     }
 
     public BaseResponse listUserAppointment(String userId){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid User Id, Kindly create account");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid User Id, Kindly create account");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             List<BookAppointmentEntity> getUserAppointment = bookAppointmentRepo.findByUserId(userId);
             List<Object> result = new ArrayList<>();
            for(BookAppointmentEntity bookAppointmentEntity : getUserAppointment){
                result.add(dtoService.appointmentDTO(bookAppointmentEntity));
            }
-           baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-           baseResponse.setMessage(SUCCESS_MESSAGE);
-           baseResponse.setData(result);
+           response.setStatusCode(SUCCESS_STATUS_CODE);
+           response.setMessage(SUCCESS_MESSAGE);
+           response.setData(result);
         }
         catch(Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse listUserPendingAppointment(String userId){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid User Id, Kindly create account");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid User Id, Kindly create account");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             List<BookAppointmentEntity> getUserAppointment = bookAppointmentRepo.userPendingAppointment(userId);
             List<Object> result = new ArrayList<>();
             for(BookAppointmentEntity bookAppointmentEntity : getUserAppointment){
                 result.add(dtoService.appointmentDTO(bookAppointmentEntity));
             }
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch(Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse addUserFeedBack (UserFeedbackData userFeedbackData){
+        BaseResponse response = new BaseResponse(true);
         try{
             //Check if userId exist
             Optional<UserEntity> isUserExist = userRepo.findByUserId(userFeedbackData.getUserId());
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid User Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid User Id");
+                response.setData(EMPTY_DATA);
+                return response;
             }
             FeedbackEntity feedbackEntity = new FeedbackEntity();
             feedbackEntity.setUserId(userFeedbackData.getUserId());
             feedbackEntity.setFeedBackType(userFeedbackData.getFeedbackType());
             feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
             feedbackEntity.setUserId(userFeedbackData.getUserId());
-            feedbackEntity.setMessage(userFeedbackData.getMessage());
+            feedbackEntity.setMessage(AppUtils.sanitizeText(userFeedbackData.getMessage()));
             feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
             feedBackRepo.save(feedbackEntity);
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage("Your feedback has been submitted successful, Admin will take care of it.");
-            baseResponse.setData(EMPTY_DATA);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Your feedback has been submitted successful, Admin will take care of it.");
+            response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
     public BaseResponse listUserFeedBack(){
+        BaseResponse response = new BaseResponse(true);
         try{
             List<FeedbackEntity> getAllFeedBack = feedBackRepo.findAll();
             List<Object> result = new ArrayList<>();
@@ -1053,61 +3574,638 @@ public class AppService {
                 result.add(dtoService.feedBackDTO(feedbackEntity));
             }
             Collections.reverse(result);
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(result);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
     }
 
+    /**
+     * Creates (or reuses) a Stripe Connect Express account for the stylist and
+     * returns a hosted onboarding link. returnUrl/refreshUrl come from the
+     * frontend (the stylist dashboard) and are where Stripe sends the stylist
+     * after finishing or abandoning onboarding.
+     */
+    public BaseResponse createStylerConnectAccount(String stylerId, String returnUrl, String refreshUrl){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(!stripeService.isConfigured()){
+                return errorResponse(response, "Payments are not configured yet");
+            }
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            if(stylerOpt.isEmpty()){
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            StylerEntity styler = stylerOpt.get();
+            String accountId = styler.getStripeConnectAccountId();
+            if(accountId == null || accountId.isBlank()){
+                Account account = stripeService.createExpressAccount(stylerId, styler.getEmailAddress(),
+                        styler.getBusinessName(), styler.getFirstname(), styler.getLastname());
+                accountId = account.getId();
+                styler.setStripeConnectAccountId(accountId);
+                styler.setConnectOnboardingStatus("PENDING");
+                stylerRepo.save(styler);
+            }
+            AccountLink link = stripeService.createAccountLink(accountId, refreshUrl, returnUrl);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("accountId", accountId);
+            data.put("onboardingUrl", link.getUrl());
+            data.put("status", styler.getConnectOnboardingStatus());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        } catch(Exception ex){
+            LOG.warning("Connect account setup failed: " + ex.getMessage());
+            return errorResponse(response, "Could not start payout setup — please try again");
+        }
+        return response;
+    }
+
+    /**
+     * Payout summary for a stylist: earnings and commission from captured
+     * appointments (recomputed with the configured commission percent) plus the
+     * live available/pending balances Stripe reports for the connected account.
+     */
+    public BaseResponse getStylerPayouts(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            if(stylerOpt.isEmpty()){
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            StylerEntity styler = stylerOpt.get();
+            String accountId = styler.getStripeConnectAccountId();
+            boolean connected = accountId != null && !accountId.isBlank();
+
+            BigDecimal totalEarned = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            BigDecimal totalCommission = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            List<Map<String, Object>> appointments = new ArrayList<>();
+            for(BookAppointmentEntity appointment : bookAppointmentRepo.findByStylerId(stylerId)){
+                if(appointment.getPaymentIntentId() == null || !"CAPTURED".equals(appointment.getPaymentStatus())){
+                    continue;
+                }
+                BigDecimal total = amount(appointment.getPaymentAmount() == null
+                        ? appointment.getPrice() : appointment.getPaymentAmount());
+                BigDecimal commission = total.multiply(BigDecimal.valueOf(effectiveCommissionPercent()))
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                BigDecimal share = total.subtract(commission);
+                totalEarned = totalEarned.add(share);
+                totalCommission = totalCommission.add(commission);
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("appointmentId", appointment.getAppointmentId());
+                row.put("date", appointment.getAppointmentDate());
+                row.put("arrivalTime", appointment.getArrivalTime());
+                row.put("total", money(total));
+                row.put("commission", money(commission));
+                row.put("stylerShare", money(share));
+                appointments.add(row);
+            }
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("connected", connected);
+            data.put("status", connected && styler.getConnectOnboardingStatus() != null
+                    ? styler.getConnectOnboardingStatus() : "NOT_STARTED");
+            data.put("disabledReason", connected ? styler.getConnectDisabledReason() : null);
+            data.put("totalEarned", money(totalEarned));
+            data.put("totalCommission", money(totalCommission));
+            data.put("stripeAvailable", "0.00");
+            data.put("stripePending", "0.00");
+            if(connected && stripeService.isConfigured()){
+                try {
+                    Balance balance = Balance.retrieve(RequestOptions.builder().setStripeAccount(accountId).build());
+                    data.put("stripeAvailable", moneyCents(sumBalanceAmounts(balance.getAvailable(), stripeService.currency())));
+                    data.put("stripePending", moneyCents(sumPendingAmounts(balance.getPending(), stripeService.currency())));
+                } catch(Exception ex){
+                    LOG.warning("Connected balance lookup failed: " + ex.getMessage());
+                }
+            }
+            data.put("appointments", appointments);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        } catch(Exception ex){
+            LOG.warning("Payout summary failed: " + ex.getMessage());
+            return errorResponse(response, "Could not load payout summary");
+        }
+        return response;
+    }
+
+    /**
+     * Business summary for a stylist dashboard: real appointment, client,
+     * revenue, and popular-service stats (replaces the hardcoded card).
+     * Status map: 1 pending, 3 accepted, 0 completed, 2 rejected, 4 cancelled.
+     */
+    public BaseResponse getStylerBusinessSummary(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            if(stylerOpt.isEmpty()){
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(businessSummaryData(stylerOpt.get()));
+        } catch(Exception ex){
+            LOG.warning("Business summary failed: " + ex.getMessage());
+            return errorResponse(response, "Could not load business summary");
+        }
+        return response;
+    }
+
+    /**
+     * Admin view: per-stylist business stats for every professional, most
+     * appointments first. Reuses the same computation as the stylist dashboard.
+     */
+    public BaseResponse getAdminStylerBusinessSummaries(){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for(StylerEntity styler : stylerRepo.findAll()){
+                Map<String, Object> row = new LinkedHashMap<>(businessSummaryData(styler));
+                row.put("stylerId", styler.getStylerId());
+                row.put("businessName", styler.getBusinessName());
+                row.put("name", (styler.getFirstname() + " " + styler.getLastname()).trim());
+                row.put("emailAddress", styler.getEmailAddress());
+                row.put("verificationStatus", styler.getVerificationStatus());
+                rows.add(row);
+            }
+            rows.sort((a, b) -> Long.compare(((Number) b.get("totalAppointments")).longValue(),
+                    ((Number) a.get("totalAppointments")).longValue()));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(rows);
+        } catch(Exception ex){
+            LOG.warning("Admin business summaries failed: " + ex.getMessage());
+            return errorResponse(response, "Could not load business summaries");
+        }
+        return response;
+    }
+
+    /**
+     * Shared per-stylist stats computation. Revenue counts the captured payment
+     * amount when the payment lifecycle is active (paymentStatus CAPTURED),
+     * otherwise the completed appointment price. netRevenue is the stylist's
+     * share after the platform commission, consistent with the payout page.
+     */
+    private Map<String, Object> businessSummaryData(StylerEntity styler){
+        String stylerId = styler.getStylerId();
+        List<BookAppointmentEntity> appointments = bookAppointmentRepo.findByStylerId(stylerId);
+        if(appointments == null) appointments = new ArrayList<>();
+
+        long total = appointments.size();
+        long pending = 0, confirmed = 0, finished = 0, cancelled = 0;
+        Set<String> clients = new HashSet<>();
+        BigDecimal grossRevenue = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        Map<String, Integer> serviceCounts = new LinkedHashMap<>();
+        Map<String, String> serviceNames = new HashMap<>();
+        for(SubServiceEntity service : subServiceRepo.findByStylerId(stylerId)){
+            serviceNames.put(String.valueOf(service.getId()), service.getName());
+        }
+
+        for(BookAppointmentEntity appointment : appointments){
+            if("1".equals(appointment.getStatus())) pending++;
+            else if("3".equals(appointment.getStatus())) confirmed++;
+            else if("0".equals(appointment.getStatus())) finished++;
+            else if("4".equals(appointment.getStatus())) cancelled++;
+            if("2".equals(appointment.getStatus()) || "4".equals(appointment.getStatus())) continue;
+            if(appointment.getUserId() != null) clients.add(appointment.getUserId());
+            if("0".equals(appointment.getStatus())){
+                boolean captured = "CAPTURED".equals(appointment.getPaymentStatus());
+                grossRevenue = grossRevenue.add(amount(
+                        captured && appointment.getPaymentAmount() != null
+                                ? appointment.getPaymentAmount() : appointment.getPrice()));
+            }
+            if(appointment.getSubServiceId() != null){
+                serviceCounts.merge(appointment.getSubServiceId(), 1, Integer::sum);
+            }
+        }
+
+        List<Map<String, Object>> popularServices = new ArrayList<>();
+        serviceCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(5)
+                .forEach(entry -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("name", serviceNames.getOrDefault(entry.getKey(), "Service"));
+                    row.put("count", entry.getValue());
+                    popularServices.add(row);
+                });
+
+        BigDecimal commission = grossRevenue.multiply(BigDecimal.valueOf(effectiveCommissionPercent()))
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal netRevenue = grossRevenue.subtract(commission);
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("totalAppointments", total);
+        data.put("clients", clients.size());
+        data.put("pending", pending);
+        data.put("confirmed", confirmed);
+        data.put("finished", finished);
+        data.put("cancelled", cancelled);
+        data.put("totalRevenue", money(grossRevenue));
+        data.put("totalCommission", money(commission));
+        data.put("netRevenue", money(netRevenue));
+        data.put("popularServices", popularServices);
+        return data;
+    }
+
+    private long sumBalanceAmounts(java.util.List<Balance.Available> entries, String currency){
+        long total = 0L;
+        for(Balance.Available entry : entries){
+            if(entry.getAmount() != null && (currency == null || currency.equals(entry.getCurrency()))){
+                total += entry.getAmount();
+            }
+        }
+        return total;
+    }
+
+    private long sumPendingAmounts(java.util.List<Balance.Pending> entries, String currency){
+        long total = 0L;
+        for(Balance.Pending entry : entries){
+            if(entry.getAmount() != null && (currency == null || currency.equals(entry.getCurrency()))){
+                total += entry.getAmount();
+            }
+        }
+        return total;
+    }
+
+    private String moneyCents(long cents){
+        return money(BigDecimal.valueOf(cents).movePointLeft(2));
+    }
+
+    public BaseResponse getStylerConnectStatus(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            if(stylerOpt.isEmpty()){
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            StylerEntity styler = stylerOpt.get();
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("accountId", styler.getStripeConnectAccountId());
+            data.put("status", styler.getConnectOnboardingStatus() == null
+                    ? "NOT_STARTED" : styler.getConnectOnboardingStatus());
+            data.put("disabledReason", styler.getConnectDisabledReason());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        } catch(Exception ex){
+            LOG.warning("Connect status lookup failed: " + ex.getMessage());
+            return errorResponse(response, "Could not load payout status");
+        }
+        return response;
+    }
+
+    /**
+     * Admin support view: every stylist's Connect payout status, ordered so
+     * problems surface first (REJECTED, then PENDING, NOT_STARTED, COMPLETE).
+     * Pure DB read — no Stripe calls, so it stays fast regardless of account count.
+     */
+    public BaseResponse getAdminStylerConnectStatuses(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for(StylerEntity styler : stylerRepo.findAll()){
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("stylerId", styler.getStylerId());
+                row.put("name", (styler.getFirstname() + " " + styler.getLastname()).trim());
+                row.put("businessName", styler.getBusinessName());
+                row.put("emailAddress", styler.getEmailAddress());
+                row.put("verificationStatus", styler.getVerificationStatus() == null
+                        ? "PENDING" : styler.getVerificationStatus());
+                row.put("accountActive", "0".equals(styler.getStatus()));
+                row.put("connectStatus", styler.getConnectOnboardingStatus() == null
+                        ? "NOT_STARTED" : styler.getConnectOnboardingStatus());
+                row.put("connectAccountId", styler.getStripeConnectAccountId());
+                row.put("disabledReason", styler.getConnectDisabledReason());
+                row.put("registered", styler.getInsertedDt());
+                rows.add(row);
+            }
+            rows.sort((a, b) -> {
+                int rankA = connectStatusRank((String) a.get("connectStatus"));
+                int rankB = connectStatusRank((String) b.get("connectStatus"));
+                int byStatus = Integer.compare(rankA, rankB);
+                if(byStatus != 0) return byStatus;
+                return String.valueOf(a.get("stylerId")).compareTo(String.valueOf(b.get("stylerId")));
+            });
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(rows);
+        } catch(Exception ex){
+            LOG.warning("Connect status list failed: " + ex.getMessage());
+            return errorResponse(response, "Could not load stylist payout statuses");
+        }
+        return response;
+    }
+
+    /** Sort rank for the admin overview: rejected and stuck payouts first. */
+    private int connectStatusRank(String status){
+        switch(status == null ? "NOT_STARTED" : status){
+            case "REJECTED": return 0;
+            case "PENDING": return 1;
+            case "NOT_STARTED": return 2;
+            default: return 3;
+        }
+    }
+
+    public BaseResponse getCardSetupIntent(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(!stripeService.isConfigured()){
+                return errorResponse(response, "Payments are not configured yet");
+            }
+            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
+            if(isUserExist.isEmpty()){
+                return errorResponse(response, "Invalid User Id");
+            }
+            UserEntity user = isUserExist.get();
+            Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(userId);
+            String customerId = existing.filter(c -> c.getStripeCustomerId() != null)
+                    .map(CardDetailsEntity::getStripeCustomerId).orElse(null);
+            Customer customer = stripeService.getOrCreateCustomer(customerId, user.getEmailAddress(),
+                    (user.getFirstname() + " " + user.getLastname()).trim());
+            String clientSecret = stripeService.createSetupIntentClientSecret(customer.getId());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("clientSecret", clientSecret);
+            data.put("stripeCustomerId", customer.getId());
+            response.setData(data);
+        } catch(Exception ex){
+            LOG.warning("Setup intent failed: " + ex.getMessage());
+            return errorResponse(response, "Could not start card setup — please try again");
+        }
+        return response;
+    }
+
+    /**
+     * Persists only Stripe references and display metadata for a card collected
+     * inside Stripe's Elements iframe. Raw card numbers, CVVs and expiry dates
+     * are never sent to or stored by this application.
+     */
     public BaseResponse updateUserCardDetails(CardDetailsData cardDetailsData){
+        BaseResponse response = new BaseResponse(true);
         try{
             Optional<UserEntity> isUserExist = userRepo.findByUserId(cardDetailsData.getUserId());
             if(isUserExist.isEmpty()){
-                baseResponse.setStatusCode(ERROR_STATUS_CODE);
-                baseResponse.setMessage("Invalid User Id");
-                baseResponse.setData(EMPTY_DATA);
-                return baseResponse;
+                return errorResponse(response, "Invalid User Id");
+            }
+            if(!stripeService.isConfigured()){
+                return errorResponse(response, "Payments are not configured yet");
+            }
+            UserEntity user = isUserExist.get();
+            Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(cardDetailsData.getUserId());
+            String customerId = existing.filter(c -> c.getStripeCustomerId() != null)
+                    .map(CardDetailsEntity::getStripeCustomerId).orElse(null);
+            Customer customer = stripeService.getOrCreateCustomer(customerId, user.getEmailAddress(),
+                    (user.getFirstname() + " " + user.getLastname()).trim());
+            StripeService.CardDisplay display = stripeService.attachPaymentMethod(customer.getId(),
+                    cardDetailsData.getPaymentMethodId());
+
+            CardDetailsEntity entity = existing.orElseGet(CardDetailsEntity::new);
+            entity.setUserId(cardDetailsData.getUserId());
+            entity.setCardName(cardDetailsData.getCardName().trim());
+            entity.setStripeCustomerId(customer.getId());
+            entity.setStripePaymentMethodId(cardDetailsData.getPaymentMethodId());
+            entity.setLast4(display.last4);
+            entity.setBrand(display.brand);
+            entity.setExpMonth(display.expMonth);
+            entity.setExpYear(display.expYear);
+            cardDetailsRepo.save(entity);
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(existing.isPresent() ? "Card details updated successfully" : "Card details added successfully");
+            response.setData(EMPTY_DATA);
+        } catch(Exception ex){
+            LOG.warning("Card update failed: " + ex.getMessage());
+            return errorResponse(response, "Could not save your card — please try again");
+        }
+        return response;
+    }
+
+    // ── Location-based search (Redis geospatial) ────────────────────────
+
+    public BaseResponse searchNearby(double longitude, double latitude, double radius, String serviceTypeId, String city, String requestedDate, String requestedTime, int requestedDurationMinutes, boolean openNow){
+        BaseResponse response = searchNearby(longitude, latitude, radius, serviceTypeId, city);
+        if(!"200".equals(response.getStatusCode()) || !(response.getData() instanceof List)) return response;
+        try {
+            LocalDate requested = requestedDate == null || requestedDate.isBlank() ? null : parseBookingDate(requestedDate);
+            LocalTime requestedStart = requestedTime == null || requestedTime.isBlank() ? null : parseBookingTime(requestedTime);
+            int duration = requestedDurationMinutes <= 0 ? DEFAULT_SERVICE_DURATION_MINUTES : requestedDurationMinutes;
+            List<StylerAccountDTO> candidates = new ArrayList<>();
+            for(Object item : (List<?>) response.getData()){
+                if(!(item instanceof StylerAccountDTO)) continue;
+                StylerAccountDTO dto = (StylerAccountDTO) item;
+                Optional<StylerEntity> styler = stylerRepo.findByStylerId(dto.getStylerId());
+                if(styler.isEmpty() || !isApprovedStyler(styler.get())) continue;
+                if(requested != null && requestedStart != null && (!isDateNotException(dto.getStylerId(), requested.toString())
+                        || !timeWithinAvailability(dto.getStylerId(), requested.toString(), requestedStart.toString(), duration)
+                        || !isWindowFree(dto.getStylerId(), requested.toString(), requestedStart.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)), duration))) continue;
+                if(openNow && !isOpenAt(dto.getStylerId(), ZonedDateTime.now(applicationZone()).toLocalDate(), ZonedDateTime.now(applicationZone()).toLocalTime(), 30)) continue;
+                candidates.add(dto);
+            }
+            candidates.sort((left, right) -> Double.compare(searchScore(right), searchScore(left)));
+            response.setData(candidates);
+        } catch(Exception ex){
+            return errorResponse(response, "Invalid search date or time");
+        }
+        return response;
+    }
+
+    public BaseResponse searchNearby(double longitude, double latitude, double radius, String serviceTypeId, String city){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            // Step 1: Redis geospatial search (returns stylerId → distance in km)
+            Map<String, Double> redisResults = locationCacheService.findNearbyWithDistance(longitude, latitude, radius);
+
+            // Collect all results: stylerId → distance (null for DB-only results)
+            Map<String, Double> allStylerDistances = new LinkedHashMap<>();
+            for(Map.Entry<String, Double> entry : redisResults.entrySet()){
+                allStylerDistances.put(entry.getKey(), entry.getValue());
             }
 
-            String message ="";
-            //Get the userPreviousCard Details
-            String encryptedUserId = EncryptionConfig.encrypt(cardDetailsData.getUserId());
-            String userCardName = EncryptionConfig.encrypt(cardDetailsData.getCardName());
-            String userCardNumber = EncryptionConfig.encrypt(cardDetailsData.getCardNumber());
-            String userCVV = EncryptionConfig.encrypt(cardDetailsData.getCvv());
-            String expiryDate = EncryptionConfig.encrypt(cardDetailsData.getExpiryDate());
-            Optional<CardDetailsEntity> getUserCardDetails = cardDetailsRepo.findByUserId(encryptedUserId);
-            if(getUserCardDetails.isPresent()) {
-                CardDetailsEntity userPrevCardDetails = getUserCardDetails.get();
-                userPrevCardDetails.setCardNumber(userCardNumber);
-                userPrevCardDetails.setCardName(userCardName);
-                userPrevCardDetails.setCvv(userCVV);
-                userPrevCardDetails.setExpiryDate(expiryDate);
-                cardDetailsRepo.save(userPrevCardDetails);
-                message ="Card details updated successfully";
-            }
-            else{
-                CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
-                cardDetailsEntity.setUserId(encryptedUserId);
-                cardDetailsEntity.setCardNumber(userCardNumber);
-                cardDetailsEntity.setCardName(userCardName);
-                cardDetailsEntity.setCvv(userCVV);
-                cardDetailsEntity.setExpiryDate(expiryDate);
-                cardDetailsRepo.save(cardDetailsEntity);
-                message = "Card details added successfully";
+            // Step 2: DB city search — catches stylers not yet in Redis
+            Set<String> seenIds = new HashSet<>(allStylerDistances.keySet());
+            if(city != null && !city.isEmpty()){
+                List<StylerEntity> cityStylers;
+                if(serviceTypeId != null && !serviceTypeId.isEmpty()){
+                    cityStylers = stylerRepo.findByCityAndServiceType(city, serviceTypeId);
+                } else {
+                    cityStylers = stylerRepo.findByCityIgnoreCase(city);
+                }
+                for(StylerEntity styler : cityStylers){
+                    if(!isApprovedStyler(styler)) continue;
+                    if(!seenIds.contains(styler.getStylerId())){
+                        // Compute Haversine distance for DB results
+                        double dist = haversine(latitude, longitude, styler.getLatitude(), styler.getLongitude());
+                        allStylerDistances.put(styler.getStylerId(), dist);
+                        seenIds.add(styler.getStylerId());
+                    }
+                }
             }
 
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(message);
-            baseResponse.setData(EMPTY_DATA);
+            if(allStylerDistances.isEmpty()){
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("No professionals found in this area");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+
+            // Step 3: Sort by distance (nearest first)
+            List<Map.Entry<String, Double>> sorted = new ArrayList<>(allStylerDistances.entrySet());
+            sorted.sort(Map.Entry.comparingByValue());
+
+            // Step 4: Fetch full data from MySQL for sorted IDs
+            List<Object> result = new ArrayList<>();
+            for(Map.Entry<String, Double> entry : sorted){
+                String stylerId = entry.getKey();
+                double distKm = entry.getValue();
+                Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+                if(stylerOpt.isPresent()){
+                    StylerEntity styler = stylerOpt.get();
+                    if(!isApprovedStyler(styler)) continue;
+                    if(serviceTypeId != null && !serviceTypeId.isEmpty()){
+                        if(!serviceTypeId.equals(styler.getServiceTypeId())) continue;
+                    }
+                    StylerAccountDTO dto = dtoService.stylerAccountDTO(styler);
+                    dto.setDistanceKm(Math.round(distKm * 10.0) / 10.0);
+                    result.add(dto);
+                }
+            }
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
         }
-         catch (Exception e) {
-            throw new RuntimeException(e);
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
         }
-        return baseResponse;
+        return response;
+    }
+
+    private boolean isOpenAt(String stylerId, LocalDate date, LocalTime time, int durationMinutes){
+        if(!isDateNotException(stylerId, date.toString())) return false;
+        List<AvailabilityEntity> rows = availabilityRepo.findByStylerId(stylerId);
+        if(rows == null || rows.isEmpty()) return false;
+        int weekday = date.getDayOfWeek().getValue() % 7;
+        return rows.stream().filter(row -> Integer.toString(weekday).equals(row.getDayOfWeek())).anyMatch(row -> {
+            try {
+                LocalTime start = parseAvailabilityTime(row.getStartTime());
+                LocalTime end = parseAvailabilityTime(row.getEndTime());
+                return !time.isBefore(start) && !time.plusMinutes(durationMinutes).isAfter(end)
+                        && isWindowFree(stylerId, date.toString(), time.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)), durationMinutes);
+            } catch(Exception ex){ return false; }
+        });
+    }
+
+    private double searchScore(StylerAccountDTO dto){
+        double distance = dto.getDistanceKm() == null ? 1000.0 : dto.getDistanceKm();
+        double rating = dto.getAverageRating() == null ? 0.0 : dto.getAverageRating();
+        long reviews = dto.getReviewCount() == null ? 0L : dto.getReviewCount();
+        long completed = bookAppointmentRepo.findByStylerId(dto.getStylerId()).stream().filter(a -> "0".equals(a.getStatus())).count();
+        double coldStartBoost = reviews == 0 ? 1.0 : 0.0;
+        return (rating * 20.0) + Math.min(completed, 100) * 0.25 + coldStartBoost - Math.min(distance, 1000) * 0.35;
+    }
+
+    /**
+     * Haversine formula — returns distance in km between two lat/lng points.
+     */
+    private double haversine(double lat1, double lng1, double lat2, double lng2){
+        final double R = 6371.0; // Earth radius in km
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    public BaseResponse detectLocation(javax.servlet.http.HttpServletRequest request){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Map<String, Object> location = locationService.detectLocation(request);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(location);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    public BaseResponse reverseGeocode(double lat, double lng){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Map<String, Object> geo = geocodingService.reverseGeocode(lat, lng);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(geo);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * Build a full address string from structured StylerData fields for geocoding.
+     */
+    private String buildAddress(StylerData stylerData){
+        StringBuilder sb = new StringBuilder();
+        if(stylerData.getStreetAddress() != null && !stylerData.getStreetAddress().isEmpty()){
+            sb.append(stylerData.getStreetAddress());
+        }
+        if(stylerData.getUnit() != null && !stylerData.getUnit().isEmpty()){
+            sb.append(" ").append(stylerData.getUnit());
+        }
+        if(stylerData.getCity() != null && !stylerData.getCity().isEmpty()){
+            sb.append(", ").append(stylerData.getCity());
+        }
+        if(stylerData.getBusinessProvince() != null && !stylerData.getBusinessProvince().isEmpty()){
+            sb.append(", ").append(stylerData.getBusinessProvince());
+        }
+        if(stylerData.getPostalCode() != null && !stylerData.getPostalCode().isEmpty()){
+            sb.append(" ").append(stylerData.getPostalCode());
+        }
+        if(stylerData.getCountry() != null && !stylerData.getCountry().isEmpty()){
+            sb.append(", ").append(stylerData.getCountry());
+        }
+        return sb.toString();
+    }
+
+    private void recordLoginSuccess(String accountType, String accountId, String emailAddress, String ipAddress) {
+        if (loginAttemptService != null) {
+            loginAttemptService.recordSuccess(accountType, accountId, emailAddress, ipAddress, RateLimiterService.userAgent());
+        }
+    }
+
+    private void recordLoginFailure(String accountType, String accountId, String emailAddress,
+                                    String ipAddress, String reason) {
+        if (loginAttemptService != null) {
+            loginAttemptService.recordFailure(accountType, accountId, emailAddress, ipAddress,
+                    RateLimiterService.userAgent(), reason);
+        }
+    }
+
+    private String accountType(Optional<StylerEntity> styler, Optional<UserEntity> user) {
+        if (styler.isPresent()) {
+            return "STYLER";
+        }
+        if (user.isPresent()) {
+            return "CUSTOMER";
+        }
+        return "UNKNOWN";
+    }
+
+    private String accountId(Optional<StylerEntity> styler, Optional<UserEntity> user) {
+        if (styler.isPresent()) {
+            return styler.get().getStylerId();
+        }
+        return user.map(UserEntity::getUserId).orElse(null);
     }
 }

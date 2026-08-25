@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.config;
 
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
@@ -8,13 +9,25 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Configuration
 public class CorsConfig {
+
+    @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:9090,https://rapidstylers.ca,https://www.rapidstylers.ca}")
+    private String allowedOrigins;
+
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilter(){
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration config  = new CorsConfiguration();
-        config.applyPermitDefaultValues();
+        config.setAllowedOrigins(parseAllowedOrigins());
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "x-api-key"));
+        config.setExposedHeaders(List.of("Authorization"));
+        config.setMaxAge(3600L);
         source.registerCorsConfiguration("/**", config);
         CorsFilter corsFilter = new CorsFilter(source);
         FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(corsFilter);
@@ -22,4 +35,10 @@ public class CorsConfig {
         return bean;
     }
 
+    private List<String> parseAllowedOrigins() {
+        return Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .collect(Collectors.toList());
+    }
 }

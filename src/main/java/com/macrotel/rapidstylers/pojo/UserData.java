@@ -27,10 +27,10 @@ public class UserData {
     @NotEmpty(message = "Address cannot be empty")
     private String address;
     @NotEmpty(message = "PhoneNumber cannot be empty")
-    @Pattern(regexp = PHONE_NUMBER_VALIDATION_REGEX, message = "Phone Number can only be digit")
+    @Pattern(regexp = PHONE_NUMBER_VALIDATION_REGEX, message = "Enter a valid Canadian phone number (10 digits, or 11 with leading 1)")
     private String phoneNumber;
     @NotEmpty(message = "Password cannot be empty")
-    @Pattern(regexp = PASSWORD_PATTERN, message = "Password should contain 1 uppercase, 1 lowercase, 1 number, 1 special character and 6 character length")
+    @Pattern(regexp = PASSWORD_PATTERN, message = "Password must be at least 8 characters with 1 uppercase, 1 lowercase, 1 digit, and 1 special character")
     private String password;
 
 }

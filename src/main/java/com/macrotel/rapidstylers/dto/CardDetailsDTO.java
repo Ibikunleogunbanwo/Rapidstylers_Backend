@@ -5,7 +5,9 @@ import lombok.Data;
 @Data
 public class CardDetailsDTO {
     private String cardName;
-    private String cardNumber;
-    private String cvv;
-    private String expiryDate;
+    // Display-only fields — never the full PAN or CVV.
+    private String last4;
+    private String brand;
+    private Long expMonth;
+    private Long expYear;
 }

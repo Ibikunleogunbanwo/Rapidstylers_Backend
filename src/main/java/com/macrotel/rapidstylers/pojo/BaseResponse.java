@@ -11,6 +11,7 @@ public class BaseResponse {
     private String statusCode;
     private String message;
     private Object data;
+    private String token;
 
     public BaseResponse() {
     }

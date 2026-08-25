@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
+import static com.macrotel.rapidstylers.config.AppConstants.DEFAULT_SERVICE_DURATION_MINUTES;
 import static com.macrotel.rapidstylers.config.AppConstants.EMPTY_DATA;
 
 @Service
@@ -23,6 +24,10 @@ public class DTOService {
     SubServiceRepo subServiceRepo;
     @Autowired
     CardDetailsRepo cardDetailsRepo;
+    @Autowired
+    ReviewRepo reviewRepo;
+    @Autowired
+    StripeService stripeService;
     public UserAccountDTO userAccountDTO(UserEntity userEntity){
         UserAccountDTO userAccountDTO = new UserAccountDTO();
         userAccountDTO.setAddress(userEntity.getAddress());
@@ -38,7 +43,9 @@ public class DTOService {
     }
 
     public StylerAccountDTO stylerAccountDTO (StylerEntity stylerEntity){
-        Optional<ServiceEntity> getServiceType = serviceRepo.findById(Long.parseLong(stylerEntity.getServiceTypeId()));
+        Optional<ServiceEntity> getServiceType = serviceRepo == null || stylerEntity.getServiceTypeId() == null
+                ? Optional.empty()
+                : serviceRepo.findById(Long.parseLong(stylerEntity.getServiceTypeId()));
         String serviceName="";
         if(getServiceType.isPresent()){
             ServiceEntity serviceEntity = getServiceType.get();
@@ -56,8 +63,40 @@ public class DTOService {
         stylerAccountDTO.setProfileImageUrl(stylerEntity.getProfileImageUrl());
         stylerAccountDTO.setBusinessName(stylerEntity.getBusinessName());
         stylerAccountDTO.setBusinessAddress(stylerEntity.getBusinessAddress());
+        stylerAccountDTO.setProvince(stylerEntity.getProvince());
+        stylerAccountDTO.setStreetAddress(stylerEntity.getStreetAddress());
+        stylerAccountDTO.setUnit(stylerEntity.getUnit());
+        stylerAccountDTO.setCity(stylerEntity.getCity());
+        stylerAccountDTO.setPostalCode(stylerEntity.getPostalCode());
+        stylerAccountDTO.setCountry(stylerEntity.getCountry());
+        stylerAccountDTO.setLatitude(stylerEntity.getLatitude());
+        stylerAccountDTO.setLongitude(stylerEntity.getLongitude());
+        stylerAccountDTO.setIncludedTravelKm(stylerEntity.getIncludedTravelKm() == null ? 15.0 : stylerEntity.getIncludedTravelKm());
+        stylerAccountDTO.setExtraTravelRatePerKm(stylerEntity.getExtraTravelRatePerKm() == null ? "0.00" : stylerEntity.getExtraTravelRatePerKm());
+        stylerAccountDTO.setMaxServiceDistanceKm(stylerEntity.getMaxServiceDistanceKm());
         stylerAccountDTO.setPhoneNumber(stylerEntity.getPhoneNumber());
         stylerAccountDTO.setDescription(stylerEntity.getDescription());
+        stylerAccountDTO.setVerificationStatus(stylerEntity.getVerificationStatus());
+        // Marketplace payout flag: a stylist can receive money only when Connect
+        // onboarding is COMPLETE — or when payments aren't configured at all
+        // (dev mode), in which case nothing blocks the flow.
+        stylerAccountDTO.setPayoutReady(!stripeService.isConfigured()
+                || "COMPLETE".equals(stylerEntity.getConnectOnboardingStatus()));
+        // Real review aggregates — cards and lists show actual ratings instead of placeholders.
+        List<ReviewEntity> reviews = reviewRepo == null
+                ? Collections.emptyList()
+                : reviewRepo.findByStylerIdAndModerationStatus(stylerEntity.getStylerId(), "APPROVED");
+        if(reviews != null && !reviews.isEmpty()){
+            double sum = 0;
+            for(ReviewEntity review : reviews){
+                sum += review.getRatingScore();
+            }
+            stylerAccountDTO.setAverageRating(Math.round((sum / reviews.size()) * 10.0) / 10.0);
+            stylerAccountDTO.setReviewCount((long) reviews.size());
+        } else {
+            stylerAccountDTO.setAverageRating(0.0);
+            stylerAccountDTO.setReviewCount(0L);
+        }
         return stylerAccountDTO;
     }
 
@@ -67,6 +106,8 @@ public class DTOService {
         subServiceDTO.setId(String.valueOf(subServiceEntity.getId()));
         subServiceDTO.setStatus(subServiceEntity.getStatus().equals("0") ? "Active" : "Inactive");
         subServiceDTO.setPrice(subServiceEntity.getPrice());
+        subServiceDTO.setDurationMinutes(subServiceEntity.getDurationMinutes() == null
+                ? DEFAULT_SERVICE_DURATION_MINUTES : subServiceEntity.getDurationMinutes());
         subServiceDTO.setCreatedAt(subServiceEntity.getCreatedAt());
         return subServiceDTO;
     }
@@ -75,6 +116,7 @@ public class DTOService {
         StylerPortfolioDTO stylerPortfolioDTO = new StylerPortfolioDTO();
         stylerPortfolioDTO.setName(stylerPortfolioEntity.getName());
         stylerPortfolioDTO.setImageUrl(stylerPortfolioEntity.getImageUrl());
+        stylerPortfolioDTO.setCategory(stylerPortfolioEntity.getCategory());
         stylerPortfolioDTO.setStatus(stylerPortfolioEntity.getStatus().equals("0") ? "Active" : "Inactive");
         stylerPortfolioDTO.setCreatedAt(stylerPortfolioEntity.getCreatedAt());
         return stylerPortfolioDTO;
@@ -88,6 +130,7 @@ public class DTOService {
         stylerReviewDTO.setMessage(reviewEntity.getMessage());
         stylerReviewDTO.setRatingScore(String.valueOf(reviewEntity.getRatingScore()));
         stylerReviewDTO.setCreatedAt(reviewEntity.getCreatedAt());
+        stylerReviewDTO.setBookingId(reviewEntity.getBookingId());
         return stylerReviewDTO;
     }
 
@@ -95,19 +138,25 @@ public class DTOService {
         AppointmentDTO appointmentDTO = new AppointmentDTO();
         //Get Userdata
         String subServiceName ="";
-        Optional<UserEntity> userData = userRepo.findByUserId(bookAppointmentEntity.getUserId());
+        Optional<UserEntity> userData = userRepo == null
+                ? Optional.empty()
+                : userRepo.findByUserId(bookAppointmentEntity.getUserId());
         if(userData.isPresent()){
             UserEntity userEntity = userData.get();
             appointmentDTO.setUserData(this.userAccountDTO(userEntity));
         }
         //Get Styler data
-        Optional<StylerEntity> stylerData = stylerRepo.findByStylerId(bookAppointmentEntity.getStylerId());
+        Optional<StylerEntity> stylerData = stylerRepo == null
+                ? Optional.empty()
+                : stylerRepo.findByStylerId(bookAppointmentEntity.getStylerId());
         if(stylerData.isPresent()){
             StylerEntity stylerEntity = stylerData.get();
             appointmentDTO.setStylerData(this.stylerAccountDTO(stylerEntity));
         }
         //Get service data
-        Optional<SubServiceEntity> subServiceData = subServiceRepo.isServiceExistById(bookAppointmentEntity.getStylerId(), Long.parseLong(bookAppointmentEntity.getSubServiceId()));
+        Optional<SubServiceEntity> subServiceData = subServiceRepo == null
+                ? Optional.empty()
+                : subServiceRepo.isServiceExistById(bookAppointmentEntity.getStylerId(), Long.parseLong(bookAppointmentEntity.getSubServiceId()));
         if(subServiceData.isPresent()){
             SubServiceEntity subServiceEntity = subServiceData.get();
             appointmentDTO.setSubServiceData(this.subServiceDTO(subServiceEntity));
@@ -115,11 +164,32 @@ public class DTOService {
 
         appointmentDTO.setAppointmentDate(bookAppointmentEntity.getAppointmentDate());
         appointmentDTO.setAppointmentId(bookAppointmentEntity.getAppointmentId());
+        appointmentDTO.setServicePrice(bookAppointmentEntity.getServicePrice() == null
+                ? bookAppointmentEntity.getPrice() : bookAppointmentEntity.getServicePrice());
+        appointmentDTO.setTravelFee(bookAppointmentEntity.getTravelFee() == null
+                ? "0.00" : bookAppointmentEntity.getTravelFee());
+        appointmentDTO.setIncludedTravelKm(bookAppointmentEntity.getIncludedTravelKm() == null
+                ? 15.0 : bookAppointmentEntity.getIncludedTravelKm());
+        appointmentDTO.setTravelDistanceKm(bookAppointmentEntity.getTravelDistanceKm() == null
+                ? 0.0 : bookAppointmentEntity.getTravelDistanceKm());
+        appointmentDTO.setBillableTravelKm(bookAppointmentEntity.getBillableTravelKm() == null
+                ? 0.0 : bookAppointmentEntity.getBillableTravelKm());
+        appointmentDTO.setExtraTravelRatePerKm(bookAppointmentEntity.getExtraTravelRatePerKm() == null
+                ? "0.00" : bookAppointmentEntity.getExtraTravelRatePerKm());
         appointmentDTO.setPrice(bookAppointmentEntity.getPrice());
         appointmentDTO.setServiceTime(bookAppointmentEntity.getServiceTime());
         appointmentDTO.setArrivalTime(bookAppointmentEntity.getArrivalTime());
+        appointmentDTO.setDurationMinutes(bookAppointmentEntity.getDurationMinutes() == null
+                ? DEFAULT_SERVICE_DURATION_MINUTES : bookAppointmentEntity.getDurationMinutes());
         appointmentDTO.setNoOfPeople(bookAppointmentEntity.getNoOfPeople());
-        appointmentDTO.setStatus(bookAppointmentEntity.getStatus().equals("0") ?"Completed" : bookAppointmentEntity.getStatus().equals("1") ? "Pending" : "Rejected");
+        // Marketplace lifecycle: 1 pending → 3 accepted → 0 completed; 2 rejected; 4 cancelled.
+        appointmentDTO.setStatusCode(bookAppointmentEntity.getStatus());
+        appointmentDTO.setStatus(bookAppointmentEntity.getStatus().equals("0") ? "Completed"
+                : bookAppointmentEntity.getStatus().equals("1") ? "Pending"
+                : bookAppointmentEntity.getStatus().equals("2") ? "Rejected"
+                : bookAppointmentEntity.getStatus().equals("3") ? "Accepted"
+                : bookAppointmentEntity.getStatus().equals("4") ? "Cancelled"
+                : "Pending");
         appointmentDTO.setCreatedAt(bookAppointmentEntity.getCreatedAt());
         return appointmentDTO;
     }
@@ -141,10 +211,12 @@ public class DTOService {
 
     public CardDetailsDTO cardDetailsDTO(CardDetailsEntity cardDetailsEntity){
         CardDetailsDTO cardDetailsDTO = new CardDetailsDTO();
+        // Display-only metadata. The full PAN and CVV no longer exist anywhere.
         cardDetailsDTO.setCardName(cardDetailsEntity.getCardName());
-        cardDetailsDTO.setCardNumber(cardDetailsEntity.getCardNumber());
-        cardDetailsDTO.setCvv(cardDetailsEntity.getCvv());
-        cardDetailsDTO.setExpiryDate(cardDetailsEntity.getExpiryDate());
+        cardDetailsDTO.setLast4(cardDetailsEntity.getLast4());
+        cardDetailsDTO.setBrand(cardDetailsEntity.getBrand());
+        cardDetailsDTO.setExpMonth(cardDetailsEntity.getExpMonth());
+        cardDetailsDTO.setExpYear(cardDetailsEntity.getExpYear());
         return cardDetailsDTO;
     }
     public UserDataDTO userDataDTO (String userId) throws Exception {
@@ -155,8 +227,12 @@ public class DTOService {
             UserEntity userEntity = getUserDetails.get();
             userDataDTO.setUserData(this.userAccountDTO(userEntity));
         }
-        //Get card details
-        Optional<CardDetailsEntity> getUserCardDetails = cardDetailsRepo.findByUserId(EncryptionConfig.encrypt(userId));
+        //Get card details. New rows are keyed by the plain userId; legacy rows
+        // from the pre-Stripe era were keyed by the encrypted userId.
+        Optional<CardDetailsEntity> getUserCardDetails = cardDetailsRepo.findByUserId(userId);
+        if(getUserCardDetails.isEmpty()){
+            getUserCardDetails = cardDetailsRepo.findByUserId(EncryptionConfig.encrypt(userId));
+        }
         if(getUserCardDetails.isPresent()){
             CardDetailsEntity cardDetailsEntity = getUserCardDetails.get();
             userDataDTO.setUserCardData(this.cardDetailsDTO(cardDetailsEntity));

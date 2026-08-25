@@ -6,6 +6,7 @@ import lombok.Data;
 public class StylerPortfolioDTO {
     private String imageUrl;
     private String name;
+    private String category;
     private String status;
     private String createdAt;
 }

@@ -6,10 +6,11 @@ import javax.validation.constraints.NotEmpty;
 
 @Data
 public class StylerPortfolioData {
-    @NotEmpty(message = "StylerId cannot be empty")
+    // stylerId is derived from the JWT subject by the controller — never from the client.
     private String stylerId;
     @NotEmpty(message = "Image URL cannot be empty")
     private String imageUrl;
-    @NotEmpty(message = "Portfolio Name cannot be empty")
     private String name;
+    @NotEmpty(message = "Category cannot be empty")
+    private String category;
 }

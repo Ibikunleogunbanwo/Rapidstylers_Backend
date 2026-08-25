@@ -13,7 +13,7 @@ public class UserFeedbackData {
     private String emailAddress;
     @NotEmpty(message = "Message cannot be empty")
     private String message;
-    @NotEmpty(message = "User Id cannot be empty")
+    // userId is derived from the JWT subject by the controller — never from the client.
     private String userId;
     private String feedbackType;
 }

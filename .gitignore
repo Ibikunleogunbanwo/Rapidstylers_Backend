@@ -33,3 +33,8 @@ build/
 .vscode/
 pom.xml
 src/main/resources/application.properties
+
+### Secrets & local files ###
+.env
+uploads/
+.DS_Store

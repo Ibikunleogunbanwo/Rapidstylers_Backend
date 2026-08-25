@@ -11,10 +11,19 @@ public class AppointmentDTO {
     private SubServiceDTO subServiceData;
     private String appointmentDate;
     private String arrivalTime;
+    private Integer durationMinutes;
     private String serviceTime;
     private String noOfPeople;
+    private String servicePrice;
+    private String travelFee;
+    private Double includedTravelKm;
+    private Double travelDistanceKm;
+    private Double billableTravelKm;
+    private String extraTravelRatePerKm;
     private String price;
     private String status;
+    /** Raw status code ('1' pending, '3' accepted, '2' rejected, '0' completed, '4' cancelled) so the UI can render actions. */
+    private String statusCode;
     private String appointmentId;
     private String createdAt;
 }

@@ -10,4 +10,5 @@ public class StylerReviewDTO {
     private String message;
     private String createdAt;
     private String userId;
+    private String bookingId;
 }

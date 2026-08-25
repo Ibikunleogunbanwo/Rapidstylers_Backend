@@ -26,6 +26,10 @@ public class UserEntity implements Serializable {
     private String status;
     private String insertedDt;
     private String userId;
+    // Saved-stylist notification preferences. Null means enabled for legacy accounts.
+    private Boolean notifySavedAvailability = true;
+    private Boolean notifySavedPrice = true;
+    private Boolean notifySavedVerification = true;
 
     public UserEntity() {
     }
@@ -33,7 +37,7 @@ public class UserEntity implements Serializable {
     public UserEntity(UserData userData){
         AppUtils appUtils = new AppUtils();
         this.firstname = userData.getFirstname();
-        this.lastname = userData.getLastname().toUpperCase();
+        this.lastname = userData.getLastname();
         this.emailAddress = userData.getEmailAddress();
         this.country = userData.getCountry();
         this.state = userData.getState();

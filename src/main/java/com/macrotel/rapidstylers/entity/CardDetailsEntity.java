@@ -7,6 +7,12 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+/**
+ * Card-on-file metadata. Raw card numbers, CVVs and expiry dates are NEVER
+ * stored here — they are collected by Stripe's Elements iframe and this table
+ * only keeps the Stripe customer/payment-method references plus display-only
+ * card info (last4, brand, expiry).
+ */
 @Data
 @Entity
 @Table(name = "card_details")
@@ -16,9 +22,12 @@ public class CardDetailsEntity implements Serializable {
     Long id;
     private String userId;
     private String cardName;
-    private String cardNumber;
-    private String cvv;
-    private String expiryDate;
+    private String stripeCustomerId;
+    private String stripePaymentMethodId;
+    private String last4;
+    private String brand;
+    private Long expMonth;
+    private Long expYear;
     private String updatedDate;
 
     public CardDetailsEntity() {
