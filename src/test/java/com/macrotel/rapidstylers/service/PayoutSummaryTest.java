@@ -46,9 +46,12 @@ class PayoutSummaryTest {
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
 
         BookAppointmentEntity paid = appointment("APPT-1", "CAPTURED", "100.00");
+        paid.setStatus("0");
         BookAppointmentEntity paid2 = appointment("APPT-2", "CAPTURED", "250.00");
+        paid2.setStatus("0");
         BookAppointmentEntity pending = appointment("APPT-3", "PENDING", "80.00");
         BookAppointmentEntity noIntent = appointment("APPT-4", "CAPTURED", "50.00");
+        noIntent.setStatus("0");
         noIntent.setPaymentIntentId(null);
         when(appointmentRepo.findByStylerId("STYLER1"))
                 .thenReturn(Arrays.asList(paid, paid2, pending, noIntent));
@@ -115,6 +118,7 @@ class PayoutSummaryTest {
         appointment.setPrice(amount);
         appointment.setPaymentAmount(amount);
         appointment.setPaymentStatus(paymentStatus);
+        appointment.setStatus("3");
         appointment.setPaymentIntentId("pi_" + id);
         return appointment;
     }

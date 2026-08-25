@@ -93,6 +93,8 @@ class BookingWorkflowTest {
         appService.stripeService = stripeService;
         // Same default as application.properties (STRIPE_COMMISSION_PERCENT).
         ReflectionTestUtils.setField(appService, "stripeCommissionPercent", 10.0);
+        ReflectionTestUtils.setField(appService, "paymentAuthorizationWindowDays", 7L);
+        ReflectionTestUtils.setField(appService, "paymentAuthorizationLeadHours", 48L);
     }
 
     @Test
@@ -112,6 +114,7 @@ class BookingWorkflowTest {
     @Test
     void declinedCardBookingReturnsCardErrorCodeForTheUi() throws Exception {
         BookAppointmentData data = bookingData();
+        data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -151,6 +154,7 @@ class BookingWorkflowTest {
     @Test
     void expiredCardBookingReturnsExpiredCode() throws Exception {
         BookAppointmentData data = bookingData();
+        data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -187,6 +191,7 @@ class BookingWorkflowTest {
     @Test
     void connectedStylistBookingRoutesTransferAndCommission() throws Exception {
         BookAppointmentData data = bookingData();
+        data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -224,13 +229,14 @@ class BookingWorkflowTest {
                 eq("acct_123"), eq(1000L));
         verify(appointmentRepo).saveAndFlush(argThat(appointment ->
                 "pi_123".equals(appointment.getPaymentIntentId())
-                        && "PENDING".equals(appointment.getPaymentStatus())
+                        && "AUTHORIZED".equals(appointment.getPaymentStatus())
                         && "100.00".equals(appointment.getPaymentAmount())));
     }
 
     @Test
     void bookingBlockedForStylerNotOnboardedWhenPaymentsLive() {
         BookAppointmentData data = bookingData();
+        data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -249,6 +255,7 @@ class BookingWorkflowTest {
     @Test
     void bookingAllowedForOnboardedStylerWhenPaymentsLive() throws Exception {
         BookAppointmentData data = bookingData();
+        data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -286,6 +293,7 @@ class BookingWorkflowTest {
     @Test
     void slotCollisionEscapesBookingServiceForTransactionRollback() {
         BookAppointmentData data = bookingData();
+        data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -381,6 +389,7 @@ class BookingWorkflowTest {
     @Test
     void bookingQueuesAppointmentNotificationInsteadOfSendingEmailSynchronously() {
         BookAppointmentData data = bookingData();
+        data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         customer.setEmailAddress("customer@example.com");

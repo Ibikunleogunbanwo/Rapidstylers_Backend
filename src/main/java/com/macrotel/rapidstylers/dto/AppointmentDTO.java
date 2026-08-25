@@ -26,4 +26,7 @@ public class AppointmentDTO {
     private String statusCode;
     private String appointmentId;
     private String createdAt;
+    private String paymentStatus;
+    private String paymentFailureCode;
+    private String stripeTransferId;
 }

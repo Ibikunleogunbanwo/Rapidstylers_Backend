@@ -9,6 +9,7 @@ import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
 import com.stripe.model.SetupIntent;
+import com.stripe.model.Transfer;
 import com.stripe.net.Webhook;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
@@ -16,6 +17,7 @@ import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentMethodAttachParams;
 import com.stripe.param.SetupIntentCreateParams;
+import com.stripe.param.TransferCreateParams;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -143,12 +145,10 @@ public class StripeService {
 
     /**
      * Authorizes the booking amount against the customer's saved card.
-     * Capture method is MANUAL: the hold is only settled when the stylist
-     * completes the appointment (see captureBookingPayment).
-     *
-     * When connectAccountId is provided the stylist's share is routed to their
-     * Connect Express account and the platform commission is taken as an
-     * application fee at capture time.
+     * Capture method is MANUAL: the hold is settled when the stylist accepts
+     * the booking. The later completion transition handles the Connect transfer.
+     * The connectAccountId and feeCents parameters remain part of the service
+     * contract for compatibility, but funds stay on the platform until completion.
      */
     public PaymentIntent authorizeBookingPayment(String customerId, String paymentMethodId,
                                                  long amountCents, String appointmentId,
@@ -164,15 +164,25 @@ public class StripeService {
                 .setOffSession(true)
                 .putMetadata("appointmentId", appointmentId == null ? "" : appointmentId)
                 .putMetadata("platform", "rapidstylers");
-        if(connectAccountId != null && !connectAccountId.isEmpty()){
-            builder.setTransferData(PaymentIntentCreateParams.TransferData.builder()
-                    .setDestination(connectAccountId)
-                    .build());
-            if(feeCents > 0){
-                builder.setApplicationFeeAmount(feeCents);
-            }
-        }
+        // Keep the charge on the platform account. The stylist transfer is
+        // created only after the appointment is completed, so accepting or
+        // capturing a booking never makes payout funds eligible early.
         return PaymentIntent.create(builder.build());
+    }
+
+    /** Transfers the stylist's net share after the appointment is completed. */
+    public Transfer transferStylistShare(String connectAccountId, long amountCents, String appointmentId)
+            throws StripeException {
+        if(connectAccountId == null || connectAccountId.isBlank() || amountCents <= 0){
+            return null;
+        }
+        return Transfer.create(TransferCreateParams.builder()
+                .setAmount(amountCents)
+                .setCurrency(currency())
+                .setDestination(connectAccountId)
+                .putMetadata("appointmentId", appointmentId == null ? "" : appointmentId)
+                .putMetadata("platform", "rapidstylers")
+                .build());
     }
 
     /** Settles a previously authorized hold (stylist completed the appointment). */

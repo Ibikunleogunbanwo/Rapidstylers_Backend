@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
 import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -135,6 +136,12 @@ public class AppService {
 
     @Value("${app.booking.completion-grace-minutes:0}")
     private long completionGraceMinutes;
+
+    @Value("${app.booking.payment-authorization-window-days:7}")
+    private long paymentAuthorizationWindowDays;
+
+    @Value("${app.booking.payment-authorization-lead-hours:48}")
+    private long paymentAuthorizationLeadHours;
 
     public BaseResponse testing(){
         BaseResponse response = new BaseResponse(true);
@@ -285,6 +292,12 @@ public class AppService {
     public BaseResponse userSignUp(UserData userData){
         BaseResponse response = new BaseResponse(true);
         try{
+            if (!userData.isAgreeToTerms()) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("You must agree to the Terms and Conditions");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             // Locked-out email (failed logins/verifies) cannot create an account.
             if (rateLimiterService.isBlocked("auth:" + userData.getEmailAddress(), AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
                     || rateLimiterService.isBlocked("auth_ip:" + rateLimiterService.clientIp(), AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
@@ -1162,6 +1175,12 @@ public class AppService {
     public BaseResponse createStyler(StylerData stylerData){
         BaseResponse response = new BaseResponse(true);
         try{
+            if (!stylerData.isAgreeToTerms()) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("You must agree to the Terms and Conditions");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             //Check email across BOTH tables
             Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(stylerData.getEmailAddress());
             Optional<UserEntity> isUserEmailExist = userRepo.findByEmailAddress(stylerData.getEmailAddress());
@@ -2930,9 +2949,10 @@ public class AppService {
             appointment.setExtraTravelRatePerKm(pricing.extraTravelRatePerKm);
             appointment.setPrice(pricing.totalPrice);
 
-            // Stripe: authorize the booking amount against the customer's saved card.
-            // Funds are held, not moved, until the stylist completes the appointment.
-            if(stripeService.isConfigured()){
+            // Stripe: authorize near-term bookings immediately. Future bookings
+            // receive a due timestamp and are authorized by the payment scheduler
+            // inside Stripe's safe card-authorization window.
+            if(stripeService.isConfigured() && shouldAuthorizeNow(appointmentDate, appointmentStart)){
                 Optional<CardDetailsEntity> card = cardDetailsRepo.findByUserId(bookAppointmentData.getUserId());
                 if(card.isEmpty() || card.get().getStripeCustomerId() == null || card.get().getStripePaymentMethodId() == null){
                     return paymentErrorResponse(response, "NO_PAYMENT_METHOD",
@@ -2946,8 +2966,9 @@ public class AppService {
                             card.get().getStripeCustomerId(), card.get().getStripePaymentMethodId(),
                             amountCents, appointment.getAppointmentId(), destination, commissionCents(amountCents));
                     appointment.setPaymentIntentId(intent.getId());
-                    appointment.setPaymentStatus("PENDING");
+                    appointment.setPaymentStatus("AUTHORIZED");
                     appointment.setPaymentAmount(pricing.totalPrice);
+                    appointment.setPaymentAuthorizationDueAt(null);
                 } catch(com.stripe.exception.CardException ex){
                     // Distinguish card problems so the frontend can prompt the
                     // customer to update their saved card instead of showing a generic error.
@@ -2964,6 +2985,11 @@ public class AppService {
                     return paymentErrorResponse(response, "PAYMENT_ERROR",
                             "Payment could not be authorized — please check your card or try again");
                 }
+            }
+            if(stripeService.isConfigured() && !shouldAuthorizeNow(appointmentDate, appointmentStart)){
+                appointment.setPaymentStatus("PAYMENT_SCHEDULED");
+                appointment.setPaymentAmount(pricing.totalPrice);
+                appointment.setPaymentAuthorizationDueAt(paymentAuthorizationDueAt(appointmentDate, appointmentStart));
             }
             bookAppointmentRepo.saveAndFlush(appointment);
             reserveBookingSlots(appointment, appointmentDate, appointmentStart, durationMinutes);
@@ -2993,6 +3019,109 @@ public class AppService {
             return errorResponse(response, ex.getMessage());
         }
         return response;
+    }
+
+    private boolean shouldAuthorizeNow(LocalDate appointmentDate, LocalTime appointmentStart){
+        ZonedDateTime scheduled = ZonedDateTime.of(appointmentDate, appointmentStart, applicationZone());
+        return !scheduled.isAfter(ZonedDateTime.now(applicationZone()).plusDays(paymentAuthorizationWindowDays));
+    }
+
+    private LocalDateTime paymentAuthorizationDueAt(LocalDate appointmentDate, LocalTime appointmentStart){
+        ZonedDateTime scheduled = ZonedDateTime.of(appointmentDate, appointmentStart, applicationZone())
+                .minusHours(paymentAuthorizationLeadHours);
+        ZonedDateTime now = ZonedDateTime.now(applicationZone());
+        return (scheduled.isBefore(now) ? now : scheduled).toLocalDateTime();
+    }
+
+    private LocalDateTime paymentAuthorizationDueAt(BookAppointmentEntity appointment){
+        if(appointment.getPaymentAuthorizationDueAt() != null){
+            return appointment.getPaymentAuthorizationDueAt();
+        }
+        LocalDate date = appointment.getAppointmentDateValue();
+        LocalTime start = appointment.getAppointmentStartTime();
+        if(date == null || start == null){
+            date = parseBookingDate(appointment.getAppointmentDate());
+            start = parseBookingTime(appointment.getArrivalTime());
+        }
+        return paymentAuthorizationDueAt(date, start);
+    }
+
+    /**
+     * Authorizes a scheduled booking exactly once. When captureAfterAuthorization
+     * is true, the stylist has already accepted and the authorized amount is
+     * captured immediately after Stripe confirms the hold.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    PaymentAttemptResult authorizeScheduledPayment(BookAppointmentEntity appointment, boolean captureAfterAuthorization){
+        try {
+            Optional<CardDetailsEntity> card = cardDetailsRepo.findByUserId(appointment.getUserId());
+            if(card.isEmpty() || card.get().getStripeCustomerId() == null || card.get().getStripePaymentMethodId() == null){
+                appointment.setPaymentStatus("PAYMENT_FAILED");
+                appointment.setPaymentFailureCode("NO_PAYMENT_METHOD");
+                bookAppointmentRepo.save(appointment);
+                return PaymentAttemptResult.failure("NO_PAYMENT_METHOD", "Please add a payment method to complete this booking");
+            }
+            Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
+            String destination = styler.filter(s -> s.getStripeConnectAccountId() != null && !s.getStripeConnectAccountId().isBlank())
+                    .map(StylerEntity::getStripeConnectAccountId).orElse(null);
+            long amountCents = centsFromPrice(appointment.getPaymentAmount() == null ? appointment.getPrice() : appointment.getPaymentAmount());
+            PaymentIntent intent = stripeService.authorizeBookingPayment(
+                    card.get().getStripeCustomerId(), card.get().getStripePaymentMethodId(),
+                    amountCents, appointment.getAppointmentId(), destination, commissionCents(amountCents));
+            appointment.setPaymentIntentId(intent.getId());
+            appointment.setPaymentStatus("AUTHORIZED");
+            appointment.setPaymentFailureCode(null);
+            appointment.setPaymentAuthorizationDueAt(null);
+            if(captureAfterAuthorization){
+                stripeService.captureBookingPayment(intent.getId());
+                appointment.setPaymentStatus("CAPTURED");
+                sendPaymentReceipt(appointment);
+            }
+            bookAppointmentRepo.save(appointment);
+            return PaymentAttemptResult.success();
+        } catch(com.stripe.exception.CardException ex){
+            String code = "authentication_required".equals(ex.getCode()) ? "PAYMENT_REQUIRES_ACTION"
+                    : "expired_card".equals(ex.getCode()) ? "CARD_EXPIRED" : "CARD_DECLINED";
+            appointment.setPaymentStatus("PAYMENT_REQUIRES_ACTION".equals(code) ? "PAYMENT_REQUIRES_ACTION" : "PAYMENT_FAILED");
+            appointment.setPaymentFailureCode(code);
+            bookAppointmentRepo.save(appointment);
+            String message = "PAYMENT_REQUIRES_ACTION".equals(code)
+                    ? "Please return to RapidStylers to confirm your payment."
+                    : "Your saved card could not be charged. Please update it and try again.";
+            return PaymentAttemptResult.failure(code, message);
+        } catch(Exception ex){
+            LOG.warning("Scheduled payment authorization failed: " + ex.getMessage());
+            appointment.setPaymentStatus("PAYMENT_FAILED");
+            appointment.setPaymentFailureCode("PAYMENT_ERROR");
+            bookAppointmentRepo.save(appointment);
+            return PaymentAttemptResult.failure("PAYMENT_ERROR", "Payment could not be completed. Please try again.");
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${app.booking.payment-scheduler-delay-ms:60000}")
+    @Transactional(rollbackFor = Exception.class)
+    public void processDuePaymentAuthorizations(){
+        if(!stripeService.isConfigured()) return;
+        LocalDateTime now = LocalDateTime.now(applicationZone());
+        List<BookAppointmentEntity> due = bookAppointmentRepo
+                .findByPaymentStatusAndPaymentAuthorizationDueAtBefore("PAYMENT_ACCEPTED_SCHEDULED", now);
+        for(BookAppointmentEntity appointment : due){
+            if(!"3".equals(appointment.getStatus())) continue;
+            authorizeScheduledPayment(appointment, true);
+        }
+    }
+
+    private static class PaymentAttemptResult {
+        private final boolean success;
+        private final String code;
+        private final String message;
+        private PaymentAttemptResult(boolean success, String code, String message){
+            this.success = success;
+            this.code = code;
+            this.message = message;
+        }
+        private static PaymentAttemptResult success(){ return new PaymentAttemptResult(true, null, null); }
+        private static PaymentAttemptResult failure(String code, String message){ return new PaymentAttemptResult(false, code, message); }
     }
 
     private int serviceDuration(Integer durationMinutes){
@@ -3358,6 +3487,35 @@ public class AppService {
         return transitionAppointment(userId, ActorRole.CUSTOMER, appointmentId, "4", new String[]{"1", "3"}, "Appointment cancelled");
     }
 
+    /** Customer retry path for a deferred or failed payment. */
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse retryAppointmentPayment(String userId, String appointmentId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<BookAppointmentEntity> found = bookAppointmentRepo.findByAppointmentId(appointmentId);
+            if(found.isEmpty()) return errorResponse(response, "Invalid Appointment Id");
+            BookAppointmentEntity appointment = found.get();
+            if(!userId.equals(appointment.getUserId())) return errorResponse(response, "You do not have permission to update this appointment");
+            if(!Arrays.asList("PAYMENT_FAILED", "PAYMENT_REQUIRES_ACTION", "PAYMENT_ACCEPTED_SCHEDULED").contains(appointment.getPaymentStatus())){
+                return errorResponse(response, "This appointment does not need a payment retry");
+            }
+            PaymentAttemptResult payment = authorizeScheduledPayment(appointment, "3".equals(appointment.getStatus()));
+            if(!payment.success){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage(payment.message);
+                response.setData(Collections.singletonMap("paymentError", payment.code));
+                return response;
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Payment completed successfully");
+            response.setData(EMPTY_DATA);
+        } catch(Exception ex){
+            LOG.warning("Payment retry failed: " + ex.getMessage());
+            return errorResponse(response, "Payment could not be completed. Please try again.");
+        }
+        return response;
+    }
+
     private enum ActorRole { STYLER, CUSTOMER }
 
     /**
@@ -3405,17 +3563,33 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            if("0".equals(newStatus) && appointment.getPaymentIntentId() != null && stripeService.isConfigured()){
-                // Settle the authorized hold only when the service is completed.
+            if("3".equals(newStatus) && stripeService.isConfigured()
+                    && "PAYMENT_SCHEDULED".equals(appointment.getPaymentStatus())
+                    && paymentAuthorizationDueAt(appointment).isAfter(LocalDateTime.now(applicationZone()))){
+                // The stylist can accept an advance booking before the payment
+                // window opens. The scheduler will authorize it later.
+                appointment.setPaymentStatus("PAYMENT_ACCEPTED_SCHEDULED");
+                appointment.setPaymentFailureCode(null);
+            } else if("3".equals(newStatus) && stripeService.isConfigured()
+                    && "PAYMENT_SCHEDULED".equals(appointment.getPaymentStatus())){
+                PaymentAttemptResult payment = authorizeScheduledPayment(appointment, true);
+                if(!payment.success){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage(payment.message);
+                    response.setData(Collections.singletonMap("paymentError", payment.code));
+                    return response;
+                }
+            }
+            if("3".equals(newStatus) && appointment.getPaymentIntentId() != null && stripeService.isConfigured()
+                    && "AUTHORIZED".equals(appointment.getPaymentStatus())){
                 try {
                     stripeService.captureBookingPayment(appointment.getPaymentIntentId());
                     appointment.setPaymentStatus("CAPTURED");
-                    // Receipts for both parties once the payment actually settles.
                     sendPaymentReceipt(appointment);
                 } catch(Exception ex){
                     LOG.warning("Payment capture failed: " + ex.getMessage());
                     response.setStatusCode(ERROR_STATUS_CODE);
-                    response.setMessage("Payment capture failed — the appointment was not completed. Please contact support.");
+                    response.setMessage("Payment capture failed — please try again or update your payment method.");
                     response.setData(EMPTY_DATA);
                     return response;
                 }
@@ -3437,6 +3611,29 @@ public class AppService {
                 }
             }
             if("0".equals(newStatus)){
+                if(stripeService.isConfigured() && "CAPTURED".equals(appointment.getPaymentStatus())
+                        && appointment.getStripeTransferId() == null){
+                    try {
+                        Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
+                        String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
+                        long totalCents = centsFromPrice(appointment.getPaymentAmount() == null
+                                ? appointment.getPrice() : appointment.getPaymentAmount());
+                        long stylistShareCents = totalCents - commissionCents(totalCents);
+                        if(destination != null && stylistShareCents > 0){
+                            com.stripe.model.Transfer transfer = stripeService.transferStylistShare(
+                                    destination, stylistShareCents, appointment.getAppointmentId());
+                            if(transfer != null){
+                                appointment.setStripeTransferId(transfer.getId());
+                            }
+                        }
+                    } catch(Exception ex){
+                        LOG.warning("Stylist payout transfer failed: " + ex.getMessage());
+                        response.setStatusCode(ERROR_STATUS_CODE);
+                        response.setMessage("Payout transfer failed — the appointment was not completed. Please contact support.");
+                        response.setData(EMPTY_DATA);
+                        return response;
+                    }
+                }
                 awardCompletionPoints(appointment.getUserId(), appointment.getAppointmentId());
             }
             audit(ownerId, actorRole == ActorRole.STYLER ? "STYLER" : "CUSTOMER", "APPOINTMENT_" + newStatus,
@@ -3645,7 +3842,9 @@ public class AppService {
             BigDecimal totalCommission = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
             List<Map<String, Object>> appointments = new ArrayList<>();
             for(BookAppointmentEntity appointment : bookAppointmentRepo.findByStylerId(stylerId)){
-                if(appointment.getPaymentIntentId() == null || !"CAPTURED".equals(appointment.getPaymentStatus())){
+                if(!"0".equals(appointment.getStatus())
+                        || appointment.getPaymentIntentId() == null
+                        || !"CAPTURED".equals(appointment.getPaymentStatus())){
                     continue;
                 }
                 BigDecimal total = amount(appointment.getPaymentAmount() == null
