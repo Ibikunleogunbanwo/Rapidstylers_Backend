@@ -36,5 +36,7 @@ src/main/resources/application.properties
 
 ### Secrets & local files ###
 .env
+.env.*
+!.env.example
 uploads/
 .DS_Store
