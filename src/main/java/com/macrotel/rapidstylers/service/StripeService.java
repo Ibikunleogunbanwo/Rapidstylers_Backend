@@ -47,6 +47,9 @@ public class StripeService {
     @Value("${app.stripe.webhook-secret:}")
     private String webhookSecret;
 
+    @Value("${app.stripe.connect-webhook-secret:}")
+    private String connectWebhookSecret;
+
     @Value("${app.stripe.currency:cad}")
     private String currency;
 
@@ -208,11 +211,24 @@ public class StripeService {
      * signature does not match the configured webhook secret.
      */
     public Event verifyWebhookEvent(String payload, String signatureHeader) {
+        IllegalArgumentException firstFailure;
         try {
             return Webhook.constructEvent(payload, signatureHeader, webhookSecret);
         } catch (Exception ex) {
-            throw new IllegalArgumentException("Invalid webhook signature");
+            firstFailure = new IllegalArgumentException("Invalid webhook signature");
         }
+
+        // Platform and connected-account destinations have different signing
+        // secrets. Accept either, but never bypass signature verification.
+        if (connectWebhookSecret != null && !connectWebhookSecret.trim().isEmpty()
+                && !connectWebhookSecret.equals(webhookSecret)) {
+            try {
+                return Webhook.constructEvent(payload, signatureHeader, connectWebhookSecret);
+            } catch (Exception ignored) {
+                // Preserve the same client-safe error for both failures.
+            }
+        }
+        throw firstFailure;
     }
 
     /** Display-only card metadata persisted instead of raw card data. */

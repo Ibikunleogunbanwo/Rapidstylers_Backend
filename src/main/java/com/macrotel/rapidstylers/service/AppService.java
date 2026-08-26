@@ -3202,18 +3202,27 @@ public class AppService {
      */
     public void handleStripeWebhook(String payload, String signatureHeader){
         Event event = stripeService.verifyWebhookEvent(payload, signatureHeader);
-        if("payment_intent.captured".equals(event.getType())){
+        if("payment_intent.succeeded".equals(event.getType())){
             PaymentIntent intent = (PaymentIntent) event.getData().getObject();
             bookAppointmentRepo.findByPaymentIntentId(intent.getId()).ifPresent(a -> {
-                // The synchronous capture in the completion transition already sends
-                // receipts — only email again if this webhook is the first to see it.
+                // Capture is normally persisted synchronously; this webhook keeps
+                // state correct when Stripe completes it asynchronously.
                 boolean alreadyCaptured = "CAPTURED".equals(a.getPaymentStatus());
                 a.setPaymentStatus("CAPTURED");
+                a.setPaymentFailureCode(null);
                 bookAppointmentRepo.save(a);
                 if(!alreadyCaptured){
                     sendPaymentReceipt(a);
                 }
                 audit("system", "SYSTEM", "PAYMENT_CAPTURED", "APPOINTMENT", a.getAppointmentId(), "Payment captured");
+            });
+        } else if("payment_intent.payment_failed".equals(event.getType())){
+            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
+            bookAppointmentRepo.findByPaymentIntentId(intent.getId()).ifPresent(a -> {
+                a.setPaymentStatus("PAYMENT_FAILED");
+                a.setPaymentFailureCode("PAYMENT_FAILED");
+                bookAppointmentRepo.save(a);
+                audit("system", "SYSTEM", "PAYMENT_FAILED", "APPOINTMENT", a.getAppointmentId(), "Payment failed");
             });
         } else if("account.updated".equals(event.getType())){
             handleAccountUpdated((Account) event.getData().getObject());

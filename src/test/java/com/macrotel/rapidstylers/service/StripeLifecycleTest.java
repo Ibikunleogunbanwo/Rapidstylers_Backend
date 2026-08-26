@@ -17,11 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-/**
- * Live end-to-end check against Stripe's TEST API, exercising the exact
+/**     * Opt-in end-to-end check against Stripe's TEST API, exercising the exact
  * StripeService methods the running backend uses.
- *
- * Skips automatically when STRIPE_SECRET_KEY is not set (either as an env var
+ *     * Skips automatically when STRIPE_SECRET_KEY is not set or is a live key (either as an env var
  * or in the project .env file — the same source the running app loads), so a
  * normal `./mvnw test` stays green without keys.
  *
@@ -49,7 +47,9 @@ class StripeLifecycleTest {
     @Test
     void fullLifecycleAuthorizeCaptureAndRelease() throws Exception {
         assumeTrue(service.isConfigured(),
-                "STRIPE_SECRET_KEY is not set — skipping live Stripe test. Add a test key to .env and re-run.");
+                "STRIPE_SECRET_KEY is not set — skipping Stripe lifecycle test. Add a test key to .env and re-run.");
+        assumeTrue(!resolveSecretKey().startsWith("sk_live_"),
+                "Live Stripe key detected — refusing to create customers, payment methods, holds, or charges.");
 
         // 1. Create a Stripe Customer (same call the backend makes on card save).
         //    Unique email per run so repeated executions never collide.
