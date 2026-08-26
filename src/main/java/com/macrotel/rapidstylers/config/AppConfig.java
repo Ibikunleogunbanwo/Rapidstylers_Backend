@@ -33,8 +33,11 @@ public class AppConfig extends OncePerRequestFilter {
         String requestUrl = request.getRequestURI();
 
         // Public file serving and the Stripe webhook (signed, not key-gated) bypass the shared key.
+        // The actuator health endpoint is exempt so Docker/Nginx health checks work
+        // without an API key; it reports only UP/DOWN status.
         if ((requestApiKey == null && requestUrl.startsWith("/rapid_stylers/files/"))
-                || "/rapid_stylers/stripe/webhook".equals(requestUrl)) {
+                || "/rapid_stylers/stripe/webhook".equals(requestUrl)
+                || "/rapid_stylers/actuator/health".equals(requestUrl)) {
             filterChain.doFilter(request, response);
         }
         else{
