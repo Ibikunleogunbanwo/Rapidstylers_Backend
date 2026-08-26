@@ -191,6 +191,9 @@ public class DTOService {
                 : bookAppointmentEntity.getStatus().equals("4") ? "Cancelled"
                 : "Pending");
         appointmentDTO.setCreatedAt(bookAppointmentEntity.getCreatedAt());
+        appointmentDTO.setPaymentStatus(bookAppointmentEntity.getPaymentStatus());
+        appointmentDTO.setPaymentFailureCode(bookAppointmentEntity.getPaymentFailureCode());
+        appointmentDTO.setStripeTransferId(bookAppointmentEntity.getStripeTransferId());
         return appointmentDTO;
     }
 

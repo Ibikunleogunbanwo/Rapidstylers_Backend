@@ -7,6 +7,7 @@ import lombok.Data;
 import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Data
 @Entity
@@ -30,6 +31,7 @@ public class UserEntity implements Serializable {
     private Boolean notifySavedAvailability = true;
     private Boolean notifySavedPrice = true;
     private Boolean notifySavedVerification = true;
+    private LocalDateTime termsAcceptedAt;
 
     public UserEntity() {
     }
@@ -46,5 +48,6 @@ public class UserEntity implements Serializable {
         this.password= appUtils.encryptPassword(userData.getPassword());
         this.status = "0";
         this.insertedDt = String.valueOf(LocalDate.now());
+        this.termsAcceptedAt = userData.isAgreeToTerms() ? LocalDateTime.now() : null;
     }
 }

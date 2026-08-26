@@ -32,5 +32,7 @@ public class UserData {
     @NotEmpty(message = "Password cannot be empty")
     @Pattern(regexp = PASSWORD_PATTERN, message = "Password must be at least 8 characters with 1 uppercase, 1 lowercase, 1 digit, and 1 special character")
     private String password;
+    @javax.validation.constraints.AssertTrue(message = "You must agree to the Terms and Conditions")
+    private boolean agreeToTerms;
 
 }

@@ -28,6 +28,9 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
 
     Optional<BookAppointmentEntity> findByPaymentIntentId(String paymentIntentId);
 
+    List<BookAppointmentEntity> findByPaymentStatusAndPaymentAuthorizationDueAtBefore(
+            String paymentStatus, java.time.LocalDateTime dueAt);
+
     /** Active bookings (pending or accepted) for a styler at a given date/time — used to reject double-booking. */
     @Query("SELECT b FROM BookAppointmentEntity b WHERE b.stylerId =:stylerId AND b.appointmentDate =:appointmentDate AND b.arrivalTime =:arrivalTime AND b.status IN ('1','3')")
     List<BookAppointmentEntity> findConflictingBooking(@Param("stylerId") String stylerId,

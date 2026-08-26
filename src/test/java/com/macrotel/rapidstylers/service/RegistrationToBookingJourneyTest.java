@@ -146,6 +146,7 @@ class RegistrationToBookingJourneyTest {
         userData.put("address", "123 Main St, Toronto, ON M5V 2T6");
         userData.put("phoneNumber", "587555" + String.format("%04d", System.currentTimeMillis() % 10000));
         userData.put("password", "Test1234!");
+        userData.put("agreeToTerms", true);
         assertOk(apiPost("/create_user_account", userData, null));
 
         String customerToken = signIn("/user_sign_in", custEmail, "Test1234!");
@@ -171,6 +172,7 @@ class RegistrationToBookingJourneyTest {
         stylerData.put("address", "45 King St W, Toronto, ON");
         stylerData.put("phoneNumber", "587444" + String.format("%04d", System.currentTimeMillis() % 10000));
         stylerData.put("password", stylerPassword);
+        stylerData.put("agreeToTerms", true);
         stylerData.put("identificationTypeId", identificationId);
         stylerData.put("identificationImageUrl", "https://example.com/id.jpg");
         stylerData.put("profileImageUrl", "https://example.com/profile.jpg");

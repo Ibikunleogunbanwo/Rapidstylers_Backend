@@ -52,6 +52,10 @@ public class BookAppointmentEntity implements Serializable {
     private String paymentIntentId;
     private String paymentStatus;
     private String paymentAmount;
+    // Payment is authorized only inside the configured Stripe-safe window.
+    private LocalDateTime paymentAuthorizationDueAt;
+    private String paymentFailureCode;
+    private String stripeTransferId;
 
     public BookAppointmentEntity() {
     }

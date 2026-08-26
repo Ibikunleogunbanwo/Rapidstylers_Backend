@@ -7,6 +7,7 @@ import lombok.Data;
 import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Data
 @Entity
@@ -55,6 +56,7 @@ public class StylerEntity implements Serializable {
     private String stripeConnectAccountId;
     private String connectOnboardingStatus;
     private String connectDisabledReason;
+    private LocalDateTime termsAcceptedAt;
 
     public StylerEntity() {
     }
@@ -85,6 +87,7 @@ public class StylerEntity implements Serializable {
         this.status = "0";
         this.isOnline = "1";
         this.verificationStatus = "PENDING";
+        this.termsAcceptedAt = stylerData.isAgreeToTerms() ? LocalDateTime.now() : null;
         this.includedTravelKm = stylerData.getIncludedTravelKm() == null ? 15.0 : stylerData.getIncludedTravelKm();
         this.extraTravelRatePerKm = stylerData.getExtraTravelRatePerKm() == null ? "0.00" : stylerData.getExtraTravelRatePerKm();
         this.maxServiceDistanceKm = stylerData.getMaxServiceDistanceKm();

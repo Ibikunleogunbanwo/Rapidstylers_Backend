@@ -551,6 +551,13 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    @PostMapping("/retry_appointment_payment")
+    public ResponseEntity<BaseResponse> retryAppointmentPayment(@Valid @RequestBody AppointmentActionData action, HttpServletRequest request){
+        String accountId = currentAccountId(request);
+        if(accountId == null) return unauthorized();
+        return new ResponseEntity<>(appService.retryAppointmentPayment(accountId, action.getAppointmentId()), HttpStatus.OK);
+    }
+
     @PostMapping("/cancel_appointment")
     public ResponseEntity <BaseResponse> cancelAppointment(@Valid @RequestBody AppointmentActionData appointmentActionData, HttpServletRequest request){
         String accountId = currentAccountId(request);
