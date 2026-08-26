@@ -388,6 +388,18 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
+
+    /** Stylist removes one of their own gallery images (ownership enforced from the token). */
+    @PostMapping("/delete_portfolio_image")
+    public ResponseEntity<BaseResponse> deleteOwnPortfolioImage(@Valid @RequestBody PortfolioActionData portfolioActionData, HttpServletRequest request){
+        String accountId = currentAccountId(request);
+        if(accountId == null){
+            return unauthorized();
+        }
+        BaseResponse baseResponse = appService.deleteOwnPortfolioImage(accountId, portfolioActionData.getPortfolioId());
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
     @GetMapping("/admin/review_moderation_queue")
     public ResponseEntity<BaseResponse> reviewModerationQueue(HttpServletRequest request){
         String adminId = currentAccountId(request);

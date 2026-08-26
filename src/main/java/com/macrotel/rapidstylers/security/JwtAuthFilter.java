@@ -56,6 +56,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/styler_own_sub_services", "STYLER");
         allow("/rapid_stylers/create_portfolio", "STYLER");
         allow("/rapid_stylers/styler_own_portfolio", "STYLER");
+        allow("/rapid_stylers/delete_portfolio_image", "STYLER");
         allow("/rapid_stylers/styler_sign_out", "STYLER");
         allow("/rapid_stylers/styler/connect_account", "STYLER");
         allow("/rapid_stylers/styler/connect_status", "STYLER");

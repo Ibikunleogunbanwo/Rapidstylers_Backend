@@ -1489,6 +1489,8 @@ public class AppService {
     public BaseResponse searchStylerByProvince(String province){
         BaseResponse response = new BaseResponse(true);
         try{
+            // Trim defensively so padded values (" Alberta ") still match.
+            province = province == null ? "" : province.trim();
             List<StylerEntity> getStylerByProvince = stylerRepo.findByProvinceIgnoreCase(province);
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerByProvince){
@@ -1788,6 +1790,40 @@ public class AppService {
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Image removed from the gallery and the stylist has been notified");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * Stylist removes one of their own gallery images. Ownership is enforced
+     * from the authenticated token — a stylist can never delete another
+     * stylist's work.
+     */
+    public BaseResponse deleteOwnPortfolioImage(String stylerId, Long portfolioId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerPortfolioEntity> itemOpt = stylerPortfolioRepo.findById(portfolioId);
+            if(itemOpt.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid portfolio image");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            StylerPortfolioEntity item = itemOpt.get();
+            // Only the owner can remove their own work.
+            if(!item.getStylerId().equals(stylerId)){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("You can only remove your own work");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            stylerPortfolioRepo.delete(item);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Photo removed from your portfolio");
             response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
@@ -4238,6 +4274,9 @@ public class AppService {
 
             // Step 2: DB city search — catches stylers not yet in Redis
             Set<String> seenIds = new HashSet<>(allStylerDistances.keySet());
+            // Trim defensively so padded values (" Calgary ") still match and
+            // whitespace-only payloads are ignored, not passed to the repo.
+            if(city != null) city = city.trim();
             if(city != null && !city.isEmpty()){
                 List<StylerEntity> cityStylers;
                 if(serviceTypeId != null && !serviceTypeId.isEmpty()){

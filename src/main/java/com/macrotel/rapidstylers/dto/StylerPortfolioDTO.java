@@ -4,6 +4,7 @@ import lombok.Data;
 
 @Data
 public class StylerPortfolioDTO {
+    private Long id;
     private String imageUrl;
     private String name;
     private String category;

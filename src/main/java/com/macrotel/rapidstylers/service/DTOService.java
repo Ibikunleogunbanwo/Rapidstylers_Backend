@@ -114,6 +114,7 @@ public class DTOService {
 
     public StylerPortfolioDTO stylerPortfolioDTO(StylerPortfolioEntity stylerPortfolioEntity){
         StylerPortfolioDTO stylerPortfolioDTO = new StylerPortfolioDTO();
+        stylerPortfolioDTO.setId(stylerPortfolioEntity.getId());
         stylerPortfolioDTO.setName(stylerPortfolioEntity.getName());
         stylerPortfolioDTO.setImageUrl(stylerPortfolioEntity.getImageUrl());
         stylerPortfolioDTO.setCategory(stylerPortfolioEntity.getCategory());
