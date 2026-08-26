@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.entity.OTPEntity;
+import com.macrotel.rapidstylers.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
@@ -12,8 +14,10 @@ import com.macrotel.rapidstylers.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
+import com.macrotel.rapidstylers.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.repo.NotificationRepo;
 import com.macrotel.rapidstylers.repo.OTPRepo;
+import com.macrotel.rapidstylers.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
@@ -85,6 +89,8 @@ class RegistrationToBookingJourneyTest {
     @Autowired NotificationRepo notificationRepo;
     @Autowired AuditLogRepo auditLogRepo;
     @Autowired LocationCacheService locationCacheService;
+    @Autowired IdentificationRepo identificationRepo;
+    @Autowired ServiceRepo serviceRepo;
 
     @Value("${app.api.key}") String apiKey;
     @Value("${app.admin.email}") String adminEmail;
@@ -97,12 +103,32 @@ class RegistrationToBookingJourneyTest {
     private String subServiceId;
     private String appointmentId;
     private String stylerPassword = "Test1234!";
+    private Long identificationTypeId;
+    private Long serviceTypeId;
 
     @BeforeEach
     void uniqueIdentities() {
         long ts = System.currentTimeMillis();
         custEmail = "journey.cust." + ts + "@rapidstylers.test";
         stylerEmail = "journey.styl." + ts + "@rapidstylers.test";
+        // The styler registration requires an identification type and a service
+        // type. They exist on long-lived dev databases but not on a fresh CI
+        // database, so ensure marker rows exist and remove them afterwards.
+        IdentificationEntity idType = identificationRepo.findByIdentificationName("Journey Test ID")
+                .orElseGet(() -> {
+                    IdentificationEntity e = new IdentificationEntity();
+                    e.setIdentificationName("Journey Test ID");
+                    return identificationRepo.save(e);
+                });
+        identificationTypeId = idType.getId();
+
+        ServiceEntity svcType = serviceRepo.findByServiceName("Journey Test Service")
+                .orElseGet(() -> {
+                    ServiceEntity e = new ServiceEntity();
+                    e.setServiceName("Journey Test Service");
+                    return serviceRepo.save(e);
+                });
+        serviceTypeId = svcType.getId();
     }
 
     @AfterEach
@@ -128,6 +154,9 @@ class RegistrationToBookingJourneyTest {
         otpRepo.findAll().stream()
                 .filter(o -> custEmail.equals(o.getEmailAddress()) || stylerEmail.equals(o.getEmailAddress()))
                 .forEach(otpRepo::delete);
+        // Remove the seed rows this run created so a fresh database stays clean.
+        identificationRepo.findByIdentificationName("Journey Test ID").ifPresent(identificationRepo::delete);
+        serviceRepo.findByServiceName("Journey Test Service").ifPresent(serviceRepo::delete);
     }
 
     @Test
