@@ -130,7 +130,7 @@ services:
       # Loopback only — Nginx on the host proxies 443 -> this port.
       - "127.0.0.1:9095:9095"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9095/rapid_stylers/actuator/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9095/actuator/health >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10

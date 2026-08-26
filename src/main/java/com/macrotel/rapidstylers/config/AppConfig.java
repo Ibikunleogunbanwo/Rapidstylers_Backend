@@ -37,7 +37,7 @@ public class AppConfig extends OncePerRequestFilter {
         // without an API key; it reports only UP/DOWN status.
         if ((requestApiKey == null && requestUrl.startsWith("/rapid_stylers/files/"))
                 || "/rapid_stylers/stripe/webhook".equals(requestUrl)
-                || "/rapid_stylers/actuator/health".equals(requestUrl)) {
+                || "/actuator/health".equals(requestUrl)) {
             filterChain.doFilter(request, response);
         }
         else{
