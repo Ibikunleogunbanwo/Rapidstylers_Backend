@@ -1,0 +1,140 @@
+# Production Compose for the RapidStylers VPS.
+# All infrastructure (mysql/redis/kafka) is private to the Docker network —
+# only the API port is published, and only on loopback for Nginx to proxy.
+#
+# Requires a .env in the same directory (see .env.example). Key production values:
+#   DB_URL=jdbc:mysql://mysql:3306/rapid_stylers
+#   REDIS_HOST=redis
+#   REDIS_PORT=6379
+#   KAFKA_BOOTSTRAP_SERVERS=kafka:19094
+#   KAFKA_EXTERNAL_ADVERTISED_HOST=127.0.0.1
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: rapidstylers-mysql
+    environment:
+      MYSQL_DATABASE: rapid_stylers
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+    # InnoDB durability defaults kept strict so whole-server snapshot
+    # backups restore reliably (innodb_flush_log_at_trx_commit=1).
+    command: --innodb-buffer-pool-size=1G
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: rapidstylers-redis
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  kafka:
+    image: apache/kafka:4.1.2
+    container_name: rapidstylers-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9096
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:19094,CONTROLLER://0.0.0.0:9096
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms512m -Xmx1g}
+      # Bounded retention so the 100 GB disk never fills from event history.
+      KAFKA_LOG_RETENTION_HOURS: ${KAFKA_LOG_RETENTION_HOURS:-72}
+      KAFKA_LOG_RETENTION_BYTES: ${KAFKA_LOG_RETENTION_BYTES:-5368709120}
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19094 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    restart: unless-stopped
+
+  kafka-init:
+    image: apache/kafka:4.1.2
+    container_name: rapidstylers-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19094 --create --if-not-exists --topic rapidstylers.domain-events --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19094 --create --if-not-exists --topic rapidstylers.domain-events.retry --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19094 --create --if-not-exists --topic rapidstylers.domain-events.dlq --partitions 3 --replication-factor 1
+    restart: "no"
+
+  app:
+    build: .
+    image: rapidstylers-api:latest
+    container_name: rapidstylers-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/rapid_stylers
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      APP_API_KEY: ${APP_API_KEY}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM: ${RESEND_FROM}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      PEXELS_API_KEY: ${PEXELS_API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19094
+      KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
+      KAFKA_TOPIC_DOMAIN_EVENTS: ${KAFKA_TOPIC_DOMAIN_EVENTS:-rapidstylers.domain-events}
+      KAFKA_TOPIC_DOMAIN_EVENTS_RETRY: ${KAFKA_TOPIC_DOMAIN_EVENTS_RETRY:-rapidstylers.domain-events.retry}
+      KAFKA_TOPIC_DOMAIN_EVENTS_DLQ: ${KAFKA_TOPIC_DOMAIN_EVENTS_DLQ:-rapidstylers.domain-events.dlq}
+      KAFKA_OUTBOX_PUBLISHER_ENABLED: ${KAFKA_OUTBOX_PUBLISHER_ENABLED:-true}
+      KAFKA_NOTIFICATIONS_CONSUMER_ENABLED: ${KAFKA_NOTIFICATIONS_CONSUMER_ENABLED:-true}
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xms512m -Xmx2g}
+    ports:
+      # Loopback only — Nginx on the host proxies 443 -> this port.
+      - "127.0.0.1:9095:9095"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9095/actuator/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
+  kafka-data:
