@@ -12,6 +12,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -34,10 +35,15 @@ class StripeLifecycleTest {
 
     @BeforeEach
     void setUp() {
-        String secretKey = resolveSecretKey();
+        String mode = resolveEnv("STRIPE_MODE");
+        String secretKey = resolveSecretKey(mode);
         service = new StripeService();
+        // Mirror the app's mode resolution so the test exercises the same
+        // key-selection logic (mode -> test/live set -> legacy fallback).
+        ReflectionTestUtils.setField(service, "mode", mode);
         ReflectionTestUtils.setField(service, "secretKey", secretKey);
         ReflectionTestUtils.setField(service, "webhookSecret", "");
+        ReflectionTestUtils.setField(service, "connectWebhookSecret", "");
         ReflectionTestUtils.setField(service, "currency", "cad");
         if (service.isConfigured()) {
             service.init();
@@ -47,8 +53,8 @@ class StripeLifecycleTest {
     @Test
     void fullLifecycleAuthorizeCaptureAndRelease() throws Exception {
         assumeTrue(service.isConfigured(),
-                "STRIPE_SECRET_KEY is not set — skipping Stripe lifecycle test. Add a test key to .env and re-run.");
-        assumeTrue(!resolveSecretKey().startsWith("sk_live_"),
+                "No Stripe key is set — skipping Stripe lifecycle test. Add a test key to .env and re-run.");
+        assumeTrue(!resolveSecretKey(resolveEnv("STRIPE_MODE")).startsWith("sk_live_"),
                 "Live Stripe key detected — refusing to create customers, payment methods, holds, or charges.");
 
         // 1. Create a Stripe Customer (same call the backend makes on card save).
@@ -113,16 +119,69 @@ class StripeLifecycleTest {
         }
     }
 
-    /** Prefers the env var, then the project .env (the source the running app loads). */
-    private String resolveSecretKey() {
-        String env = System.getenv("STRIPE_SECRET_KEY");
+    /**
+     * Resolves the active secret key the same way the app does: a STRIPE_MODE
+     * of test/live picks ONLY that paired set (failing closed when it is empty),
+     * and an empty mode uses the legacy STRIPE_SECRET_KEY. Prefers env vars,
+     * then the project .env (the source the running app loads).
+     */
+    private String resolveSecretKey(String mode) {
+        String selected = trimToEmpty(mode).toLowerCase(Locale.ROOT);
+        if ("test".equals(selected)) {
+            return resolveEnv("STRIPE_TEST_SECRET_KEY");
+        }
+        if ("live".equals(selected)) {
+            return resolveEnv("STRIPE_LIVE_SECRET_KEY");
+        }
+        return resolveEnv("STRIPE_SECRET_KEY");
+    }
+
+    @Test
+    void testModeNeverFallsBackToLiveKeys() {
+        service = new StripeService();
+        ReflectionTestUtils.setField(service, "mode", "test");
+        ReflectionTestUtils.setField(service, "secretKey", "sk_live_should_not_be_used");
+        ReflectionTestUtils.setField(service, "webhookSecret", "whsec_live");
+        ReflectionTestUtils.setField(service, "connectWebhookSecret", "whsec_live_connect");
+        ReflectionTestUtils.setField(service, "testSecretKey", "");
+        ReflectionTestUtils.setField(service, "testWebhookSecret", "");
+        ReflectionTestUtils.setField(service, "testConnectWebhookSecret", "");
+        ReflectionTestUtils.setField(service, "liveSecretKey", "sk_live_other");
+        ReflectionTestUtils.setField(service, "currency", "cad");
+        service.init();
+        // Fail closed: with mode=test and no test key, payments must be disabled
+        // rather than silently falling back to the live key.
+        assertEquals(false, service.isConfigured(),
+                "mode=test with no test key must disable payments, never use live keys");
+    }
+
+    @Test
+    void liveModeUsesOnlyLiveKeys() {
+        service = new StripeService();
+        ReflectionTestUtils.setField(service, "mode", "live");
+        ReflectionTestUtils.setField(service, "secretKey", "sk_test_legacy");
+        ReflectionTestUtils.setField(service, "testSecretKey", "sk_test_123");
+        ReflectionTestUtils.setField(service, "liveSecretKey", "sk_live_456");
+        ReflectionTestUtils.setField(service, "webhookSecret", "whsec_legacy");
+        ReflectionTestUtils.setField(service, "testWebhookSecret", "whsec_test");
+        ReflectionTestUtils.setField(service, "liveWebhookSecret", "whsec_live");
+        ReflectionTestUtils.setField(service, "testConnectWebhookSecret", "whsec_test_connect");
+        ReflectionTestUtils.setField(service, "liveConnectWebhookSecret", "whsec_live_connect");
+        ReflectionTestUtils.setField(service, "currency", "cad");
+        service.init();
+        assertEquals(true, service.isConfigured());
+    }
+
+    /** Prefers the env var, then the project .env line. */
+    private String resolveEnv(String key) {
+        String env = System.getenv(key);
         if (env != null && !env.isEmpty()) {
             return env;
         }
         try {
             for (String line : Files.readAllLines(Paths.get(".env"))) {
-                if (line.startsWith("STRIPE_SECRET_KEY=")) {
-                    String value = line.substring("STRIPE_SECRET_KEY=".length()).trim();
+                if (line.startsWith(key + "=")) {
+                    String value = line.substring(key.length() + 1).trim();
                     if (!value.isEmpty()) {
                         return value;
                     }
@@ -132,5 +191,9 @@ class StripeLifecycleTest {
             // Fall through — the test will skip.
         }
         return "";
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 }

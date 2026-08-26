@@ -41,23 +41,72 @@ import java.util.Map;
 @Service
 public class StripeService {
 
+    /**
+     * Mode selector: "test" or "live". Empty keeps the legacy single-key
+     * behavior (app.stripe.secret-key / STRIPE_SECRET_KEY), so existing
+     * deployments keep working unchanged while both key sets are added.
+     */
+    @Value("${app.stripe.mode:}")
+    private String mode;
+
+    // Legacy single key set — used when mode is empty.
     @Value("${app.stripe.secret-key:}")
     private String secretKey;
-
     @Value("${app.stripe.webhook-secret:}")
     private String webhookSecret;
-
     @Value("${app.stripe.connect-webhook-secret:}")
     private String connectWebhookSecret;
+
+    // Test-mode key set.
+    @Value("${app.stripe.test.secret-key:}")
+    private String testSecretKey;
+    @Value("${app.stripe.test.webhook-secret:}")
+    private String testWebhookSecret;
+    @Value("${app.stripe.test.connect-webhook-secret:}")
+    private String testConnectWebhookSecret;
+
+    // Live-mode key set.
+    @Value("${app.stripe.live.secret-key:}")
+    private String liveSecretKey;
+    @Value("${app.stripe.live.webhook-secret:}")
+    private String liveWebhookSecret;
+    @Value("${app.stripe.live.connect-webhook-secret:}")
+    private String liveConnectWebhookSecret;
 
     @Value("${app.stripe.currency:cad}")
     private String currency;
 
     @PostConstruct
     void init() {
+        resolveActiveKeys();
         if (isConfigured()) {
             Stripe.apiKey = secretKey;
         }
+    }
+
+    /**
+     * Picks the active key set. STRIPE_MODE=test/live selects that set and
+     * ONLY that set — an explicitly chosen mode never falls back to the other
+     * mode's keys, so a misconfigured .env fails closed (payments disabled)
+     * instead of silently charging the wrong environment. An empty mode keeps
+     * the legacy single-key behavior for existing deployments.
+     */
+    private void resolveActiveKeys() {
+        String selected = trimToEmpty(mode).toLowerCase(Locale.ROOT);
+        if ("test".equals(selected)) {
+            secretKey = trimToEmpty(testSecretKey);
+            webhookSecret = trimToEmpty(testWebhookSecret);
+            connectWebhookSecret = trimToEmpty(testConnectWebhookSecret);
+        } else if ("live".equals(selected)) {
+            secretKey = trimToEmpty(liveSecretKey);
+            webhookSecret = trimToEmpty(liveWebhookSecret);
+            connectWebhookSecret = trimToEmpty(liveConnectWebhookSecret);
+        }
+        // else: legacy fields keep their @Value-injected values.
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     public boolean isConfigured() {
