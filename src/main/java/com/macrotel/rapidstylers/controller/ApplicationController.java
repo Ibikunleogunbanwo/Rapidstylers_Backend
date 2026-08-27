@@ -275,7 +275,7 @@ public class ApplicationController {
     }
     @PostMapping("/search_nearby")
     public ResponseEntity <BaseResponse> searchNearby(@RequestBody SearchNearbyData data){
-        BaseResponse baseResponse = appService.searchNearby(data.getLng(), data.getLat(), data.getRadius(), data.getServiceTypeId(), data.getCity(), data.getRequestedDate(), data.getRequestedTime(), data.getDurationMinutes(), data.isOpenNow());
+        BaseResponse baseResponse = appService.searchNearby(data.getLng(), data.getLat(), data.getRadius(), data.getServiceTypeId(), data.getCity(), data.getRequestedDate(), data.getRequestedTime(), data.getDurationMinutes(), data.isOpenNow(), data.getPage(), data.getPageSize());
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -462,6 +462,8 @@ public class ApplicationController {
         }
         // The booking owner is the authenticated account — never trust the body's userId.
         bookAppointmentData.setUserId(accountId);
+        String idempotencyKey = request.getHeader("Idempotency-Key");
+        bookAppointmentData.setIdempotencyKey(idempotencyKey);
         BaseResponse baseResponse = appService.bookAppointment(bookAppointmentData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);

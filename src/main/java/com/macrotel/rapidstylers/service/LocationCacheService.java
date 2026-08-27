@@ -5,6 +5,7 @@ import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.GeoOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.*;
 import java.util.logging.Logger;
@@ -112,5 +113,14 @@ public class LocationCacheService {
     public List<String> findNearbyFiltered(double longitude, double latitude, double radius, String serviceTypeId) {
         List<String> nearbyIds = findNearby(longitude, latitude, radius);
         return nearbyIds;
+    }
+
+    /** Removes every member before a full rebuild from the relational source of truth. */
+    public void clearIndex() {
+        try {
+            redisTemplate.delete(GEO_KEY);
+        } catch (Exception ex) {
+            LOG.warning("Failed to clear stylist geo index: " + ex.getMessage());
+        }
     }
 }

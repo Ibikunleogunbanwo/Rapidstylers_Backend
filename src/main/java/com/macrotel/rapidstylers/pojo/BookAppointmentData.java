@@ -28,5 +28,7 @@ public class BookAppointmentData {
     private String subServiceId;
     private String serviceTime;
     private Double travelDistanceKm;
+    /** Optional client-generated key used to safely retry a booking request. */
+    private String idempotencyKey;
 
 }

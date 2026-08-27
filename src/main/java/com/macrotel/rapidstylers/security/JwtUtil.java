@@ -22,7 +22,7 @@ public class JwtUtil {
     @Value("${app.jwt.secret:}")
     private String secret;
 
-    @Value("${app.jwt.ttl-minutes:120}")
+    @Value("${app.jwt.ttl-minutes:15}")
     private long ttlMinutes;
 
     private SecretKey signingKey() {

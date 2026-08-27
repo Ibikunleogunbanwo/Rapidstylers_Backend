@@ -13,4 +13,6 @@ public class SearchNearbyData {
     private String requestedTime;
     private int durationMinutes = 60;
     private boolean openNow = false;
+    private Integer page;
+    private Integer pageSize;
 }

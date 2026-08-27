@@ -36,6 +36,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.*;
 import java.util.logging.Logger;
+import java.time.Duration;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
@@ -113,6 +114,8 @@ public class AppService {
     OutboxEventService outboxEventService;
     @Autowired
     EncryptionConfig encryptionConfig;
+    @Autowired
+    IdempotencyService idempotencyService;
 
     // Global rate-limit budgets (shared across OTP generation, OTP verification
     // and login so failures on one surface lock out the others).
@@ -2917,7 +2920,16 @@ public class AppService {
     @Transactional(rollbackFor = Exception.class)
     public BaseResponse bookAppointment(BookAppointmentData bookAppointmentData){
         BaseResponse response = new BaseResponse(true);
+        IdempotencyService.Claim idempotencyClaim = null;
         try{
+            if (idempotencyService != null && bookAppointmentData.getIdempotencyKey() != null
+                    && !bookAppointmentData.getIdempotencyKey().trim().isEmpty()) {
+                idempotencyClaim = idempotencyService.claim("book-appointment", bookAppointmentData.getUserId(),
+                        bookAppointmentData.getIdempotencyKey(), Duration.ofHours(24));
+                if (idempotencyClaim.isDuplicate()) {
+                    return errorResponse(response, "This booking request is already being processed or was already submitted");
+                }
+            }
             LocalDate appointmentDate = parseBookingDate(bookAppointmentData.getAppointmentDate());
             LocalTime appointmentStart = parseBookingTime(bookAppointmentData.getArrivalTime());
             if(appointmentDate.isBefore(LocalDate.now(applicationZone()))){
@@ -3063,9 +3075,15 @@ public class AppService {
             // Let the transactional proxy roll back the appointment and slot
             // rows together. The controller advice returns the conflict response.
             LOG.warning("Booking slot collision: " + ex.getMessage());
+            if (idempotencyClaim != null && idempotencyClaim.isAcquired() && idempotencyService != null) {
+                idempotencyService.release(idempotencyClaim);
+            }
             throw ex;
         }
         catch(DateTimeParseException ex){
+            if (idempotencyClaim != null && idempotencyClaim.isAcquired() && idempotencyService != null) {
+                idempotencyService.release(idempotencyClaim);
+            }
             return errorResponse(response, "Invalid appointment date or arrival time");
         }
         catch(IllegalArgumentException ex){
@@ -3290,6 +3308,24 @@ public class AppService {
     }
 
     /** Loads the admin-configured commission from the DB (seeded by the .env default on first boot). */
+    @PostConstruct
+    void rebuildStylerLocationIndex(){
+        if (locationCacheService == null || stylerRepo == null) return;
+        try {
+            locationCacheService.clearIndex();
+            int indexed = 0;
+            for (StylerEntity styler : stylerRepo.findAll()) {
+                if (isApprovedStyler(styler) && styler.getLatitude() != null && styler.getLongitude() != null) {
+                    locationCacheService.indexStyler(styler.getStylerId(), styler.getLongitude(), styler.getLatitude());
+                    indexed++;
+                }
+            }
+            LOG.info("Rebuilt stylist location index: " + indexed + " stylists");
+        } catch (Exception ex) {
+            LOG.warning("Could not rebuild stylist location index: " + ex.getMessage());
+        }
+    }
+
     @PostConstruct
     void loadCommissionSetting(){
         try {
@@ -4251,6 +4287,10 @@ public class AppService {
     // ── Location-based search (Redis geospatial) ────────────────────────
 
     public BaseResponse searchNearby(double longitude, double latitude, double radius, String serviceTypeId, String city, String requestedDate, String requestedTime, int requestedDurationMinutes, boolean openNow){
+        return searchNearby(longitude, latitude, radius, serviceTypeId, city, requestedDate, requestedTime, requestedDurationMinutes, openNow, null, null);
+    }
+
+    public BaseResponse searchNearby(double longitude, double latitude, double radius, String serviceTypeId, String city, String requestedDate, String requestedTime, int requestedDurationMinutes, boolean openNow, Integer requestedPage, Integer requestedPageSize){
         BaseResponse response = searchNearby(longitude, latitude, radius, serviceTypeId, city);
         if(!"200".equals(response.getStatusCode()) || !(response.getData() instanceof List)) return response;
         try {
@@ -4270,7 +4310,21 @@ public class AppService {
                 candidates.add(dto);
             }
             candidates.sort((left, right) -> Double.compare(searchScore(right), searchScore(left)));
-            response.setData(candidates);
+            if (requestedPage != null || requestedPageSize != null) {
+                int page = requestedPage == null || requestedPage < 1 ? 1 : requestedPage;
+                int pageSize = requestedPageSize == null || requestedPageSize < 1 ? 20 : Math.min(requestedPageSize, 50);
+                int from = Math.min((page - 1) * pageSize, candidates.size());
+                int to = Math.min(from + pageSize, candidates.size());
+                Map<String, Object> paged = new LinkedHashMap<>();
+                paged.put("items", candidates.subList(from, to));
+                paged.put("page", page);
+                paged.put("pageSize", pageSize);
+                paged.put("total", candidates.size());
+                paged.put("hasNext", to < candidates.size());
+                response.setData(paged);
+            } else {
+                response.setData(candidates);
+            }
         } catch(Exception ex){
             return errorResponse(response, "Invalid search date or time");
         }
