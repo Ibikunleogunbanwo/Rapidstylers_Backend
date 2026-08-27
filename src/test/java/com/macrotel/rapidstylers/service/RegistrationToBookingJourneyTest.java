@@ -164,7 +164,7 @@ class RegistrationToBookingJourneyTest {
         // ---- 1. Customer registers ------------------------------------------------
         assertOk(apiPost("/generate_sign_up_otp_code", Map.of("emailAddress", custEmail), null));
         String custOtp = lastOtp();
-        assertOk(apiGet("/verify_otp_code?otpCode=" + custOtp, null));
+        assertOk(apiPost("/verify_otp_code", Map.of("otpCode", custOtp), null));
 
         Map<String, Object> userData = new LinkedHashMap<>();
         userData.put("firstname", "Journey");
@@ -185,7 +185,7 @@ class RegistrationToBookingJourneyTest {
         // ---- 2. Styler registers ---------------------------------------------------
         assertOk(apiPost("/styler_generate_otp", Map.of("emailAddress", stylerEmail), null));
         String stylerOtp = lastOtp();
-        assertOk(apiGet("/styler_verify_otp?otpCode=" + stylerOtp, null));
+        assertOk(apiPost("/styler_verify_otp", Map.of("otpCode", stylerOtp), null));
 
         String identificationId = firstListId("/list_identification");
         String serviceTypeId = firstListId("/list_service");

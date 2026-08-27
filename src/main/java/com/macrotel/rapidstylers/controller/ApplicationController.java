@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.controller;
 
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.service.AppService;
+import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.service.GalleryService;
 import com.macrotel.rapidstylers.service.GeocodingService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,8 @@ public class ApplicationController {
     GalleryService galleryService;
     @Autowired
     GeocodingService geocodingService;
+    @Autowired
+    EncryptionConfig encryptionConfig;
 
     @GetMapping("/testing")
     public ResponseEntity <BaseResponse> testing(){
@@ -43,8 +46,9 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @GetMapping("/verify_otp_code")
-    public ResponseEntity <BaseResponse> verifyOtpCode(@RequestParam("otpCode") String otpCode){
+    @PostMapping("/verify_otp_code")
+    public ResponseEntity <BaseResponse> verifyOtpCode(@RequestBody Map<String, String> body){
+        String otpCode = body.getOrDefault("otpCode", "");
         BaseResponse baseResponse = appService.verifyUserOTP(otpCode);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
@@ -117,7 +121,8 @@ public class ApplicationController {
     }
 
     @PostMapping("/delete_identification")
-    public ResponseEntity <BaseResponse> deleteIdentification(@RequestParam("id") String id){
+    public ResponseEntity <BaseResponse> deleteIdentification(@RequestBody Map<String, String> body){
+        String id = body.getOrDefault("id", "");
         BaseResponse baseResponse = appService.deleteIdentification(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
@@ -143,7 +148,8 @@ public class ApplicationController {
     }
 
     @PostMapping("/delete_service")
-    public ResponseEntity <BaseResponse> deleteService(@RequestParam("id") String id){
+    public ResponseEntity <BaseResponse> deleteService(@RequestBody Map<String, String> body){
+        String id = body.getOrDefault("id", "");
         BaseResponse baseResponse = appService.deleteService(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
@@ -195,7 +201,8 @@ public class ApplicationController {
     }
 
     @PostMapping("/delete_blog")
-    public ResponseEntity <BaseResponse> deleteBlog(@RequestParam("id") String id){
+    public ResponseEntity <BaseResponse> deleteBlog(@RequestBody Map<String, String> body){
+        String id = body.getOrDefault("id", "");
         BaseResponse baseResponse = appService.deleteBlogPost(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
@@ -207,8 +214,9 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
-    @GetMapping("/styler_verify_otp")
-    public ResponseEntity<BaseResponse> stylerVerifyOtp(@RequestParam("otpCode") String otpCode){
+    @PostMapping("/styler_verify_otp")
+    public ResponseEntity<BaseResponse> stylerVerifyOtp(@RequestBody Map<String, String> body){
+        String otpCode = body.getOrDefault("otpCode", "");
         BaseResponse baseResponse = appService.stylerVerifyOtp(otpCode);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
@@ -265,18 +273,9 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
-    @GetMapping("/search_nearby")
-    public ResponseEntity <BaseResponse> searchNearby(
-            @RequestParam("lat") double lat,
-            @RequestParam("lng") double lng,
-            @RequestParam(value = "radius", defaultValue = "25") double radius,
-            @RequestParam(value = "serviceTypeId", required = false) String serviceTypeId,
-            @RequestParam(value = "city", required = false) String city,
-            @RequestParam(value = "requestedDate", required = false) String requestedDate,
-            @RequestParam(value = "requestedTime", required = false) String requestedTime,
-            @RequestParam(value = "durationMinutes", defaultValue = "60") int durationMinutes,
-            @RequestParam(value = "openNow", defaultValue = "false") boolean openNow){
-        BaseResponse baseResponse = appService.searchNearby(lng, lat, radius, serviceTypeId, city, requestedDate, requestedTime, durationMinutes, openNow);
+    @PostMapping("/search_nearby")
+    public ResponseEntity <BaseResponse> searchNearby(@RequestBody SearchNearbyData data){
+        BaseResponse baseResponse = appService.searchNearby(data.getLng(), data.getLat(), data.getRadius(), data.getServiceTypeId(), data.getCity(), data.getRequestedDate(), data.getRequestedTime(), data.getDurationMinutes(), data.isOpenNow());
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -309,10 +308,10 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
-    @GetMapping("/reverse-geocode")
-    public ResponseEntity <BaseResponse> reverseGeocode(
-            @RequestParam("lat") double lat,
-            @RequestParam("lng") double lng){
+    @PostMapping("/reverse-geocode")
+    public ResponseEntity <BaseResponse> reverseGeocode(@RequestBody Map<String, Double> body){
+        double lat = body.getOrDefault("lat", 0.0);
+        double lng = body.getOrDefault("lng", 0.0);
         BaseResponse baseResponse = appService.reverseGeocode(lat, lng);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
@@ -646,7 +645,8 @@ public class ApplicationController {
     }
 
     @PostMapping("/save_stylist")
-    public ResponseEntity<BaseResponse> saveStylist(@RequestParam("stylerId") String stylerId, HttpServletRequest request){
+    public ResponseEntity<BaseResponse> saveStylist(@RequestBody Map<String, String> body, HttpServletRequest request){
+        String stylerId = body.getOrDefault("stylerId", "");
         String accountId = currentAccountId(request);
         if(accountId == null){
             return unauthorized();
@@ -657,7 +657,8 @@ public class ApplicationController {
     }
 
     @PostMapping("/remove_saved_stylist")
-    public ResponseEntity<BaseResponse> removeSavedStylist(@RequestParam("stylerId") String stylerId, HttpServletRequest request){
+    public ResponseEntity<BaseResponse> removeSavedStylist(@RequestBody Map<String, String> body, HttpServletRequest request){
+        String stylerId = body.getOrDefault("stylerId", "");
         String accountId = currentAccountId(request);
         if(accountId == null){
             return unauthorized();
@@ -689,7 +690,8 @@ public class ApplicationController {
     }
 
     @PostMapping("/apply_referral")
-    public ResponseEntity<BaseResponse> applyReferral(@RequestParam("referralCode") String referralCode, HttpServletRequest request){
+    public ResponseEntity<BaseResponse> applyReferral(@RequestBody Map<String, String> body, HttpServletRequest request){
+        String referralCode = body.getOrDefault("referralCode", "");
         String accountId = currentAccountId(request);
         if(accountId == null) return unauthorized();
         return new ResponseEntity<>(appService.createReferral(accountId, referralCode), HttpStatus.OK);
@@ -886,10 +888,50 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    /** Decrypts a value encrypted with AES/GCM on the backend. The frontend calls this
+     *  instead of holding the decryption key itself. */
+    @PostMapping("/decrypt")
+    public ResponseEntity<BaseResponse> decrypt(@RequestBody Map<String, String> body, HttpServletRequest request){
+        String accountId = currentAccountId(request);
+        if(accountId == null) return unauthorized();
+        String encrypted = body.get("encrypted");
+        if(encrypted == null || encrypted.isBlank()){
+            BaseResponse resp = new BaseResponse();
+            resp.setStatusCode(ERROR_STATUS_CODE);
+            resp.setMessage("Missing 'encrypted' field");
+            return ResponseEntity.badRequest().body(resp);
+        }
+        try {
+            String plaintext = encryptionConfig.decrypt(encrypted);
+            BaseResponse resp = new BaseResponse();
+            resp.setStatusCode(SUCCESS_STATUS_CODE);
+            resp.setMessage(SUCCESS_MESSAGE);
+            resp.setData(Map.of("value", plaintext));
+            return ResponseEntity.ok(resp);
+        } catch(Exception e){
+            BaseResponse resp = new BaseResponse();
+            resp.setStatusCode(ERROR_STATUS_CODE);
+            resp.setMessage("Decryption failed");
+            return ResponseEntity.badRequest().body(resp);
+        }
+    }
+
     /** Returns the authenticated account id set by JwtAuthFilter, or null when the request has no valid token. */
     private String currentAccountId(HttpServletRequest request){
         Object accountId = request.getAttribute("accountId");
         return (accountId == null) ? null : String.valueOf(accountId);
+    }
+
+    /** Returns the JWT role claim set by JwtAuthFilter, or null. */
+    private String currentRole(HttpServletRequest request){
+        Object role = request.getAttribute("role");
+        return (role == null) ? null : String.valueOf(role);
+    }
+
+    /** Returns the account id only if the JWT role is ADMIN; otherwise null. */
+    private String requireAdmin(HttpServletRequest request){
+        if (!"ADMIN".equals(currentRole(request))) return null;
+        return currentAccountId(request);
     }
 
     private ResponseEntity<BaseResponse> unauthorized(){

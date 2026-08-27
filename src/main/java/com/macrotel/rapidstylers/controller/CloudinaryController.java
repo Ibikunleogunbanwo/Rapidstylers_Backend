@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -133,7 +134,8 @@ public class CloudinaryController {
      * orphaned images in the Cloudinary bucket.
      */
     @PostMapping("/delete_cloudinary_image")
-    public ResponseEntity<BaseResponse> deleteCloudinaryImage(@RequestParam("publicId") String publicId) {
+    public ResponseEntity<BaseResponse> deleteCloudinaryImage(@RequestBody Map<String, String> requestBody) {
+        String publicId = requestBody.getOrDefault("publicId", "");
         BaseResponse response = new BaseResponse();
         try {
             long timestamp = Instant.now().getEpochSecond();

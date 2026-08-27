@@ -65,6 +65,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         allow("/rapid_stylers/book_appointment", "CUSTOMER");
         allow("/rapid_stylers/cancel_appointment", "CUSTOMER");
+        allow("/rapid_stylers/retry_appointment_payment", "CUSTOMER");
+        allow("/rapid_stylers/decrypt", "CUSTOMER", "STYLER", "ADMIN");
 
         allow("/rapid_stylers/styler_appointments", "STYLER");
         allow("/rapid_stylers/styler_availability", "STYLER");
@@ -142,6 +144,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         request.setAttribute("accountId", claims.getSubject());
+        request.setAttribute("role", role);
         filterChain.doFilter(request, response);
     }
 
