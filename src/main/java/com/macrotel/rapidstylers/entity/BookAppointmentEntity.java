@@ -56,6 +56,8 @@ public class BookAppointmentEntity implements Serializable {
     private LocalDateTime paymentAuthorizationDueAt;
     private String paymentFailureCode;
     private String stripeTransferId;
+    /** When the appointment was marked completed (status "0") — gates the styler cancel window. */
+    private LocalDateTime completedAt;
 
     public BookAppointmentEntity() {
     }

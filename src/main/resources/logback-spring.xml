@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Structured JSON to stdout — parseable in Docker/Vercel and any log sink. -->
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+
+    <!-- Optional Better Stack (logtail) HTTP sink — active only when LOG_TOKEN is set. -->
+    <springProperty scope="context" name="logToken" source="LOG_TOKEN" defaultValue=""/>
+    <springProperty scope="context" name="logEndpoint" source="LOG_ENDPOINT" defaultValue="https://in.logs.betterstack.com"/>
+    <appender name="BETTERSTACK" class="com.macrotel.rapidstylers.config.BetterStackLogbackAppender">
+        <token>${logToken}</token>
+        <endpoint>${logEndpoint}</endpoint>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="JSON_CONSOLE"/>
+        <appender-ref ref="BETTERSTACK"/>
+    </root>
+
+    <logger name="com.macrotel.rapidstylers" level="INFO"/>
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+</configuration>

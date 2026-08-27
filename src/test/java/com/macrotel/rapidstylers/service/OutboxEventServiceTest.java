@@ -105,4 +105,35 @@ class OutboxEventServiceTest {
         assertEquals("CAPTURED", payload.get("paymentStatus"));
         assertEquals("Payment received", payload.get("customerHeadline"));
     }
+
+    @Test
+    void refundEventStoresPendingRefundEventWithAmountAndReason() throws Exception {
+        BookAppointmentEntity appointment = new BookAppointmentEntity();
+        appointment.setAppointmentId("APPT3");
+        appointment.setUserId("USER1");
+        appointment.setStylerId("STYLER1");
+        appointment.setAppointmentDate("2030-08-24");
+        appointment.setArrivalTime("09:30");
+        appointment.setPrice("125.00");
+        appointment.setServicePrice("100.00");
+        appointment.setTravelFee("25.00");
+        appointment.setPaymentAmount("125.00");
+        appointment.setPaymentStatus("REFUNDED");
+
+        outboxEventService.refundEvent(appointment, "125.00", "Client request", true);
+
+        ArgumentCaptor<OutboxEventEntity> captor = ArgumentCaptor.forClass(OutboxEventEntity.class);
+        verify(outboxEventRepo).save(captor.capture());
+        OutboxEventEntity saved = captor.getValue();
+
+        assertEquals(OutboxEventType.REFUND_COMPLETED, saved.getEventType());
+        assertEquals(OutboxStatus.PENDING, saved.getStatus());
+        assertEquals("APPT3", saved.getAggregateId());
+
+        Map<String, Object> payload = objectMapper.readValue(saved.getPayload(), new TypeReference<Map<String, Object>>() {});
+        assertEquals("APPT3", payload.get("appointmentId"));
+        assertEquals("125.00", payload.get("refundAmount"));
+        assertEquals("Client request", payload.get("refundReason"));
+        assertEquals("Refund issued", payload.get("customerHeadline"));
+    }
 }

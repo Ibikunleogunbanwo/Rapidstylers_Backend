@@ -464,14 +464,14 @@ class BookingWorkflowTest {
     @Test
     void declineAndCustomerCancelReleaseTheirHeldLocks() {
         BookAppointmentEntity pending = appointment("1");
-        when(appointmentRepo.findByAppointmentId("APPT-1")).thenReturn(Optional.of(pending));
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT-1")).thenReturn(Optional.of(pending));
 
         BaseResponse declined = appService.declineAppointment("STYLER1", "APPT-1");
         assertEquals("200", declined.getStatusCode());
         verify(slotLockRepo).deleteByAppointmentId("APPT-1");
 
         BookAppointmentEntity accepted = appointment("APPT-2", "3");
-        when(appointmentRepo.findByAppointmentId("APPT-2")).thenReturn(Optional.of(accepted));
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT-2")).thenReturn(Optional.of(accepted));
         BaseResponse cancelled = appService.cancelAppointment("CUSTOMER1", "APPT-2");
         assertEquals("200", cancelled.getStatusCode());
         verify(slotLockRepo).deleteByAppointmentId("APPT-2");

@@ -5,6 +5,9 @@ import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.service.GalleryService;
 import com.macrotel.rapidstylers.service.GeocodingService;
+import com.macrotel.rapidstylers.service.PaymentReconciliationService;
+import com.macrotel.rapidstylers.service.RefreshTokenService;
+import com.macrotel.rapidstylers.security.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +35,12 @@ public class ApplicationController {
     GeocodingService geocodingService;
     @Autowired
     EncryptionConfig encryptionConfig;
+    @Autowired
+    RefreshTokenService refreshTokenService;
+    @Autowired
+    PaymentReconciliationService paymentReconciliationService;
+    @Autowired
+    JwtUtil jwtUtil;
 
     @GetMapping("/testing")
     public ResponseEntity <BaseResponse> testing(){
@@ -586,6 +595,17 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    @PostMapping("/styler_cancel_appointment")
+    public ResponseEntity <BaseResponse> stylerCancelAppointment(@Valid @RequestBody AppointmentActionData appointmentActionData, HttpServletRequest request){
+        String accountId = currentAccountId(request);
+        if(accountId == null){
+            return unauthorized();
+        }
+        BaseResponse baseResponse = appService.stylerCancelAppointment(accountId, appointmentActionData.getAppointmentId());
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
     @GetMapping("/notifications")
     public ResponseEntity<BaseResponse> notifications(HttpServletRequest request){
         String accountId = currentAccountId(request);
@@ -916,6 +936,94 @@ public class ApplicationController {
             resp.setMessage("Decryption failed");
             return ResponseEntity.badRequest().body(resp);
         }
+    }
+
+
+    @PostMapping("/auth/refresh")
+    public ResponseEntity<BaseResponse> refreshToken(@RequestBody Map<String, String> body) {
+        BaseResponse response = new BaseResponse();
+        String refreshTokenValue = body.get("refreshToken");
+        if (refreshTokenValue == null || refreshTokenValue.trim().isEmpty()) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Refresh token is required");
+            return ResponseEntity.badRequest().body(response);
+        }
+        // Validate the old token first
+        var tokenEntity = refreshTokenService.validate(refreshTokenValue);
+        if (tokenEntity == null) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Invalid or expired refresh token");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
+        // Rotate: revoke old, issue new in same family
+        String newRefreshToken = refreshTokenService.rotate(refreshTokenValue);
+        if (newRefreshToken == null) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Refresh token has been revoked");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
+        // Issue a new short-lived access token
+        String newAccessToken = jwtUtil.generateToken(tokenEntity.getAccountId(), tokenEntity.getRole());
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setToken(newAccessToken);
+        response.setRefreshToken(newRefreshToken);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/auth/logout")
+    public ResponseEntity<BaseResponse> logout(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        String accountId = currentAccountId(request);
+        String role = currentRole(request);
+        BaseResponse response = new BaseResponse();
+        if (accountId == null) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Authentication required");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
+        String refreshTokenValue = body.get("refreshToken");
+        if (refreshTokenValue != null && !refreshTokenValue.trim().isEmpty()) {
+            refreshTokenService.revoke(refreshTokenValue);
+        }
+        refreshTokenService.revokeAllForAccount(accountId, role);
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage("Logged out successfully");
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/admin/failed_events")
+    public ResponseEntity<BaseResponse> adminFailedEvents(HttpServletRequest request) {
+        String adminId = requireAdmin(request);
+        if (adminId == null) return unauthorized();
+        return new ResponseEntity<>(appService.listFailedOutboxEvents(), HttpStatus.OK);
+    }
+
+    @PostMapping("/admin/failed_events/{id}/retry")
+    public ResponseEntity<BaseResponse> adminRetryFailedEvent(@PathVariable("id") Long id, HttpServletRequest request) {
+        String adminId = requireAdmin(request);
+        if (adminId == null) return unauthorized();
+        return new ResponseEntity<>(appService.retryFailedOutboxEvent(id, adminId), HttpStatus.OK);
+    }
+
+    @PostMapping("/admin/refund")
+    public ResponseEntity<BaseResponse> adminRefund(@RequestBody RefundRequestData data, HttpServletRequest request) {
+        String adminId = requireAdmin(request);
+        if (adminId == null) return unauthorized();
+        return new ResponseEntity<>(appService.adminRefund(adminId, data), HttpStatus.OK);
+    }
+
+    @GetMapping("/admin/refunds")
+    public ResponseEntity<BaseResponse> adminRefunds(HttpServletRequest request) {
+        String adminId = requireAdmin(request);
+        if (adminId == null) return unauthorized();
+        return new ResponseEntity<>(appService.adminRefunds(adminId), HttpStatus.OK);
+    }
+
+    @GetMapping("/admin/payment_reconciliation")
+    public ResponseEntity<BaseResponse> adminPaymentReconciliation(HttpServletRequest request) {
+        String adminId = requireAdmin(request);
+        if (adminId == null) return unauthorized();
+        return new ResponseEntity<>(paymentReconciliationService.runReconciliation(), HttpStatus.OK);
     }
 
     /** Returns the authenticated account id set by JwtAuthFilter, or null when the request has no valid token. */

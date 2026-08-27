@@ -77,6 +77,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/accept_appointment", "STYLER");
         allow("/rapid_stylers/decline_appointment", "STYLER");
         allow("/rapid_stylers/complete_appointment", "STYLER");
+        allow("/rapid_stylers/styler_cancel_appointment", "STYLER");
 
         allow("/rapid_stylers/update_user_data", "CUSTOMER");
         allow("/rapid_stylers/update_user_password", "CUSTOMER");
@@ -109,6 +110,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/admin/styler_connect_statuses", "ADMIN");
         allow("/rapid_stylers/admin/test_email", "ADMIN");
         allow("/rapid_stylers/list_feedback", "ADMIN");
+        allow("/rapid_stylers/admin/failed_events", "ADMIN");
+        allow("/rapid_stylers/admin/failed_events/{id}/retry", "ADMIN");
+        allow("/rapid_stylers/admin/refund", "ADMIN");
+        allow("/rapid_stylers/admin/refunds", "ADMIN");
+        allow("/rapid_stylers/admin/payment_reconciliation", "ADMIN");
     }
 
     @Autowired

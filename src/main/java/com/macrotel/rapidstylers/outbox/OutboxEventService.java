@@ -56,6 +56,32 @@ public class OutboxEventService {
         outboxEventRepo.save(event);
     }
 
+    /**
+     * Emits a REFUND_REQUESTED / REFUND_COMPLETED event so both parties
+     * receive a refund notice by email.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void refundEvent(BookAppointmentEntity appointment, String refundAmount, String refundReason,
+                            boolean completed) {
+        String label = completed ? "Refunded" : "Refund requested";
+        Map<String, Object> payload = appointmentPayload(appointment, label,
+                completed ? "Refund issued" : "Refund requested",
+                completed ? "A refund has been issued to your payment method."
+                        : "Your refund is being processed.",
+                completed ? "Refund issued" : "Refund requested",
+                completed ? "A refund has been issued for this appointment."
+                        : "A refund has been requested for this appointment.");
+        payload.put("refundAmount", nullSafe(refundAmount));
+        payload.put("refundReason", nullSafe(refundReason));
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(completed ? OutboxEventType.REFUND_COMPLETED : OutboxEventType.REFUND_REQUESTED);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("APPOINTMENT");
+        event.setAggregateId(nullSafe(appointment.getAppointmentId()));
+        event.setPayload(toJson(payload));
+        outboxEventRepo.save(event);
+    }
+
     private Map<String, Object> appointmentPayload(BookAppointmentEntity appointment, String eventLabel,
                                                    String customerHeadline, String customerDetail,
                                                    String stylerHeadline, String stylerDetail) {

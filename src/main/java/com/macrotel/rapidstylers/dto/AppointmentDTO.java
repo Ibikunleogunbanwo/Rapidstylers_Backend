@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.dto;
 
 import lombok.Data;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 
 @Data
@@ -29,4 +30,11 @@ public class AppointmentDTO {
     private String paymentStatus;
     private String paymentFailureCode;
     private String stripeTransferId;
+    /** When the appointment was marked completed — lets the UI gate the styler cancel action. */
+    private LocalDateTime completedAt;
+    /** Completed refund for this appointment, when one exists — shown to customers. */
+    private String refundId;
+    private String refundStatus;
+    private String refundAmount;
+    private String refundCompletedAt;
 }

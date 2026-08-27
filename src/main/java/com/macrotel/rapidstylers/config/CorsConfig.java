@@ -19,18 +19,26 @@ public class CorsConfig {
     @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:9090,https://rapidstylers.ca,https://www.rapidstylers.ca}")
     private String allowedOrigins;
 
-    @Bean
-    public FilterRegistrationBean<CorsFilter> corsFilter(){
+    private CorsFilter buildCorsFilter() {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        CorsConfiguration config  = new CorsConfiguration();
+        CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(parseAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "x-api-key"));
         config.setExposedHeaders(List.of("Authorization"));
         config.setMaxAge(3600L);
         source.registerCorsConfiguration("/**", config);
-        CorsFilter corsFilter = new CorsFilter(source);
-        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(corsFilter);
+        return new CorsFilter(source);
+    }
+
+    @Bean
+    public CorsFilter corsFilter() {
+        return buildCorsFilter();
+    }
+
+    @Bean
+    public FilterRegistrationBean<CorsFilter> corsFilterRegistration() {
+        FilterRegistrationBean<CorsFilter> bean = new FilterRegistrationBean<>(buildCorsFilter());
         bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return bean;
     }

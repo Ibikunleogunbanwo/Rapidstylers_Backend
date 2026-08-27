@@ -1,7 +1,6 @@
 package com.macrotel.rapidstylers.config;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -34,8 +33,7 @@ class SecurityConfigTest {
     void corsConfigurationUsesConfiguredOriginsWithoutWildcard() throws ServletException, IOException {
         CorsConfig corsConfig = new CorsConfig();
         ReflectionTestUtils.setField(corsConfig, "allowedOrigins", "https://rapidstylers.ca,https://www.rapidstylers.ca");
-        FilterRegistrationBean<CorsFilter> bean = corsConfig.corsFilter();
-        CorsFilter filter = bean.getFilter();
+        CorsFilter filter = corsConfig.corsFilter();
 
         MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", "/rapid_stylers/list_service");
         request.addHeader("Origin", "https://rapidstylers.ca");

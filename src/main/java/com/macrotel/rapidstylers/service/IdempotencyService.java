@@ -5,10 +5,17 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.UUID;
+import java.util.logging.Logger;
 
-/** Atomic, short-lived claims used to prevent duplicate mutation requests. */
+/**
+ * Atomic, short-lived claims used to prevent duplicate mutation requests.
+ * Also stores completed responses for replay on duplicate requests.
+ */
 @Service
 public class IdempotencyService {
+
+    private static final Logger LOG = Logger.getLogger(IdempotencyService.class.getName());
+
     private final RedisTemplate<String, Object> redisTemplate;
 
     public IdempotencyService(RedisTemplate<String, Object> redisTemplate) {
@@ -24,6 +31,41 @@ public class IdempotencyService {
         String marker = UUID.randomUUID().toString();
         Boolean claimed = redisTemplate.opsForValue().setIfAbsent(redisKey, marker, ttl);
         return Boolean.TRUE.equals(claimed) ? Claim.acquired(redisKey, marker) : Claim.duplicate(redisKey);
+    }
+
+    /**
+     * Store a completed response for replay on duplicate requests.
+     * The response is stored with a shorter TTL (1 hour) since it's only
+     * needed for network-timeout recovery.
+     */
+    public void storeResponse(String scope, String actorId, String idempotencyKey, String responseJson) {
+        if (idempotencyKey == null || idempotencyKey.trim().isEmpty() || responseJson == null) {
+            return;
+        }
+        String responseKey = "idempotency:response:" + scope + ":" + actorId + ":" + idempotencyKey.trim();
+        try {
+            redisTemplate.opsForValue().set(responseKey, responseJson, Duration.ofHours(1));
+        } catch (Exception ex) {
+            LOG.warning("Failed to store idempotency response: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Retrieve a previously stored response for replay.
+     * Returns null if no stored response exists.
+     */
+    public String getStoredResponse(String scope, String actorId, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
+            return null;
+        }
+        String responseKey = "idempotency:response:" + scope + ":" + actorId + ":" + idempotencyKey.trim();
+        try {
+            Object stored = redisTemplate.opsForValue().get(responseKey);
+            return stored != null ? String.valueOf(stored) : null;
+        } catch (Exception ex) {
+            LOG.warning("Failed to retrieve idempotency response: " + ex.getMessage());
+            return null;
+        }
     }
 
     public void release(Claim claim) {

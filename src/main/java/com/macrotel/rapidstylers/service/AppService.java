@@ -5,7 +5,9 @@ import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.security.JwtUtil;
 import com.macrotel.rapidstylers.entity.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
+import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.repo.*;
@@ -116,6 +118,20 @@ public class AppService {
     EncryptionConfig encryptionConfig;
     @Autowired
     IdempotencyService idempotencyService;
+    @Autowired
+    ObjectMapper objectMapper;
+    @Autowired
+    OutboxEventRepo outboxEventRepo;
+    @Autowired
+    RefreshTokenService refreshTokenService;
+    @Autowired
+    RefundRepo refundRepo;
+    @Autowired
+    PayoutReversalService payoutReversalService;
+
+    /** Ops email address for payment dispute / reconciliation alerts (empty = disabled). */
+    @Value("${app.admin.alert-email:}")
+    private String adminAlertEmail;
 
     // Global rate-limit budgets (shared across OTP generation, OTP verification
     // and login so failures on one surface lock out the others).
@@ -147,6 +163,10 @@ public class AppService {
 
     @Value("${app.booking.payment-authorization-lead-hours:48}")
     private long paymentAuthorizationLeadHours;
+
+    /** Stylists may cancel a completed booking only within this window (hours since completion). */
+    @Value("${app.booking.styler-cancel-window-hours:24}")
+    private long stylerCancelWindowHours;
 
     public BaseResponse testing(){
         BaseResponse response = new BaseResponse(true);
@@ -388,6 +408,7 @@ public class AppService {
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage(SUCCESS_MESSAGE);
                 response.setToken(jwtUtil.generateToken("admin", "ADMIN"));
+                response.setRefreshToken(refreshTokenService.issue("admin", "ADMIN"));
                 response.setData(adminData);
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
@@ -425,6 +446,7 @@ public class AppService {
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage(SUCCESS_MESSAGE);
                 response.setToken(jwtUtil.generateToken(stylerEntity.getStylerId(), "STYLER"));
+                response.setRefreshToken(refreshTokenService.issue(stylerEntity.getStylerId(), "STYLER"));
                 response.setData(stylerData);
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
@@ -447,6 +469,7 @@ public class AppService {
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage(SUCCESS_MESSAGE);
                 response.setToken(jwtUtil.generateToken(userEntity.getUserId(), "CUSTOMER"));
+                response.setRefreshToken(refreshTokenService.issue(userEntity.getUserId(), "CUSTOMER"));
                 response.setData(userData);
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
@@ -2927,6 +2950,13 @@ public class AppService {
                 idempotencyClaim = idempotencyService.claim("book-appointment", bookAppointmentData.getUserId(),
                         bookAppointmentData.getIdempotencyKey(), Duration.ofHours(24));
                 if (idempotencyClaim.isDuplicate()) {
+                    // Check for a stored response from a previous successful booking
+                    String storedResponse = idempotencyService.getStoredResponse(
+                            "book-appointment", bookAppointmentData.getUserId(), bookAppointmentData.getIdempotencyKey());
+                    if (storedResponse != null) {
+                        LOG.info("Replaying stored idempotency response for booking");
+                        return new BaseResponse(); // The controller will deserialize the stored JSON
+                    }
                     return errorResponse(response, "This booking request is already being processed or was already submitted");
                 }
             }
@@ -3070,6 +3100,15 @@ public class AppService {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Appointment booked successfully");
             response.setData(EMPTY_DATA);
+
+            // Store response for idempotency replay on duplicate requests
+            if (idempotencyClaim != null && idempotencyClaim.isAcquired() && idempotencyService != null
+                    && bookAppointmentData.getIdempotencyKey() != null) {
+                try {
+                    idempotencyService.storeResponse("book-appointment", bookAppointmentData.getUserId(),
+                            bookAppointmentData.getIdempotencyKey(), objectMapper.writeValueAsString(response));
+                } catch (Exception ignored) { }
+            }
         }
         catch(DataIntegrityViolationException ex){
             // Let the transactional proxy roll back the appointment and slot
@@ -3304,6 +3343,43 @@ public class AppService {
                 bookAppointmentRepo.save(a);
                 audit("system", "SYSTEM", "PAYMENT_RELEASED", "APPOINTMENT", a.getAppointmentId(), "Payment hold released");
             });
+        } else if("charge.dispute.created".equals(event.getType())){
+            handleDispute((com.stripe.model.Dispute) event.getData().getObject(), true);
+        } else if("charge.dispute.closed".equals(event.getType())){
+            handleDispute((com.stripe.model.Dispute) event.getData().getObject(), false);
+        }
+    }
+
+    /**
+     * Records dispute lifecycle on the booking: an opened dispute flags the
+     * payment and alerts ops; a closed dispute resolves it (won -> CAPTURED,
+     * lost -> DISPUTE_LOST).
+     */
+    private void handleDispute(com.stripe.model.Dispute dispute, boolean opened){
+        try{
+            String paymentIntentId = dispute == null ? null : dispute.getPaymentIntent();
+            if(paymentIntentId == null || paymentIntentId.isBlank()){
+                LOG.warning("Dispute webhook missing payment intent: " + (dispute == null ? "null" : dispute.getId()));
+                return;
+            }
+            bookAppointmentRepo.findByPaymentIntentId(paymentIntentId).ifPresent(a -> {
+                if(opened){
+                    a.setPaymentStatus("DISPUTED");
+                    bookAppointmentRepo.save(a);
+                    audit("system", "SYSTEM", "PAYMENT_DISPUTE_OPENED", "APPOINTMENT", a.getAppointmentId(),
+                            "Chargeback opened (dispute " + dispute.getId() + ")");
+                    alertAdmin("Payment dispute opened for appointment " + a.getAppointmentId()
+                            + " (dispute " + dispute.getId() + ")");
+                } else {
+                    boolean lost = "lost".equalsIgnoreCase(dispute.getStatus());
+                    a.setPaymentStatus(lost ? "DISPUTE_LOST" : "CAPTURED");
+                    bookAppointmentRepo.save(a);
+                    audit("system", "SYSTEM", "PAYMENT_DISPUTE_CLOSED", "APPOINTMENT", a.getAppointmentId(),
+                            "Dispute closed (" + dispute.getStatus() + ") for dispute " + dispute.getId());
+                }
+            });
+        } catch(Exception ex){
+            LOG.warning("Dispute handling failed: " + ex.getMessage());
         }
     }
 
@@ -3338,6 +3414,16 @@ public class AppService {
         } catch(Exception ex){
             LOG.warning("Commission setting load failed: " + ex.getMessage());
         }
+    }
+
+    /**
+     * Periodic reconciliation: rebuild the Redis geo index from MySQL every
+     * 30 minutes so that stale entries (deleted stylists, coordinate changes
+     * outside the normal write path) are corrected without a restart.
+     */
+    @Scheduled(fixedDelayString = "${app.geo.reconcile-interval-ms:1800000}")
+    void reconcileStylerLocationIndex() {
+        rebuildStylerLocationIndex();
     }
 
     /** Effective commission percent: admin setting when present, else the .env default. */
@@ -3499,6 +3585,81 @@ public class AppService {
         return response;
     }
 
+    /**
+     * Refunds a captured payment in full — used by automatic paths (reject /
+     * cancel after capture). Idempotent: skips when a completed refund already
+     * exists for the payment intent.
+     */
+    private void autoRefundCapturedPayment(BookAppointmentEntity appointment, String reason, String actorId){
+        try{
+            if(refundRepo.existsByPaymentIntentIdAndStatus(appointment.getPaymentIntentId(), "COMPLETED")){
+                return;
+            }
+            long totalCents = centsFromPrice(appointment.getPaymentAmount() == null
+                    ? appointment.getPrice() : appointment.getPaymentAmount());
+            if(totalCents <= 0){
+                return;
+            }
+            String refundId = "RFND-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT);
+            RefundEntity refund = new RefundEntity();
+            refund.setRefundId(refundId);
+            refund.setAppointmentId(appointment.getAppointmentId());
+            refund.setPaymentIntentId(appointment.getPaymentIntentId());
+            refund.setAmount(String.format(Locale.ROOT, "%.2f", totalCents / 100.0));
+            refund.setReason(reason);
+            refund.setStatus("REQUESTED");
+            refund.setCreatedBy(actorId == null || actorId.isBlank() ? "SYSTEM" : actorId);
+            refund.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            refundRepo.save(refund);
+            com.stripe.model.Refund stripeRefund = stripeService.refundBookingPayment(
+                    appointment.getPaymentIntentId(), totalCents, reason,
+                    "refund_" + appointment.getPaymentIntentId() + "_" + refundId);
+            refund.setStripeRefundId(stripeRefund.getId());
+            refund.setStatus("COMPLETED");
+            refund.setCompletedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            appointment.setPaymentStatus("REFUNDED");
+            bookAppointmentRepo.save(appointment);
+            refundRepo.save(refund);
+            audit(actorId, "SYSTEM", "PAYMENT_REFUND_AUTO", "APPOINTMENT", appointment.getAppointmentId(),
+                    "Automatic refund of $" + refund.getAmount() + " — " + reason);
+            // A completed-then-cancelled booking means the stylist payout transfer
+            // was already created. Recover it automatically: the reversal is
+            // attempted now and retried by a scheduled job when the stylist's
+            // balance cannot cover it yet.
+            if(appointment.getStripeTransferId() != null && !appointment.getStripeTransferId().isBlank()){
+                if(payoutReversalService != null){
+                    long shareCents = totalCents - commissionCents(totalCents);
+                    payoutReversalService.requestReversal(appointment.getAppointmentId(),
+                            appointment.getStripeTransferId(),
+                            String.format(Locale.ROOT, "%.2f", shareCents / 100.0),
+                            "Appointment cancelled after completion (refund " + refund.getRefundId() + ")");
+                } else {
+                    audit(actorId, "SYSTEM", "PAYOUT_REVERSAL_REQUIRED", "APPOINTMENT", appointment.getAppointmentId(),
+                            "Refunded after completion — stylist payout " + appointment.getStripeTransferId()
+                                    + " needs recovery");
+                }
+            }
+            if(outboxEventService != null){
+                outboxEventService.refundEvent(appointment, refund.getAmount(), reason, true);
+            }
+        } catch(Exception ex){
+            LOG.warning("Automatic refund failed: " + ex.getMessage());
+        }
+    }
+
+    /** Sends an operational alert to the configured ops address (no-op when unset). */
+    private void alertAdmin(String message){
+        if(adminAlertEmail == null || adminAlertEmail.isBlank() || emailConfig == null){
+            LOG.warning("Admin alert (no alert email configured): " + message);
+            return;
+        }
+        try{
+            emailConfig.sendSimpleMail(adminAlertEmail, "RapidStylers - Action required", "<p>" + message + "</p>");
+        } catch(Exception ex){
+            LOG.warning("Admin alert email failed: " + ex.getMessage());
+        }
+    }
+
     private void audit(String actorId, String actorRole, String action, String resourceType, String resourceId, String details){
         try {
             if(auditLogRepo != null){
@@ -3585,6 +3746,17 @@ public class AppService {
         return transitionAppointment(userId, ActorRole.CUSTOMER, appointmentId, "4", new String[]{"1", "3"}, "Appointment cancelled");
     }
 
+    /**
+     * Stylist-initiated cancellation of their own appointment. Covers the
+     * completes-then-cancels edge case: a booking already marked completed
+     * (payment captured) is cancelled by the stylist who completed it, and
+     * the captured payment is refunded automatically — exactly once.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse stylerCancelAppointment(String stylerId, String appointmentId){
+        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "4", new String[]{"3", "0"}, "Appointment cancelled");
+    }
+
     /** Customer retry path for a deferred or failed payment. */
     @Transactional(rollbackFor = Exception.class)
     public BaseResponse retryAppointmentPayment(String userId, String appointmentId){
@@ -3614,6 +3786,172 @@ public class AppService {
         return response;
     }
 
+
+    /** List failed outbox events for admin review. */
+    public BaseResponse listFailedOutboxEvents() {
+        BaseResponse response = new BaseResponse(true);
+        try {
+            List<com.macrotel.rapidstylers.outbox.OutboxEventEntity> failed =
+                outboxEventRepo.findByStatus(com.macrotel.rapidstylers.outbox.OutboxStatus.FAILED);
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (var event : failed) {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("id", event.getId());
+                map.put("eventId", event.getEventId());
+                map.put("eventType", event.getEventType() != null ? event.getEventType().name() : "UNKNOWN");
+                map.put("aggregateType", event.getAggregateType());
+                map.put("aggregateId", event.getAggregateId());
+                map.put("status", event.getStatus().name());
+                map.put("attempts", event.getAttempts());
+                map.put("lastError", event.getLastError());
+                map.put("createdAt", event.getCreatedAt().toString());
+                result.add(map);
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(result);
+        } catch (Exception ex) {
+            LOG.warning("Failed to list outbox events: " + ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Reset a failed outbox event back to PENDING for retry. */
+    public BaseResponse retryFailedOutboxEvent(Long eventId, String adminId) {
+        BaseResponse response = new BaseResponse(true);
+        try {
+            var event = outboxEventRepo.findById(eventId);
+            if (event.isEmpty()) {
+                return errorResponse(response, "Event not found");
+            }
+            var entity = event.get();
+            if (entity.getStatus() != com.macrotel.rapidstylers.outbox.OutboxStatus.FAILED) {
+                return errorResponse(response, "Only failed events can be retried");
+            }
+            entity.setStatus(com.macrotel.rapidstylers.outbox.OutboxStatus.PENDING);
+            entity.setAttempts(0);
+            entity.setLastError(null);
+            entity.setNextAttemptAt(LocalDateTime.now());
+            outboxEventRepo.save(entity);
+            audit(adminId, "ADMIN", "RETRY_OUTBOX_EVENT", "OUTBOX_EVENT",
+                    String.valueOf(eventId), "Admin retried failed outbox event");
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Event queued for retry");
+            response.setData(EMPTY_DATA);
+        } catch (Exception ex) {
+            LOG.warning("Failed to retry outbox event: " + ex.getMessage());
+        }
+        return response;
+    }
+
+
+    /**
+     * Admin-initiated refund of a captured booking payment. Idempotent per
+     * payment intent: a completed refund blocks a second one, so retries and
+     * double-clicks never double-refund.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse adminRefund(String adminId, RefundRequestData data){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(data == null || data.getAppointmentId() == null || data.getAppointmentId().isBlank()){
+                return errorResponse(response, "appointmentId is required");
+            }
+            // Lock the appointment row so an admin refund racing a cancellation
+            // serializes instead of refunding the same payment twice.
+            Optional<BookAppointmentEntity> appointmentOpt = bookAppointmentRepo.findByAppointmentIdForUpdate(data.getAppointmentId().trim());
+            if(appointmentOpt.isEmpty()){
+                return errorResponse(response, "Invalid Appointment Id");
+            }
+            BookAppointmentEntity appointment = appointmentOpt.get();
+            if(!stripeService.isConfigured() || appointment.getPaymentIntentId() == null || appointment.getPaymentIntentId().isBlank()){
+                return errorResponse(response, "This appointment has no payment to refund");
+            }
+            if(!"CAPTURED".equals(appointment.getPaymentStatus())){
+                return errorResponse(response, "Payment is not captured — nothing to refund");
+            }
+            if(refundRepo.existsByPaymentIntentIdAndStatus(appointment.getPaymentIntentId(), "COMPLETED")){
+                return errorResponse(response, "This payment has already been refunded");
+            }
+            long totalCents = centsFromPrice(appointment.getPaymentAmount() == null
+                    ? appointment.getPrice() : appointment.getPaymentAmount());
+            long refundCents = totalCents;
+            if(data.getAmount() != null && !data.getAmount().isBlank()){
+                long requestedCents = centsFromPrice(data.getAmount());
+                if(requestedCents <= 0){
+                    return errorResponse(response, "Invalid refund amount");
+                }
+                refundCents = Math.min(requestedCents, totalCents);
+            }
+            if(refundCents <= 0){
+                return errorResponse(response, "Invalid refund amount");
+            }
+            String refundId = "RFND-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT);
+            RefundEntity refund = new RefundEntity();
+            refund.setRefundId(refundId);
+            refund.setAppointmentId(appointment.getAppointmentId());
+            refund.setPaymentIntentId(appointment.getPaymentIntentId());
+            refund.setAmount(String.format(Locale.ROOT, "%.2f", refundCents / 100.0));
+            refund.setReason(data.getReason());
+            refund.setStatus("REQUESTED");
+            refund.setCreatedBy(adminId == null || adminId.isBlank() ? "SYSTEM" : adminId);
+            refund.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            refundRepo.save(refund);
+            try{
+                com.stripe.model.Refund stripeRefund = stripeService.refundBookingPayment(
+                        appointment.getPaymentIntentId(), refundCents, data.getReason(),
+                        "refund_" + appointment.getPaymentIntentId() + "_" + refundId);
+                refund.setStripeRefundId(stripeRefund.getId());
+                refund.setStatus("COMPLETED");
+                refund.setCompletedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                appointment.setPaymentStatus("REFUNDED");
+                bookAppointmentRepo.save(appointment);
+                refundRepo.save(refund);
+                audit(adminId, "ADMIN", "PAYMENT_REFUND", "APPOINTMENT", appointment.getAppointmentId(),
+                        "Refunded $" + refund.getAmount()
+                                + (data.getReason() == null || data.getReason().isBlank() ? "" : " — " + data.getReason()));
+                if(outboxEventService != null){
+                    outboxEventService.refundEvent(appointment, refund.getAmount(), data.getReason(), true);
+                }
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("Refund processed");
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("refundId", refundId);
+                result.put("amount", refund.getAmount());
+                result.put("status", "COMPLETED");
+                result.put("stripeRefundId", stripeRefund.getId());
+                response.setData(result);
+            } catch(Exception ex){
+                LOG.warning("Refund failed: " + ex.getMessage());
+                refund.setStatus("FAILED");
+                refund.setFailureCode(String.valueOf(ex.getMessage()));
+                refundRepo.save(refund);
+                audit(adminId, "ADMIN", "PAYMENT_REFUND_FAILED", "APPOINTMENT", appointment.getAppointmentId(),
+                        "Refund failed: " + ex.getMessage());
+                return errorResponse(response, "Refund failed — " + ex.getMessage());
+            }
+        } catch(Exception ex){
+            LOG.warning("Admin refund error: " + ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Lists all refund records, newest first, for the admin view. */
+    public BaseResponse adminRefunds(String adminId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            List<RefundEntity> refunds = refundRepo.findAll();
+            refunds.sort(java.util.Comparator.comparing(RefundEntity::getCreatedAt,
+                    java.util.Comparator.nullsLast(String::compareTo)).reversed());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Refunds retrieved");
+            response.setData(refunds);
+        } catch(Exception ex){
+            LOG.warning("Admin refund list error: " + ex.getMessage());
+        }
+        return response;
+    }
+
     private enum ActorRole { STYLER, CUSTOMER }
 
     /**
@@ -3625,7 +3963,7 @@ public class AppService {
                                                String newStatus, String[] allowedFrom, String successMessage){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<BookAppointmentEntity> isExist = bookAppointmentRepo.findByAppointmentId(appointmentId);
+            Optional<BookAppointmentEntity> isExist = bookAppointmentRepo.findByAppointmentIdForUpdate(appointmentId);
             if(isExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Appointment Id");
@@ -3661,6 +3999,23 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            // Completed bookings can only be cancelled by the stylist within a
+            // short window of completion — after that, refunds go through admin.
+            if("4".equals(newStatus) && "0".equals(appointment.getStatus())){
+                LocalDateTime completedAt = appointment.getCompletedAt();
+                if(completedAt == null){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("This completed appointment cannot be cancelled — completion time is unknown. Please contact support.");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+                if(completedAt.isBefore(LocalDateTime.now(applicationZone()).minusHours(stylerCancelWindowHours))){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("Appointments can only be cancelled within " + stylerCancelWindowHours + " hours of completion");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+            }
             if("3".equals(newStatus) && stripeService.isConfigured()
                     && "PAYMENT_SCHEDULED".equals(appointment.getPaymentStatus())
                     && paymentAuthorizationDueAt(appointment).isAfter(LocalDateTime.now(applicationZone()))){
@@ -3692,19 +4047,28 @@ public class AppService {
                     return response;
                 }
             }
+            if("0".equals(newStatus)){
+                appointment.setCompletedAt(LocalDateTime.now(applicationZone()));
+            }
             appointment.setStatus(newStatus);
             bookAppointmentRepo.save(appointment);
             if("2".equals(newStatus) || "4".equals(newStatus)){
                 // Rejected and customer-cancelled bookings release their held slots.
                 bookingSlotLockRepo.deleteByAppointmentId(appointment.getAppointmentId());
-                // Also release the authorized payment hold so the card is never charged.
+                // A captured payment is refunded automatically; otherwise the
+                // authorized hold is released so the card is never charged.
                 if(appointment.getPaymentIntentId() != null && stripeService.isConfigured()){
-                    try {
-                        stripeService.releaseBookingPayment(appointment.getPaymentIntentId());
-                        appointment.setPaymentStatus("RELEASED");
-                        bookAppointmentRepo.save(appointment);
-                    } catch(Exception ex){
-                        LOG.warning("Payment hold release failed: " + ex.getMessage());
+                    if("CAPTURED".equals(appointment.getPaymentStatus())){
+                        autoRefundCapturedPayment(appointment,
+                                "Appointment " + ("2".equals(newStatus) ? "rejected" : "cancelled"), "SYSTEM");
+                    } else {
+                        try {
+                            stripeService.releaseBookingPayment(appointment.getPaymentIntentId());
+                            appointment.setPaymentStatus("RELEASED");
+                            bookAppointmentRepo.save(appointment);
+                        } catch(Exception ex){
+                            LOG.warning("Payment hold release failed: " + ex.getMessage());
+                        }
                     }
                 }
             }
@@ -3761,7 +4125,9 @@ public class AppService {
                         "Your appointment was cancelled",
                         "Your appointment has been cancelled. Check your dashboard for updates.",
                         "Appointment cancelled",
-                        "This appointment has been cancelled by the client.");
+                        actorRole == ActorRole.STYLER
+                                ? "You have cancelled this appointment."
+                                : "This appointment has been cancelled by the client.");
             }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);

@@ -70,7 +70,7 @@ class BookingHardeningTest {
     @Test
     void stylistCannotCompleteBeforeScheduledStart() {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "3");
-        when(appointmentRepo.findByAppointmentId("APPT1")).thenReturn(Optional.of(appointment));
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
         BaseResponse response = appService.completeAppointment("STYLER1", "APPT1");
 
@@ -82,7 +82,7 @@ class BookingHardeningTest {
     @Test
     void transitionsEnforceTheCorrectOwnerSide() {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "1");
-        when(appointmentRepo.findByAppointmentId("APPT1")).thenReturn(Optional.of(appointment));
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
         BaseResponse stylistAttemptToCancel = appService.cancelAppointment("STYLER1", "APPT1");
         BaseResponse customerAttemptToAccept = appService.acceptAppointment("CUSTOMER1", "APPT1");

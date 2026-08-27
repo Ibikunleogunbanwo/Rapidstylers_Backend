@@ -16,8 +16,11 @@ import com.stripe.param.AccountLinkCreateParams;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentMethodAttachParams;
+import com.stripe.param.RefundCreateParams;
 import com.stripe.param.SetupIntentCreateParams;
+import com.stripe.param.TransferReversalCollectionCreateParams;
 import com.stripe.param.TransferCreateParams;
+import com.stripe.net.RequestOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -206,6 +209,17 @@ public class StripeService {
     public PaymentIntent authorizeBookingPayment(String customerId, String paymentMethodId,
                                                  long amountCents, String appointmentId,
                                                  String connectAccountId, long feeCents) throws StripeException {
+        return authorizeBookingPayment(customerId, paymentMethodId, amountCents, appointmentId, connectAccountId, feeCents, null);
+    }
+
+    public PaymentIntent authorizeBookingPayment(String customerId, String paymentMethodId,
+                                                 long amountCents, String appointmentId,
+                                                 String connectAccountId, long feeCents,
+                                                 String idempotencyKey) throws StripeException {
+        var optionsBuilder = RequestOptions.builder();
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            optionsBuilder.setIdempotencyKey(idempotencyKey);
+        }
         PaymentIntentCreateParams.Builder builder = PaymentIntentCreateParams.builder()
                 .setAmount(amountCents)
                 .setCurrency(currency())
@@ -220,31 +234,91 @@ public class StripeService {
         // Keep the charge on the platform account. The stylist transfer is
         // created only after the appointment is completed, so accepting or
         // capturing a booking never makes payout funds eligible early.
-        return PaymentIntent.create(builder.build());
+                return PaymentIntent.create(builder.build(), optionsBuilder.build());
     }
 
     /** Transfers the stylist's net share after the appointment is completed. */
     public Transfer transferStylistShare(String connectAccountId, long amountCents, String appointmentId)
             throws StripeException {
+        return transferStylistShare(connectAccountId, amountCents, appointmentId, null);
+    }
+
+    public Transfer transferStylistShare(String connectAccountId, long amountCents, String appointmentId,
+                                         String idempotencyKey) throws StripeException {
         if(connectAccountId == null || connectAccountId.isBlank() || amountCents <= 0){
             return null;
         }
+        RequestOptions tOpts = idempotencyKey != null && !idempotencyKey.isBlank()
+                ? RequestOptions.builder().setIdempotencyKey(idempotencyKey).build()
+                : RequestOptions.builder().build();
         return Transfer.create(TransferCreateParams.builder()
                 .setAmount(amountCents)
                 .setCurrency(currency())
                 .setDestination(connectAccountId)
                 .putMetadata("appointmentId", appointmentId == null ? "" : appointmentId)
                 .putMetadata("platform", "rapidstylers")
-                .build());
+                .build(), tOpts);
     }
 
     /** Settles a previously authorized hold (stylist completed the appointment). */
     public PaymentIntent captureBookingPayment(String paymentIntentId) throws StripeException {
-        PaymentIntent intent = PaymentIntent.retrieve(paymentIntentId);
+        return captureBookingPayment(paymentIntentId, null);
+    }
+
+    public PaymentIntent captureBookingPayment(String paymentIntentId, String idempotencyKey) throws StripeException {
+        var optionsBuilder = RequestOptions.builder();
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            optionsBuilder.setIdempotencyKey(idempotencyKey);
+        }
+        PaymentIntent intent = PaymentIntent.retrieve(paymentIntentId, optionsBuilder.build());
         if ("requires_capture".equals(intent.getStatus())) {
-            return intent.capture();
+            RequestOptions opts = idempotencyKey != null && !idempotencyKey.isBlank()
+                    ? RequestOptions.builder().setIdempotencyKey(idempotencyKey).build()
+                    : RequestOptions.builder().build();
+            return intent.capture(opts);
         }
         return intent;
+    }
+
+    /**
+     * Refunds a captured PaymentIntent. Full refund when amountCents <= 0,
+     * otherwise a partial refund. The idempotency key must be stable per
+     * refund attempt so retries never double-refund.
+     */
+    public com.stripe.model.Refund refundBookingPayment(String paymentIntentId, long amountCents,
+                                                        String reason, String idempotencyKey) throws StripeException {
+        RefundCreateParams.Builder builder = RefundCreateParams.builder()
+                .setPaymentIntent(paymentIntentId)
+                .setReason(RefundCreateParams.Reason.REQUESTED_BY_CUSTOMER);
+        if (amountCents > 0) {
+            builder.setAmount(amountCents);
+        }
+        if (reason != null && !reason.isBlank()) {
+            builder.putMetadata("reason", reason);
+        }
+        RequestOptions options = idempotencyKey != null && !idempotencyKey.isBlank()
+                ? RequestOptions.builder().setIdempotencyKey(idempotencyKey).build()
+                : RequestOptions.builder().build();
+        return com.stripe.model.Refund.create(builder.build(), options);
+    }
+
+    /**
+     * Reverses a stylist payout transfer (full amount). Fails when the stylist's
+     * balance cannot cover the transfer (funds already withdrawn) — callers
+     * retry later. The idempotency key must stay stable across retries so a
+     * reversal is never created twice.
+     */
+    public com.stripe.model.TransferReversal reverseTransfer(String transferId, String reason,
+                                                             String idempotencyKey) throws StripeException {
+        TransferReversalCollectionCreateParams.Builder builder = TransferReversalCollectionCreateParams.builder();
+        if (reason != null && !reason.isBlank()) {
+            builder.putMetadata("reason", reason);
+        }
+        RequestOptions options = idempotencyKey != null && !idempotencyKey.isBlank()
+                ? RequestOptions.builder().setIdempotencyKey(idempotencyKey).build()
+                : RequestOptions.builder().build();
+        Transfer transfer = Transfer.retrieve(transferId);
+        return transfer.getReversals().create(builder.build(), options);
     }
 
     /** Releases an authorized hold without charging (appointment declined or cancelled). */

@@ -2,9 +2,11 @@ package com.macrotel.rapidstylers.repo;
 
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import javax.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,6 +27,15 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
             java.time.LocalTime appointmentStartTime, List<String> statuses);
 
     Optional<BookAppointmentEntity> findByAppointmentId(String appointmentId);
+
+    /**
+     * Pessimistic write lock on the appointment row. Status transitions (and
+     * the refunds they trigger) are serialized per appointment, so concurrent
+     * cancels can never refund the same captured payment twice.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM BookAppointmentEntity b WHERE b.appointmentId = :appointmentId")
+    Optional<BookAppointmentEntity> findByAppointmentIdForUpdate(@Param("appointmentId") String appointmentId);
 
     Optional<BookAppointmentEntity> findByPaymentIntentId(String paymentIntentId);
 

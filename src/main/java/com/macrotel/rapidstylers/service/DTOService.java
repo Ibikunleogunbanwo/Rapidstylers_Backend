@@ -26,6 +26,8 @@ public class DTOService {
     @Autowired
     ReviewRepo reviewRepo;
     @Autowired
+    RefundRepo refundRepo;
+    @Autowired
     StripeService stripeService;
     public UserAccountDTO userAccountDTO(UserEntity userEntity){
         UserAccountDTO userAccountDTO = new UserAccountDTO();
@@ -194,7 +196,29 @@ public class DTOService {
         appointmentDTO.setPaymentStatus(bookAppointmentEntity.getPaymentStatus());
         appointmentDTO.setPaymentFailureCode(bookAppointmentEntity.getPaymentFailureCode());
         appointmentDTO.setStripeTransferId(bookAppointmentEntity.getStripeTransferId());
+        appointmentDTO.setCompletedAt(bookAppointmentEntity.getCompletedAt());
+        populateRefund(appointmentDTO, bookAppointmentEntity.getAppointmentId());
         return appointmentDTO;
+    }
+
+    /** Attaches the completed refund (if any) so customers see when a cancelled booking was refunded. */
+    private void populateRefund(AppointmentDTO appointmentDTO, String appointmentId){
+        if(refundRepo == null || appointmentId == null || appointmentId.isBlank()){
+            return;
+        }
+        try{
+            refundRepo.findByAppointmentId(appointmentId).stream()
+                    .filter(refund -> "COMPLETED".equals(refund.getStatus()))
+                    .max(Comparator.comparing(RefundEntity::getCompletedAt, Comparator.nullsLast(String::compareTo)))
+                    .ifPresent(refund -> {
+                        appointmentDTO.setRefundId(refund.getRefundId());
+                        appointmentDTO.setRefundStatus(refund.getStatus());
+                        appointmentDTO.setRefundAmount(refund.getAmount());
+                        appointmentDTO.setRefundCompletedAt(refund.getCompletedAt());
+                    });
+        } catch(Exception ex){
+            // Refund lookup must never break appointment lists.
+        }
     }
 
     public FeedBackDTO feedBackDTO(FeedbackEntity feedbackEntity){
