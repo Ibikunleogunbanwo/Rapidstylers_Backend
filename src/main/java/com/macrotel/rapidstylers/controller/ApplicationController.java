@@ -116,7 +116,7 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @GetMapping("/delete_identification")
+    @PostMapping("/delete_identification")
     public ResponseEntity <BaseResponse> deleteIdentification(@RequestParam("id") String id){
         BaseResponse baseResponse = appService.deleteIdentification(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -142,7 +142,7 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @GetMapping("/delete_service")
+    @PostMapping("/delete_service")
     public ResponseEntity <BaseResponse> deleteService(@RequestParam("id") String id){
         BaseResponse baseResponse = appService.deleteService(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -194,7 +194,7 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @GetMapping("/delete_blog")
+    @PostMapping("/delete_blog")
     public ResponseEntity <BaseResponse> deleteBlog(@RequestParam("id") String id){
         BaseResponse baseResponse = appService.deleteBlogPost(id);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -244,7 +244,11 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
     @GetMapping("/styler_sign_out")
-    public ResponseEntity <BaseResponse> stylerSignOut(@RequestParam("stylerId") String stylerId){
+    public ResponseEntity <BaseResponse> stylerSignOut(HttpServletRequest request){
+        String stylerId = currentAccountId(request);
+        if(stylerId == null){
+            return unauthorized();
+        }
         BaseResponse baseResponse = appService.stylerLogOut(stylerId);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);

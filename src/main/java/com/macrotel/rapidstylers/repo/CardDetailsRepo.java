@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface CardDetailsRepo extends JpaRepository<CardDetailsEntity, Long> {
     Optional<CardDetailsEntity> findByUserId(String userId);
+
+    java.util.List<CardDetailsEntity> findAll();
 }

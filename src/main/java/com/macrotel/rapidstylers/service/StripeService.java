@@ -167,6 +167,7 @@ public class StripeService {
                                         String firstName, String lastName) throws StripeException {
         AccountCreateParams.Builder builder = AccountCreateParams.builder()
                 .setType(AccountCreateParams.Type.EXPRESS)
+                .setBusinessType(AccountCreateParams.BusinessType.INDIVIDUAL)
                 .setEmail(email)
                 .setCapabilities(AccountCreateParams.Capabilities.builder()
                         .setTransfers(AccountCreateParams.Capabilities.Transfers.builder().setRequested(true).build())

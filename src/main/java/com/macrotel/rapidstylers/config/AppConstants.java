@@ -17,7 +17,10 @@ public class AppConstants {
     // Password: 8+ chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special char
     public static final String PASSWORD_PATTERN = "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#&()-[{}]:;'?/*~$^+=<>.]).{8,30}$";
     public static final String ALGORITHM = "AES";
-    public static final String ENCRYPTDECRYPTKEY = "D0n!T'T&mp3r@w1Th^&()";
+    // Encryption key: prefer the ENCRYPT_KEY env var; this fallback keeps
+    // existing encrypted card_details records readable during migration.
+    // WARNING: rotate to a new key via ENCRYPT_KEY before going to production.
+    public static final String ENCRYPT_DECRYPT_KEY_FALLBACK = "D0n!T'T&mp3r@w1Th^&()";
 
     // Professional verification workflow states (StylerEntity.verificationStatus)
     public static final String VERIFICATION_PENDING = "PENDING";

@@ -4,7 +4,6 @@ import com.stripe.model.Account;
 import com.stripe.model.Customer;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
-import com.stripe.param.PaymentMethodCreateParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -42,12 +41,19 @@ class StripeLifecycleTest {
         // key-selection logic (mode -> test/live set -> legacy fallback).
         ReflectionTestUtils.setField(service, "mode", mode);
         ReflectionTestUtils.setField(service, "secretKey", secretKey);
+        // init() calls resolveActiveKeys() which overwrites secretKey with the
+        // mode-specific field (testSecretKey or liveSecretKey). Set the matching
+        // field so init() preserves the key instead of blanking it.
+        String selected = trimToEmpty(mode).toLowerCase(Locale.ROOT);
+        if ("test".equals(selected)) {
+            ReflectionTestUtils.setField(service, "testSecretKey", secretKey);
+        } else if ("live".equals(selected)) {
+            ReflectionTestUtils.setField(service, "liveSecretKey", secretKey);
+        }
         ReflectionTestUtils.setField(service, "webhookSecret", "");
         ReflectionTestUtils.setField(service, "connectWebhookSecret", "");
         ReflectionTestUtils.setField(service, "currency", "cad");
-        if (service.isConfigured()) {
-            service.init();
-        }
+        service.init();
     }
 
     @Test
@@ -63,17 +69,14 @@ class StripeLifecycleTest {
         Customer customer = service.getOrCreateCustomer(null, "stripe-e2e+" + runId + "@example.com", "Stripe E2E");
         assertNotNull(customer.getId());
         try {
-            // 2. Create a card PaymentMethod with Stripe's test card — the
-            //    server-side equivalent of the Elements confirmCardSetup step.
-            PaymentMethod pm = PaymentMethod.create(PaymentMethodCreateParams.builder()
-                    .setType(PaymentMethodCreateParams.Type.CARD)
-                    .setCard(PaymentMethodCreateParams.CardDetails.builder()
-                            .setNumber("4242424242424242")
-                            .setExpMonth(12L)
-                            .setExpYear(2030L)
-                            .setCvc("123")
-                            .build())
-                    .build());
+            // 2. Attach Stripe's pre-built test PaymentMethod (pm_card_visa) —
+
+            //    raw card numbers are rejected by the live API; test tokens are
+
+            //    the supported way to create PaymentMethods server-side.
+
+            PaymentMethod pm = PaymentMethod.retrieve("pm_card_visa");
+
             assertNotNull(pm.getId());
 
             // 3. SetupIntent client secret — the card-save endpoint path.
@@ -83,8 +86,8 @@ class StripeLifecycleTest {
             StripeService.CardDisplay display = service.attachPaymentMethod(customer.getId(), pm.getId());
             assertEquals("4242", display.last4);
             assertEquals("visa", display.brand);
-            assertEquals(12L, display.expMonth);
-            assertEquals(2030L, display.expYear);
+            assertNotNull(display.expMonth);
+            assertNotNull(display.expYear);
 
             // 5. Authorize a hold (booking created). Manual capture: funds are NOT moved yet.
             // 4b. A connected Express account routes the stylist's share + platform fee.

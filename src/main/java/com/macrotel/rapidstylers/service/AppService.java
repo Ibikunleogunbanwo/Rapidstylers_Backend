@@ -111,6 +111,8 @@ public class AppService {
     LoginAttemptService loginAttemptService;
     @Autowired
     OutboxEventService outboxEventService;
+    @Autowired
+    EncryptionConfig encryptionConfig;
 
     // Global rate-limit budgets (shared across OTP generation, OTP verification
     // and login so failures on one surface lock out the others).
@@ -339,7 +341,7 @@ public class AppService {
 
             //Create a space for user in the card_details table
             CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
-            cardDetailsEntity.setUserId(EncryptionConfig.encrypt(userId));
+            cardDetailsEntity.setUserId(userId);
             cardDetailsRepo.save(cardDetailsEntity);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -640,9 +642,24 @@ public class AppService {
                 return response;
             }
 
+            // SECURITY: Require a verified "FORGET PASSWORD" OTP before allowing the reset.
+            // Without this check, anyone who knows an email address could reset the password.
+            Optional<OTPEntity> verifiedOtp = otpRepo.verifyOtpSuccessForPurpose(emailAddress, "FORGET PASSWORD");
+            if(verifiedOtp.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Password reset not authorized. Please verify the OTP code sent to your email first.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(encryptPassword);
             userRepo.save(userPrevData);
+
+            // Invalidate the OTP so it cannot be reused
+            OTPEntity usedOtp = verifiedOtp.get();
+            usedOtp.setIsUsed("0");
+            otpRepo.save(usedOtp);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Password Change Successful");

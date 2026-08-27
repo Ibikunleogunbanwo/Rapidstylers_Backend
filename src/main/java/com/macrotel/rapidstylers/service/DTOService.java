@@ -1,6 +1,5 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.dto.*;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.repo.*;
@@ -231,12 +230,8 @@ public class DTOService {
             UserEntity userEntity = getUserDetails.get();
             userDataDTO.setUserData(this.userAccountDTO(userEntity));
         }
-        //Get card details. New rows are keyed by the plain userId; legacy rows
-        // from the pre-Stripe era were keyed by the encrypted userId.
+        //Get card details (plain userId — legacy encrypted rows are migrated on startup).
         Optional<CardDetailsEntity> getUserCardDetails = cardDetailsRepo.findByUserId(userId);
-        if(getUserCardDetails.isEmpty()){
-            getUserCardDetails = cardDetailsRepo.findByUserId(EncryptionConfig.encrypt(userId));
-        }
         if(getUserCardDetails.isPresent()){
             CardDetailsEntity cardDetailsEntity = getUserCardDetails.get();
             userDataDTO.setUserCardData(this.cardDetailsDTO(cardDetailsEntity));
