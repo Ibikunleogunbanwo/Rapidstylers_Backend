@@ -38,12 +38,16 @@ jobs:
 
       # Redis and Kafka are not started in CI: the services fail closed with
       # in-memory fallbacks, and the test profile disables the Kafka consumers.
+      #
+      # ./mvn21 is the single source of truth for JDK selection (local + CI):
+      # it validates the setup-java JDK (17) and fails loudly if it ever drifts
+      # outside the Lombok-compatible 17-21 range, then delegates to ./mvnw.
       - name: Run tests
         env:
           DB_URL: jdbc:mysql://127.0.0.1:3306/rapid_stylers
           DB_USERNAME: root
           DB_PASSWORD: root
-        run: ./mvnw -B test
+        run: ./mvn21 -B test
 
   deploy:
     name: Deploy to VPS

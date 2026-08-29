@@ -242,13 +242,22 @@ The ports intentionally avoid the AfroChow stack, which commonly uses Redis `637
 Run the full backend suite:
 
 ```bash
-./mvnw test
+./mvn21 test        # recommended — pinned to a Lombok-compatible JDK (17-21)
+./mvnw test         # standard wrapper — requires JAVA_HOME ≤ 21 locally
 ```
 
-Latest verification from the MVP hardening pass:
+> **JDK note:** Lombok 1.18.30 does not support JDK 22+. On macOS the Homebrew
+> `mvn` launches with its own bundled JDK (e.g. 25), which breaks compilation
+> with ~200 `cannot find symbol` errors on `@Data` getters. Use `./mvn21`
+> (which finds a local JDK 17–21 and delegates to `./mvnw`), or set `JAVA_HOME`
+> to a JDK 17–21 yourself. `./mvn21` is the single source of truth for JDK
+> selection — CI runs the same script (`ci.yml` → `./mvn21 -B test` on the
+> pinned Java 17), and it fails loudly if the JDK ever drifts outside 17–21.
+
+Latest verification (full suite, JDK 21 against local MySQL):
 
 ```text
-Backend tests: 39 passed
+Backend tests: 195 passed
 ```
 
 Covered areas include booking workflow rules, concurrency/slot protection, notification event handling, outbox publishing, saved stylists, rate limiting, login attempts, CORS/preflight behavior, JWT role protection, and Cloudinary signature guards.

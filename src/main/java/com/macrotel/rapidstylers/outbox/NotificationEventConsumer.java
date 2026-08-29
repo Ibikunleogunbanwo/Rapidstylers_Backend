@@ -79,6 +79,21 @@ public class NotificationEventConsumer {
         }
 
         try {
+            if (eventType != null && eventType.startsWith("CUSTOMER_")) {
+                Map<String, String> event = readPayload(payload);
+                String email = event.getOrDefault("emailAddress", "");
+                if (!email.isBlank()) {
+                    String firstName = event.getOrDefault("firstname", "");
+                    String greeting = firstName.isBlank() ? "Welcome to RapidStylers" : "Welcome to RapidStylers, " + firstName;
+                    emailConfig.sendSimpleMail(email, "Welcome to RapidStylers",
+                            "<p>" + greeting + "!</p>"
+                            + "<p>Your account is ready. Complete your profile and book your first "
+                            + "appointment with a top-rated beauty professional.</p>"
+                            + "<p>– The RapidStylers Team</p>");
+                }
+                acknowledge(acknowledgment);
+                return;
+            }
             if (eventType != null && eventType.startsWith("PAYMENT_")) {
                 Map<String, String> event = readPayload(payload);
                 Optional<SubServiceEntity> service = service(event);

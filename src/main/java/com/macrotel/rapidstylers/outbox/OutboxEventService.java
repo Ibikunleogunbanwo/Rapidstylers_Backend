@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.outbox;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.entity.UserEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -78,6 +79,26 @@ public class OutboxEventService {
         event.setTopic(domainEventsTopic);
         event.setAggregateType("APPOINTMENT");
         event.setAggregateId(nullSafe(appointment.getAppointmentId()));
+        event.setPayload(toJson(payload));
+        outboxEventRepo.save(event);
+    }
+
+    /**
+     * Emits a CUSTOMER_WELCOME event so the new customer receives a welcome
+     * email (and can be greeted by name when one was collected at signup).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void welcomeEmail(UserEntity user) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("emailAddress", nullSafe(user.getEmailAddress()));
+        payload.put("firstname", nullSafe(user.getFirstname()));
+        payload.put("lastname", nullSafe(user.getLastname()));
+        payload.put("accountId", nullSafe(user.getUserId()));
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(OutboxEventType.CUSTOMER_WELCOME);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("USER");
+        event.setAggregateId(nullSafe(user.getUserId()));
         event.setPayload(toJson(payload));
         outboxEventRepo.save(event);
     }

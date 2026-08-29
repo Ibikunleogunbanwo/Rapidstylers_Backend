@@ -4,6 +4,7 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.security.JwtUtil;
+import com.macrotel.rapidstylers.security.GoogleTokenVerifier;
 import com.macrotel.rapidstylers.entity.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
@@ -124,6 +125,8 @@ public class AppService {
     OutboxEventRepo outboxEventRepo;
     @Autowired
     RefreshTokenService refreshTokenService;
+    @Autowired
+    GoogleTokenVerifier googleTokenVerifier;
     @Autowired
     RefundRepo refundRepo;
     @Autowired
@@ -314,6 +317,7 @@ public class AppService {
         return response;
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public BaseResponse userSignUp(UserData userData){
         BaseResponse response = new BaseResponse(true);
         try{
@@ -348,16 +352,28 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            //Check phone number across both tables
-            Optional<UserEntity> isPhoneExist = userRepo.findByPhoneNumber(userData.getPhoneNumber());
-            Optional<StylerEntity> isStylerPhoneExist = stylerRepo.findByPhoneNumber(userData.getPhoneNumber());
-            if(isPhoneExist.isPresent() || isStylerPhoneExist.isPresent()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Phone number already registered");
-                response.setData(EMPTY_DATA);
-                return response;
+            //Phone uniqueness is only relevant when a phone was provided (nullable now).
+            String signupPhone = userData.getPhoneNumber();
+            if (signupPhone != null && !signupPhone.isBlank()) {
+                Optional<UserEntity> isPhoneExist = userRepo.findByPhoneNumber(signupPhone);
+                Optional<StylerEntity> isStylerPhoneExist = stylerRepo.findByPhoneNumber(signupPhone);
+                if(isPhoneExist.isPresent() || isStylerPhoneExist.isPresent()){
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("Phone number already registered");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
             }
-            String userId = userData.getFirstname().toUpperCase().charAt(0)+appUtils.randomDigit(4)+userData.getLastname().toUpperCase().charAt(0);
+            //userId is derived from names when present; falls back to a stable
+            //U<random> token so a minimal (email+password) account still gets an id.
+            String fname = nullSafeName(userData.getFirstname());
+            String lname = nullSafeName(userData.getLastname());
+            String userId;
+            if (!fname.isEmpty() && !lname.isEmpty()) {
+                userId = fname.charAt(0) + appUtils.randomDigit(4) + lname.charAt(0);
+            } else {
+                userId = "U" + appUtils.randomDigit(4);
+            }
             UserEntity userEntity = new UserEntity(userData);
             userEntity.setUserId(userId);
             userRepo.save(userEntity);
@@ -366,6 +382,13 @@ public class AppService {
             CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
             cardDetailsEntity.setUserId(userId);
             cardDetailsRepo.save(cardDetailsEntity);
+
+            //Welcome notification (in-app) that a fresh account is ready to book.
+            notificationRepo.save(new NotificationEntity(userId, "", "WELCOME",
+                    "Welcome to RapidStylers",
+                    "Your account is ready. Complete your profile and book your first appointment."));
+            //Welcome email fired through the outbox -> Kafka -> email worker.
+            outboxEventService.welcomeEmail(userEntity);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Account created successful");
@@ -538,6 +561,116 @@ public class AppService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    /**
+     * Sign-in with a Google ID token. Verifies the token (signature, issuer,
+     * audience, email_verified), then routes to the matching existing account
+     * (styler or customer) or auto-creates a minimal customer when no account
+     * with that verified email exists. Transactional so the welcome outbox
+     * event (Propagation.MANDATORY) can be written in the same unit as the
+     * account row.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse signInWithGoogle(String idToken){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            io.jsonwebtoken.Claims claims = googleTokenVerifier.verify(idToken);
+            String email = String.valueOf(claims.get("email"));
+            String ip = rateLimiterService.clientIp();
+            if (rateLimiterService.isBlocked("auth:" + email, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
+                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Too many failed attempts. Please try again later.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("UNKNOWN", null, email, ip, "LOCKED_OUT");
+                return response;
+            }
+            Optional<StylerEntity> styler = stylerRepo.findByEmailAddress(email);
+            Optional<UserEntity> user = userRepo.findByEmailAddress(email);
+
+            // Google sign-in is customer-only for now. A professional email must
+            // use the styler email + password sign-in surface.
+            if (styler.isPresent() && user.isEmpty()) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This Google account belongs to a professional profile. Please sign in with your email and password.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("STYLER", styler.get().getStylerId(), email, ip, "GOOGLE_CUSTOMER_ONLY");
+                return response;
+            }
+
+            // Existing (active) customer account -> route as CUSTOMER.
+            if (user.isPresent() && "0".equals(user.get().getStatus())) {
+                UserEntity userEntity = user.get();
+                rateLimiterService.clear("auth:" + email);
+                rateLimiterService.clear("auth_ip:" + ip);
+                Map<String, Object> userData = new LinkedHashMap<>();
+                userData.put("role", "CUSTOMER");
+                userData.put("account", dtoService.userAccountDTO(userEntity));
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage(SUCCESS_MESSAGE);
+                response.setToken(jwtUtil.generateToken(userEntity.getUserId(), "CUSTOMER"));
+                response.setRefreshToken(refreshTokenService.issue(userEntity.getUserId(), "CUSTOMER"));
+                response.setData(userData);
+                recordLoginSuccess("CUSTOMER", userEntity.getUserId(), email, ip);
+                return response;
+            }
+
+            // No account yet -> auto-create a minimal customer from verified Google claims.
+            UserData signupData = new UserData();
+            signupData.setEmailAddress(email);
+            signupData.setFirstname(claims.get("given_name") != null ? String.valueOf(claims.get("given_name")) : null);
+            signupData.setLastname(claims.get("family_name") != null ? String.valueOf(claims.get("family_name")) : null);
+            signupData.setAgreeToTerms(true);
+            signupData.setPassword(appUtils.randomAlphanumeric(24)); // encrypted by the UserEntity(UserData) constructor
+            UserEntity created = createMinimalCustomer(signupData);
+            rateLimiterService.clear("auth:" + email);
+            rateLimiterService.clear("auth_ip:" + ip);
+            Map<String, Object> newUserData = new LinkedHashMap<>();
+            newUserData.put("role", "CUSTOMER");
+            newUserData.put("account", dtoService.userAccountDTO(created));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setToken(jwtUtil.generateToken(created.getUserId(), "CUSTOMER"));
+            response.setRefreshToken(refreshTokenService.issue(created.getUserId(), "CUSTOMER"));
+            response.setData(newUserData);
+            recordLoginSuccess("CUSTOMER", created.getUserId(), email, ip);
+            return response;
+        }
+        catch (GoogleTokenVerifier.IdTokenInvalidException e){
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage(e.getMessage());
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning("google sign-in error: " + ex.getMessage());
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Google sign-in failed. Please try again.");
+            response.setData(EMPTY_DATA);
+        }
+        return response;
+    }
+
+    private UserEntity createMinimalCustomer(UserData signupData){
+        String fname = nullSafeName(signupData.getFirstname());
+        String lname = nullSafeName(signupData.getLastname());
+        String userId;
+        if (!fname.isEmpty() && !lname.isEmpty()) {
+            userId = fname.charAt(0) + appUtils.randomDigit(4) + lname.charAt(0);
+        } else {
+            userId = "U" + appUtils.randomDigit(4);
+        }
+        UserEntity userEntity = new UserEntity(signupData);
+        userEntity.setUserId(userId);
+        userRepo.save(userEntity);
+        CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
+        cardDetailsEntity.setUserId(userId);
+        cardDetailsRepo.save(cardDetailsEntity);
+        notificationRepo.save(new NotificationEntity(userId, "", "WELCOME",
+                "Welcome to RapidStylers",
+                "Your account is ready. Complete your profile and book your first appointment."));
+        outboxEventService.welcomeEmail(userEntity);
+        return userEntity;
     }
 
     public BaseResponse singleUserData(String userId){
@@ -4860,6 +4993,12 @@ public class AppService {
             sb.append(", ").append(stylerData.getCountry());
         }
         return sb.toString();
+    }
+
+    /** Returns the trimmed name, or "" when blank/null — lets userId generation
+     *  (and emails) work for the minimal email+password registration. */
+    private String nullSafeName(String name){
+        return name == null ? "" : name.trim();
     }
 
     private void recordLoginSuccess(String accountType, String accountId, String emailAddress, String ipAddress) {

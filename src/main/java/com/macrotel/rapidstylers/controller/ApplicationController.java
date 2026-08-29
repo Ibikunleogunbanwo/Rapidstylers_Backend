@@ -81,6 +81,21 @@ public class ApplicationController {
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
+    @PostMapping("/google_sign_in")
+    public ResponseEntity<BaseResponse> googleSignIn(@RequestBody Map<String, String> body){
+        String idToken = body.getOrDefault("idToken", "");
+        if(idToken.trim().isEmpty()){
+            BaseResponse bad = new BaseResponse();
+            bad.setStatusCode(ERROR_STATUS_CODE);
+            bad.setMessage("Google ID token is required");
+            bad.setData(EMPTY_DATA);
+            return new ResponseEntity<>(bad, HttpStatus.BAD_REQUEST);
+        }
+        BaseResponse baseResponse = appService.signInWithGoogle(idToken);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
     @GetMapping("/user_data")
     public ResponseEntity<BaseResponse> singleUserData(HttpServletRequest request){
         String accountId = currentAccountId(request);

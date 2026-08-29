@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+#
+# Maven wrapper pinned to a Lombok-compatible JDK.
+#
+# Lombok 1.18.30 does not support JDK 22+. On macOS, the Homebrew `mvn`
+# launches with its own bundled JDK (e.g. 25), which breaks compilation with
+# ~200 "cannot find symbol" errors on @Data getters. This script finds a
+# known-good JDK (17-21) and delegates to the standard ./mvnw wrapper.
+#
+# This is the single source of truth for JDK selection: it runs locally AND
+# in CI (.github/workflows/ci.yml runs `./mvn21 -B test`). If no supported JDK
+# is found it fails with a clear message instead of silently building with a
+# bad one, so local and CI expectations can't drift.
+#
+# Usage: ./mvn21 <maven goals...>     e.g. ./mvn21 test -Dtest=GoogleSignInTest
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# Candidate JDKs in preference order. A pre-set JAVA_HOME is considered
+# first but only used if it actually points at a supported JDK.
+CANDIDATES=(
+  "${JAVA_HOME:-}"
+  "/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home"      # macOS
+  "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"  # macOS (brew)
+  "/usr/lib/jvm/java-21-openjdk-amd64"                              # Ubuntu/Debian
+  "/usr/lib/jvm/temurin-21-jdk-amd64"
+  "/usr/lib/jvm/java-17-openjdk-amd64"
+  "/usr/lib/jvm/temurin-17-jdk-amd64"
+)
+
+java_major() {
+  "$1/bin/java" -version 2>&1 | sed -nE 's/.*version "([0-9]+)(\..*)?".*/\1/p' | head -1
+}
+
+found=""
+for jdk in "${CANDIDATES[@]}"; do
+  if [ -n "${jdk:-}" ] && [ -x "$jdk/bin/java" ]; then
+    major="$(java_major "$jdk")"
+    if [ -n "$major" ] && [ "$major" -ge 17 ] && [ "$major" -le 21 ]; then
+      export JAVA_HOME="$jdk"
+      found="1"
+      break
+    fi
+  fi
+done
+
+if [ -z "$found" ]; then
+  echo "mvn21: no supported JDK (17-21) found — refusing to build." >&2
+  echo "Checked: ${CANDIDATES[*]}" >&2
+  echo "Install a JDK 17-21 or set JAVA_HOME to one (e.g. /Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home)." >&2
+  echo "CI pins Java 17 via actions/setup-java; keep local and CI in the same range." >&2
+  exit 1
+fi
+
+exec ./mvnw "$@"
