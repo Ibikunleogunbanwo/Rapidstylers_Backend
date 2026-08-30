@@ -49,9 +49,25 @@ jobs:
           DB_PASSWORD: root
         run: ./mvn21 -B test
 
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Fails the build if any commit in the pushed history contains a secret
+      # (API keys, passwords, private keys...). This is what caught the leaked
+      # Google API key and the admin-password fragment after the fact — now it
+      # runs before code can ever reach GitHub.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   deploy:
     name: Deploy to VPS
-    needs: tests
+    needs: [tests, gitleaks]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
