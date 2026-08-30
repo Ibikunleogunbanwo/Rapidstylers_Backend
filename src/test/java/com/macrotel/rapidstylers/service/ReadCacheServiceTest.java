@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -11,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -120,6 +122,28 @@ class ReadCacheServiceTest {
             releaseLoader.countDown();
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void slowLoaderTimesOutButIsNotRunTwice() {
+        when(ops.get("k")).thenReturn(null);
+        ReflectionTestUtils.setField(cache, "singleFlightTimeoutSeconds", 1L);
+        AtomicInteger loads = new AtomicInteger();
+        long start = System.currentTimeMillis();
+
+        // Loader takes 1.5s; the first single-flight wait times out at 1s. The
+        // caller must keep waiting for the in-flight result instead of running
+        // the loader a second time (which would double DB load on slow paths).
+        Object result = cache.getOrLoad("k", Duration.ofMinutes(1), null, () -> {
+            loads.incrementAndGet();
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1500));
+            return "loaded";
+        });
+
+        assertEquals("loaded", result);
+        assertEquals(1, loads.get(), "a slow-but-successful loader must never run twice");
+        assertTrue(System.currentTimeMillis() - start >= 1500,
+                "the caller must wait for the in-flight result rather than reload");
     }
 
     @Test

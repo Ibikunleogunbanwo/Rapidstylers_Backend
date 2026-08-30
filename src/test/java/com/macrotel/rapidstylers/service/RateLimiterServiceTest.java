@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -16,8 +17,13 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,13 +47,14 @@ class RateLimiterServiceTest {
     }
 
     @Test
-    void recordIncrementsRedisCounterAndExpiresTheKeyForTheWindow() {
-        when(valueOperations.increment("auth:user@example.com")).thenReturn(1L);
+    void recordRunsAtomicIncrExpireScriptInOneRoundTrip() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any())).thenReturn(1L);
 
         rateLimiterService.record("auth:user@example.com", 900);
 
-        verify(valueOperations).increment("auth:user@example.com");
-        verify(redisTemplate).expire("auth:user@example.com", 900, TimeUnit.SECONDS);
+        verify(redisTemplate).execute(eq(RateLimiterService.INCR_EXPIRE_SCRIPT),
+                eq(List.of("auth:user@example.com")), eq("900"));
+        verify(redisTemplate, never()).expire(anyString(), anyInt(), any(TimeUnit.class));
     }
 
     @Test
@@ -74,7 +81,8 @@ class RateLimiterServiceTest {
     // ---- In-memory fallback (Redis unavailable) -----------------------------
 
     private void redisDown() {
-        when(valueOperations.increment(anyString())).thenThrow(new RuntimeException("redis down"));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any()))
+                .thenThrow(new RuntimeException("redis down"));
         when(valueOperations.get(anyString())).thenThrow(new RuntimeException("redis down"));
     }
 

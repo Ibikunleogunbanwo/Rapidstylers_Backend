@@ -16,6 +16,8 @@ import org.springframework.kafka.support.Acknowledgment;
 
 import java.util.Optional;
 
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -25,6 +27,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NotificationEventConsumerTest {
 
@@ -138,6 +142,35 @@ class NotificationEventConsumerTest {
 
         verify(dedupService).release("event-1");
         verify(kafkaTemplate).send(any(org.apache.kafka.clients.producer.ProducerRecord.class));
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    void exhaustedRetriesRouteToDlqWithErrorMessageHeader() {
+        UserEntity user = new UserEntity();
+        user.setUserId("USER1");
+        user.setEmailAddress("customer@example.com");
+        StylerEntity styler = new StylerEntity();
+        styler.setStylerId("STYLER1");
+        styler.setEmailAddress("styler@example.com");
+        when(userRepo.findByUserId("USER1")).thenReturn(Optional.of(user));
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
+        // Email provider keeps failing: exhausted retries (retry-count == maxRetries)
+        // must go to the DLQ, not loop the retry topic forever.
+        doThrow(new RuntimeException("email provider down")).when(emailConfig).sendSimpleMail(anyString(), anyString(), anyString());
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        consumer.handleBookingNotification(payload(), "1", "event-1", "BOOKING_REQUESTED", "3", ack);
+
+        verify(dedupService).release("event-1");
+        ArgumentCaptor<ProducerRecord<String, String>> recordCaptor =
+                ArgumentCaptor.forClass(org.apache.kafka.clients.producer.ProducerRecord.class);
+        verify(kafkaTemplate).send(recordCaptor.capture());
+        ProducerRecord<String, String> sent = recordCaptor.getValue();
+        assertEquals("rapidstylers.domain-events.dlq", sent.topic(),
+                "after max retries the event must land on the DLQ, not the retry topic");
+        assertTrue(sent.headers().lastHeader("error-message") != null,
+                "DLQ record must carry the error-message header for ops triage");
         verify(ack).acknowledge();
     }
 

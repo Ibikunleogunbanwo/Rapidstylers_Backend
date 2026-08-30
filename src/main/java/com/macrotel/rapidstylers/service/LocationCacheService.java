@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 /**
@@ -29,6 +30,7 @@ public class LocationCacheService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final GeoOperations<String, Object> geoOps;
+    private final AtomicLong totalFailures = new AtomicLong();
 
     public LocationCacheService(RedisTemplate<String, Object> redisTemplate) {
         this.redisTemplate = redisTemplate;
@@ -47,7 +49,9 @@ public class LocationCacheService {
             geoOps.add(GEO_KEY, new RedisGeoCommands.GeoLocation<>(stylerId, point));
             LOG.info("Indexed styler " + stylerId + " at [" + latitude + ", " + longitude + "]");
         } catch (Exception ex) {
-            LOG.warning("Failed to index styler " + stylerId + ": " + ex.getMessage());
+            totalFailures.incrementAndGet();
+            LOG.warning("Failed to index styler " + stylerId + " (failures="
+                    + totalFailures.get() + "): " + ex.getMessage());
         }
     }
 
@@ -58,7 +62,9 @@ public class LocationCacheService {
         try {
             redisTemplate.opsForZSet().remove(GEO_KEY, stylerId);
         } catch (Exception ex) {
-            LOG.warning("Failed to remove styler " + stylerId + " from geo index: " + ex.getMessage());
+            totalFailures.incrementAndGet();
+            LOG.warning("Failed to remove styler " + stylerId + " from geo index (failures="
+                    + totalFailures.get() + "): " + ex.getMessage());
         }
     }
 
@@ -95,7 +101,8 @@ public class LocationCacheService {
             return stylerDistances;
 
         } catch (Exception ex) {
-            LOG.warning("Radius search error: " + ex.getMessage());
+            totalFailures.incrementAndGet();
+            LOG.warning("Radius search error (failures=" + totalFailures.get() + "): " + ex.getMessage());
             return Collections.emptyMap();
         }
     }
@@ -120,7 +127,13 @@ public class LocationCacheService {
         try {
             redisTemplate.delete(GEO_KEY);
         } catch (Exception ex) {
-            LOG.warning("Failed to clear stylist geo index: " + ex.getMessage());
+            totalFailures.incrementAndGet();
+            LOG.warning("Failed to clear stylist geo index (failures=" + totalFailures.get() + "): " + ex.getMessage());
         }
+    }
+
+    /** Number of geo index failures since boot — ops signal for silent degradation. */
+    public long failures() {
+        return totalFailures.get();
     }
 }

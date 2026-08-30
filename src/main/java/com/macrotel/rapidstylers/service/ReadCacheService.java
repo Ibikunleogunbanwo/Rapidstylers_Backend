@@ -10,8 +10,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
@@ -35,7 +37,9 @@ import java.util.logging.Logger;
 public class ReadCacheService {
 
     private static final Logger LOG = Logger.getLogger(ReadCacheService.class.getName());
-    private static final long SINGLE_FLIGHT_TIMEOUT_SECONDS = 5;
+
+    /** Bounded wait for the shared in-flight load before falling back. Instance field (not final) so tests can shrink it. */
+    private long singleFlightTimeoutSeconds = 5;
 
     // Key namespaces.
     public static final String KEY_STYLER_DTO = "styler:dto:";
@@ -111,16 +115,31 @@ public class ReadCacheService {
                     inFlight.remove(k);
                 }
             }));
-            return (T) future.get(SINGLE_FLIGHT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (Exception ex) {
-            // Shared future failed or timed out — never depend on it; load directly.
-            inFlight.remove(key);
-            T value = countLoad(loader).get();
-            if (value != null) {
-                store(key, ttl, jitter, value);
+            try {
+                return (T) future.get(singleFlightTimeoutSeconds, TimeUnit.SECONDS);
+            } catch (TimeoutException te) {
+                // The shared flight is still running. Never start a second loader here
+                // — that would double DB load and defeat the whole point of single-
+                // flight. Drop our inFlight entry (so a truly-stuck flight can be
+                // replaced by a fresh one) and keep waiting, still bounded, for the
+                // in-flight loader to finish instead of running it again.
+                inFlight.remove(key);
+                return (T) future.get(singleFlightTimeoutSeconds, TimeUnit.SECONDS);
             }
-            return value;
+        } catch (ExecutionException ex) {
+            // The shared flight failed — retry once with a direct load.
+            inFlight.remove(key);
+        } catch (Exception ex) {
+            // Second timeout, interrupt or cancellation: the in-flight loader is
+            // stuck. Fall back to a direct load. Only one caller per key does this
+            // (the entry was removed above), so the herd is still bounded.
+            inFlight.remove(key);
         }
+        T value = countLoad(loader).get();
+        if (value != null) {
+            store(key, ttl, jitter, value);
+        }
+        return value;
     }
 
     /** Best-effort delete of cache keys (used by write paths). Never throws. */

@@ -5,6 +5,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 /**
@@ -30,6 +31,7 @@ public class NotificationDedupService {
     private static final String KEY_PREFIX = "notif:delivered:";
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final AtomicLong totalDegradations = new AtomicLong();
 
     @Value("${app.notifications.dedup-ttl-hours:24}")
     private long ttlHours;
@@ -52,7 +54,12 @@ public class NotificationDedupService {
                     KEY_PREFIX + eventId, "1", Duration.ofHours(ttlHours));
             return Boolean.TRUE.equals(claimed);
         } catch (Exception ex) {
-            LOG.warning("Notification dedup unavailable — processing anyway: " + ex.getMessage());
+            // Fail-open is deliberate (never lose an email), but it must be observable:
+            // every outage is counted and logged so ops can detect duplicate-mail
+            // risk instead of only noticing after customers receive doubles.
+            totalDegradations.incrementAndGet();
+            LOG.warning("Notification dedup unavailable — processing anyway (degradations="
+                    + totalDegradations.get() + "): " + ex.getMessage());
             return true;
         }
     }
@@ -65,7 +72,13 @@ public class NotificationDedupService {
         try {
             redisTemplate.delete(KEY_PREFIX + eventId);
         } catch (Exception ex) {
+            totalDegradations.incrementAndGet();
             LOG.warning("Notification dedup release failed: " + ex.getMessage());
         }
+    }
+
+    /** Number of Redis failures while claiming/releasing since boot — ops signal. */
+    public long degradations() {
+        return totalDegradations.get();
     }
 }

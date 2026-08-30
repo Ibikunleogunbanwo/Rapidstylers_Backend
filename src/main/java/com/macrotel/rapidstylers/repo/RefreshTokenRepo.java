@@ -8,6 +8,10 @@ import java.util.Optional;
 
 public interface RefreshTokenRepo extends JpaRepository<RefreshTokenEntity, Long> {
     Optional<RefreshTokenEntity> findByTokenHashAndRevokedFalse(String tokenHash);
+
+    /** Any row for a hash (revoked or not) — used to detect replay of a rotated-out token. */
+    Optional<RefreshTokenEntity> findByTokenHash(String tokenHash);
+
     List<RefreshTokenEntity> findByFamilyId(String familyId);
     @Transactional
     void deleteByAccountIdAndRole(String accountId, String role);

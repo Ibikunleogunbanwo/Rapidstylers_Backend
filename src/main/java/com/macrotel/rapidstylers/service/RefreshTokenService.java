@@ -33,32 +33,40 @@ public class RefreshTokenService {
         return createAndPersist(accountId, role, familyId);
     }
 
-    /** Rotate: revoke old token, issue new one in same family. Returns null if the old token is invalid/revoked. */
+    /**
+     * Rotate: revoke old token, issue new one in same family. Returns null if the
+     * old token is invalid/revoked or reuse/theft is detected.
+     *
+     * Theft detection: a token hash can only belong to one row (unique), so a
+     * rotated-out token can no longer be found as "active" when replayed. Presenting
+     * a known-but-already-revoked token is the classic stolen-session signal, so we
+     * burn the entire family rather than just rejecting it. We also burn the family
+     * if a rotation ever races such that two live tokens coexist in one family.
+     */
     public String rotate(String oldRawToken) {
         String oldHash = sha256Hex(oldRawToken);
-        RefreshTokenEntity oldToken = refreshTokenRepo.findByTokenHashAndRevokedFalse(oldHash).orElse(null);
-        if (oldToken == null) return null;
-        if (oldToken.getExpiresAt().isBefore(LocalDateTime.now())) return null;
-
-        // Reuse detection: if we find another non-revoked token in the same family,
-        // someone reused an old token after rotation — revoke the entire family.
-        List<RefreshTokenEntity> family = refreshTokenRepo.findByFamilyId(oldToken.getFamilyId());
-        boolean reuseDetected = false;
-        for (RefreshTokenEntity t : family) {
-            if (!t.getId().equals(oldToken.getId()) && !t.isRevoked() && t.getTokenHash().equals(oldHash)) {
-                reuseDetected = true;
-                break;
-            }
+        RefreshTokenEntity active = refreshTokenRepo.findByTokenHashAndRevokedFalse(oldHash).orElse(null);
+        if (active == null) {
+            // A revoked/rotated token is being replayed — suspected theft. Revoke the
+            // whole family so the legitimate session is forced to re-authenticate too.
+            refreshTokenRepo.findByTokenHash(oldHash).ifPresent(t -> revokeFamily(t.getFamilyId()));
+            return null;
         }
-        if (reuseDetected) {
-            revokeFamily(oldToken.getFamilyId());
+        if (active.getExpiresAt().isBefore(LocalDateTime.now())) return null;
+
+        // Invariant: one live token per family. If a second active sibling exists,
+        // rotation raced/duplicated — revoke the entire family.
+        List<RefreshTokenEntity> family = refreshTokenRepo.findByFamilyId(active.getFamilyId());
+        boolean siblingActive = family.stream()
+                .anyMatch(t -> !t.getId().equals(active.getId()) && !t.isRevoked());
+        if (siblingActive) {
+            revokeFamily(active.getFamilyId());
             return null;
         }
 
-        oldToken.setRevoked(true);
-        refreshTokenRepo.save(oldToken);
-
-        return createAndPersist(oldToken.getAccountId(), oldToken.getRole(), oldToken.getFamilyId());
+        active.setRevoked(true);
+        refreshTokenRepo.save(active);
+        return createAndPersist(active.getAccountId(), active.getRole(), active.getFamilyId());
     }
 
     /** Validate a refresh token. Returns the entity if valid, null otherwise. */

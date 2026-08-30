@@ -2,6 +2,8 @@ package com.macrotel.rapidstylers.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -10,6 +12,7 @@ import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +45,19 @@ public class RateLimiterService {
     /** Minimum interval between opportunistic prunes of the in-memory store. */
     private static final long MEMORY_PRUNE_INTERVAL_MILLIS = 30_000L;
 
+    /**
+     * Atomic INCR + conditional EXPIRE in a single Redis round trip. The window
+     * TTL is applied only when the counter starts at 1, and Redis guarantees the
+     * script runs without interleaving — so the TTL can never be lost to a crash
+     * between INCR and EXPIRE (which would leave a key without a TTL and block
+     * forever) and concurrent requests cannot interfere with the window.
+     */
+    static final RedisScript<Long> INCR_EXPIRE_SCRIPT = new DefaultRedisScript<>(
+            "local c = redis.call('INCR', KEYS[1]); "
+                    + "if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; "
+                    + "return c",
+            Long.class);
+
     private final RedisTemplate<String, Object> redisTemplate;
 
     @Value("${app.rate-limit.trusted-proxies:}")
@@ -71,10 +87,8 @@ public class RateLimiterService {
     /** Record an attempt and ensure the key expires at the window boundary. */
     public void record(String key, int windowSeconds) {
         try {
-            Long count = redisTemplate.opsForValue().increment(key);
-            if (count != null && count == 1L) {
-                redisTemplate.expire(key, windowSeconds, TimeUnit.SECONDS);
-            }
+            redisTemplate.execute(INCR_EXPIRE_SCRIPT, Collections.singletonList(key),
+                    String.valueOf(windowSeconds));
             return;
         } catch (Exception ignored) {
             // Redis unavailable — fall through to the in-memory fallback below.

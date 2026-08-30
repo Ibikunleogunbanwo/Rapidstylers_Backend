@@ -34,6 +34,12 @@ RapidStylers is built around trust and convenience:
 | Abuse prevention | Moved rate limiting to Redis and added login attempt audit records. |
 | API security | Tightened CORS, fixed preflight handling, protected sensitive role endpoints, and restricted Cloudinary signed upload folders with rate limits. |
 | Deployment readiness | Added environment driven configuration for the Cloudflare, Vercel, and VPS deployment shape. |
+| Booking race guard | Startup reconcilers now guarantee the slot-lock unique index (`uk_booking_slot_styler_date_start`) and convert the legacy MyISAM tables to InnoDB — `appointments`, `booking_slot_locks`, `refresh_tokens`, `refunds`, `payout_reversals`, `outbox_events`, `stylers` — so the pessimistic stylist lock, unique-constraint enforcement, and `@Transactional` rollback actually work across booking, refunds, outbox writes, and refresh revocation. Verified by a genuine two-live-customer race test (exactly one booking wins). |
+| Refresh-token theft detection | `rotate()` now burns the whole token family when a rotated-out/revoked token is replayed, so a stolen refresh session forces re-authentication instead of leaving the legitimate session running. |
+| Consumer retry/DLQ coverage | Added exhausted-retry routing test: after `maxRetries`, a failing notification event lands on the DLQ with an `error-message` header instead of looping the retry topic. |
+| Cache stampede hardening | Fixed a single-flight defect where a slow (but successful) cache loader could run twice after the 5s wait — callers now keep waiting for the in-flight result instead of re-running the loader, so DB load never doubles on slow paths. |
+| Rate-limit atomicity | Login/OTP counters now use an atomic Redis Lua script (INCR + conditional EXPIRE in one round trip) so the window TTL can't be lost to a crash between the two commands. |
+| Ops observability | Added degradation/failure counters to notification dedup (fail-open duplicate risk), the geo index (silent "nearby stylists" loss), and cache reads, so outages are visible to ops instead of only in request logs. |
 
 ## System Design
 

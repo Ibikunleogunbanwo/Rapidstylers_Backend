@@ -8,8 +8,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -60,5 +63,17 @@ class NotificationDedupServiceTest {
         when(redisTemplate.opsForValue()).thenThrow(new RuntimeException("redis down"));
         assertTrue(service.tryClaim("event-1"));
         service.release("event-1"); // must not throw
+    }
+
+    @Test
+    void redisFailureIsCountedSoDegradationIsObservable() {
+        when(values.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .thenThrow(new RuntimeException("redis down"));
+
+        assertTrue(service.tryClaim("event-1"));
+        assertTrue(service.tryClaim("event-2"));
+
+        assertEquals(2L, service.degradations(),
+                "every dedup outage must be counted so ops can see duplicate-mail risk");
     }
 }
