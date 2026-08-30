@@ -103,6 +103,25 @@ public class OutboxEventService {
         outboxEventRepo.save(event);
     }
 
+    /**
+     * Emits a SIGNUP_REMINDER event for the given campaign stage (1 = 24h
+     * reminder, 2 = 7 days, 3 = 14 days, 4 = 1 month) so a customer who
+     * requested a sign-up OTP but never created an account is followed up.
+     */
+    public void signupReminder(String email, int stage) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("emailAddress", nullSafe(email));
+        payload.put("type", "SIGNUP_REMINDER");
+        payload.put("stage", stage);
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(OutboxEventType.SIGNUP_REMINDER);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("USER");
+        event.setAggregateId(nullSafe(email));
+        event.setPayload(toJson(payload));
+        outboxEventRepo.save(event);
+    }
+
     private Map<String, Object> appointmentPayload(BookAppointmentEntity appointment, String eventLabel,
                                                    String customerHeadline, String customerDetail,
                                                    String stylerHeadline, String stylerDetail) {

@@ -212,6 +212,8 @@ class GoogleSignInTest {
         assertEquals("Gina", created.getFirstname(), "given name is captured from the verified claims");
         assertEquals("Customer", created.getLastname());
         assertEquals("0", created.getStatus());
+        assertEquals("GOOGLE", created.getRegistrationMethod(),
+                "Google-created customer must be tagged as registered via Google");
         assertNotNull(created.getTermsAcceptedAt(), "auto-create agrees to terms on the user's behalf");
         assertTrue(created.getPassword().startsWith("$2"),
                 "password must be stored as a BCrypt hash, not plaintext: " + created.getPassword());
@@ -224,6 +226,60 @@ class GoogleSignInTest {
                 .anyMatch(e -> OutboxEventType.CUSTOMER_WELCOME.equals(e.getEventType())
                         && userId.equals(e.getAggregateId()));
         assertTrue(welcomeEvent, "auto-created customer must get a CUSTOMER_WELCOME outbox event (welcome email)");
+    }
+
+    @Test
+    void emailRegisteredCustomerCannotUseGoogleSignIn() throws Exception {
+        UserEntity user = new UserEntity();
+        user.setFirstname("Emily");
+        user.setLastname("Email");
+        user.setEmailAddress(email);
+        user.setPassword("$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST");
+        user.setStatus("0");
+        user.setRegistrationMethod("EMAIL");
+        user.setUserId("G" + System.currentTimeMillis());
+        userRepo.save(user);
+        userId = user.getUserId();
+
+        when(googleTokenVerifier.verify(anyString())).thenReturn(verifiedClaims(email));
+
+        JsonNode body = postGoogle("valid-token");
+
+        assertEquals("400", body.get("statusCode").asText(),
+                "email-registered customer must not be able to sign in with Google: " + body);
+        assertTrue(body.get("message").asText().toLowerCase().contains("email"),
+                "unexpected message: " + body.get("message").asText());
+        assertTrue(userRepo.findByEmailAddress(email).isPresent(),
+                "the existing account must be left untouched");
+    }
+
+    @Test
+    void googleRegisteredCustomerCannotLogInWithEmailPassword() throws Exception {
+        UserEntity user = new UserEntity();
+        user.setFirstname("Grace");
+        user.setLastname("Google");
+        user.setEmailAddress(email);
+        user.setPassword("$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST");
+        user.setStatus("0");
+        user.setRegistrationMethod("GOOGLE");
+        user.setUserId("G" + System.currentTimeMillis());
+        userRepo.save(user);
+        userId = user.getUserId();
+
+        MvcResult result = mockMvc.perform(post("/rapid_stylers/user_sign_in")
+                .header("x-api-key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                        Map.of("emailAddress", email, "password", "whatever123"))))
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+
+        assertEquals("400", body.get("statusCode").asText(),
+                "Google-registered customer must not be able to log in with email/password: " + body);
+        assertTrue(body.get("message").asText().toLowerCase().contains("google"),
+                "unexpected message: " + body.get("message").asText());
+        assertTrue(userRepo.findByEmailAddress(email).isPresent(),
+                "the existing account must be left untouched");
     }
 
     private String sha256Hex(String input) throws Exception {

@@ -376,6 +376,7 @@ public class AppService {
             }
             UserEntity userEntity = new UserEntity(userData);
             userEntity.setUserId(userId);
+            userEntity.setRegistrationMethod("EMAIL");
             userRepo.save(userEntity);
 
             //Create a space for user in the card_details table
@@ -479,9 +480,17 @@ public class AppService {
 
             // 3. Customer
             Optional<UserEntity> user = userRepo.findByEmailAddress(emailAddress);
-            if(user.isPresent() && "0".equals(user.get().getStatus())
-                    && appUtils.passwordMatches(password, user.get().getPassword())){
+            if(user.isPresent() && "0".equals(user.get().getStatus())){
                 UserEntity userEntity = user.get();
+                // Provider binding: a Google-created account has no usable
+                // password and must sign in through Google, not email/password.
+                if ("GOOGLE".equals(userEntity.getRegistrationMethod())) {
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("This account uses Google sign-in. Please continue with Google.");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
+                if (appUtils.passwordMatches(password, userEntity.getPassword())){
                 if(userEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
                     userEntity.setPassword(appUtils.encryptPassword(password));
                     userRepo.save(userEntity);
@@ -497,7 +506,8 @@ public class AppService {
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
                 recordLoginSuccess("CUSTOMER", userEntity.getUserId(), emailAddress, ip);
-                return response;
+                    return response;
+                }
             }
 
             // Failed login — count toward the shared lockout budget.
@@ -532,8 +542,7 @@ public class AppService {
             }
             Optional<UserEntity> userSignIn = userRepo.findByEmailAddress(emailAddress);
             if(userSignIn.isEmpty()
-                    || !"0".equals(userSignIn.get().getStatus())
-                    || !appUtils.passwordMatches(password, userSignIn.get().getPassword())){
+                    || !"0".equals(userSignIn.get().getStatus())){
                 rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
                 rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
                 recordLoginFailure("CUSTOMER", userSignIn.map(UserEntity::getUserId).orElse(null),
@@ -544,6 +553,23 @@ public class AppService {
                 return response;
             }
             UserEntity userEntity = userSignIn.get();
+            // Provider binding: a Google-created account has no usable password
+            // and must sign in through Google, not email/password.
+            if ("GOOGLE".equals(userEntity.getRegistrationMethod())) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This account uses Google sign-in. Please continue with Google.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if (!appUtils.passwordMatches(password, userEntity.getPassword())) {
+                rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                recordLoginFailure("CUSTOMER", userEntity.getUserId(), emailAddress, ip, "INVALID_CREDENTIALS");
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Email Address or Password");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             // Upgrade a legacy MD5 hash to BCrypt on first successful login
             if(userEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
                 userEntity.setPassword(appUtils.encryptPassword(password));
@@ -602,6 +628,14 @@ public class AppService {
             // Existing (active) customer account -> route as CUSTOMER.
             if (user.isPresent() && "0".equals(user.get().getStatus())) {
                 UserEntity userEntity = user.get();
+                // Provider binding: an email/password-created customer must
+                // keep signing in with their email and password, not Google.
+                if ("EMAIL".equals(userEntity.getRegistrationMethod())) {
+                    response.setStatusCode(ERROR_STATUS_CODE);
+                    response.setMessage("This account was created with email and password. Please sign in with your email and password.");
+                    response.setData(EMPTY_DATA);
+                    return response;
+                }
                 rateLimiterService.clear("auth:" + email);
                 rateLimiterService.clear("auth_ip:" + ip);
                 Map<String, Object> userData = new LinkedHashMap<>();
@@ -662,6 +696,7 @@ public class AppService {
         }
         UserEntity userEntity = new UserEntity(signupData);
         userEntity.setUserId(userId);
+        userEntity.setRegistrationMethod("GOOGLE");
         userRepo.save(userEntity);
         CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
         cardDetailsEntity.setUserId(userId);
@@ -2881,6 +2916,47 @@ public class AppService {
             response.setData(supportTicketRepo.findAll());
         } catch(Exception ex){ LOG.warning(ex.getMessage()); }
         return response;
+    }
+
+    /**
+     * Admin recovery-campaign funnel: every email that started a sign-up, with
+     * the recovery stage it reached, when the last stage email was sent, and
+     * whether the sign-up eventually converted to an account.
+     */
+    public BaseResponse listRecoveryCampaigns(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            List<Map<String, Object>> rows = new java.util.ArrayList<>();
+            for (Object[] r : otpRepo.findRecoveryCampaigns()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                String email = String.valueOf(r[0]);
+                int stage = r[2] == null ? 0 : ((Number) r[2]).intValue();
+                row.put("email", email);
+                row.put("stage", stage);
+                row.put("stageLabel", stageLabel(stage));
+                row.put("attemptedAt", r[1] == null ? null : String.valueOf(r[1]));
+                row.put("lastSentAt", r[3] == null ? null : String.valueOf(r[3]));
+                Object rawConverted = r[4];
+                boolean converted = rawConverted != null
+                        && (rawConverted instanceof Boolean ? (Boolean) rawConverted : ((Number) rawConverted).intValue() == 1);
+                row.put("converted", converted);
+                rows.add(row);
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(rows);
+        } catch(Exception ex){ LOG.warning("listRecoveryCampaigns: " + ex.getMessage()); }
+        return response;
+    }
+
+    private String stageLabel(int stage){
+        return switch (stage) {
+            case 1 -> "24h reminder";
+            case 2 -> "7-day message";
+            case 3 -> "14-day nudge";
+            case 4 -> "1-month final";
+            default -> "None";
+        };
     }
 
     public BaseResponse updateSupportTicket(SupportTicketActionData data, String adminId){

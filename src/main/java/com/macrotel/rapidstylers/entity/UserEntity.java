@@ -27,6 +27,9 @@ public class UserEntity implements Serializable {
     private String status;
     private String insertedDt;
     private String userId;
+    // How the account was created: "EMAIL" (email/password) or "GOOGLE".
+    // Null/legacy rows predate the column and are treated as EMAIL-compatible.
+    private String registrationMethod;
     // Saved-stylist notification preferences. Null means enabled for legacy accounts.
     private Boolean notifySavedAvailability = true;
     private Boolean notifySavedPrice = true;

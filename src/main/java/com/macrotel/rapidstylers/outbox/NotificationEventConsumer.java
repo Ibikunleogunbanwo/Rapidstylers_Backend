@@ -108,6 +108,16 @@ public class NotificationEventConsumer {
                 acknowledge(acknowledgment);
                 return;
             }
+            if (eventType != null && "SIGNUP_REMINDER".equalsIgnoreCase(eventType)) {
+                Map<String, String> event = readPayload(payload);
+                String email = event.getOrDefault("emailAddress", "");
+                int stage = parseStage(event.get("stage"));
+                if (!email.isBlank()) {
+                    emailConfig.sendSimpleMail(email, signupSubject(stage), signupBody(stage));
+                }
+                acknowledge(acknowledgment);
+                return;
+            }
             if (eventType != null && !eventType.startsWith("BOOKING_")) {
                 acknowledge(acknowledgment);
                 return;
@@ -184,6 +194,48 @@ public class NotificationEventConsumer {
         } catch (Exception ex) {
             LOG.warning("Failed to send event to DLQ: " + ex.getMessage());
         }
+    }
+
+    private int parseStage(String raw) {
+        if (raw == null || raw.isBlank()) return 1;
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return 1;
+        }
+    }
+
+    private String signupSubject(int stage) {
+        return switch (stage) {
+            case 2 -> "RapidStylers — you're almost there";
+            case 3 -> "Don't miss out on RapidStylers";
+            case 4 -> "Last call to create your RapidStylers account";
+            default -> "Finish creating your RapidStylers account";
+        };
+    }
+
+    private String signupBody(int stage) {
+        final String cta = "<p style=\"margin-top:18px\"><a href=\"https://rapidstylers.ca/\" "
+                + "style=\"background:#9381FF;color:#ffffff;padding:12px 22px;border-radius:8px;"
+                + "text-decoration:none;font-weight:600\">Create your account</a></p>";
+        return switch (stage) {
+            case 2 -> "<p>You started creating your RapidStylers account a few days ago but haven't finished yet.</p>"
+                    + "<p>Once you're set up you can browse vetted beauty professionals near you, compare pricing "
+                    + "and availability, and book in seconds.</p>" + cta
+                    + "<p>– The RapidStylers Team</p>";
+            case 3 -> "<p>We noticed you began signing up for RapidStylers but didn't complete it.</p>"
+                    + "<p>From nail artists to barbers, hairstylists to makeup artists — find the right "
+                    + "professional and book in a few taps.</p>" + cta
+                    + "<p>– The RapidStylers Team</p>";
+            case 4 -> "<p>This is a final reminder that a RapidStylers account is waiting for you.</p>"
+                    + "<p>Complete your registration now to start booking top-rated beauty professionals "
+                    + "whenever you're ready.</p>" + cta
+                    + "<p>– The RapidStylers Team</p>";
+            default -> "<p>You started creating your RapidStylers account but haven't finished yet.</p>"
+                    + "<p>Complete your registration and you'll be ready to book top-rated beauty "
+                    + "professionals near you.</p>" + cta
+                    + "<p>– The RapidStylers Team</p>";
+        };
     }
 
     private int parseRetryCount(String header) {

@@ -40,6 +40,7 @@ public class DTOService {
         userAccountDTO.setPhoneNumber(userEntity.getPhoneNumber());
         userAccountDTO.setUserId(userEntity.getUserId());
         userAccountDTO.setDateRegistered(userEntity.getInsertedDt());
+        userAccountDTO.setRegistrationMethod(userEntity.getRegistrationMethod());
         return userAccountDTO;
     }
 

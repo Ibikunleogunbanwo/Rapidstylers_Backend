@@ -901,6 +901,15 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    @GetMapping("/admin/recovery_campaigns")
+    public ResponseEntity<BaseResponse> adminRecoveryCampaigns(HttpServletRequest request){
+        String adminId = currentAccountId(request);
+        if(adminId == null) return unauthorized();
+        BaseResponse baseResponse = appService.listRecoveryCampaigns();
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
     @GetMapping("/admin/kpis")
     public ResponseEntity<BaseResponse> adminKpis(HttpServletRequest request){
         String adminId = currentAccountId(request);

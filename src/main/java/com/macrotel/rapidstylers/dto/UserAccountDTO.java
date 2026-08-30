@@ -13,4 +13,5 @@ public class UserAccountDTO {
     private String phoneNumber;
     private String state;
     private String userId;
+    private String registrationMethod;
 }
