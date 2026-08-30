@@ -276,6 +276,27 @@ VPS Docker network    -> Spring Boot, Redis, Kafka, MySQL
 
 Only HTTP(S) should be public. Redis, Kafka, Kafka UI, MySQL, and admin tooling should stay private behind Docker networking, localhost bindings, firewall rules, or SSH tunnels.
 
+## Production Deploy Checklist
+
+Run through these on every deploy so a silent failure can't ship unnoticed.
+
+1. **Build and start the stack**:
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d --build
+   docker compose -f docker-compose.prod.yml ps
+   ```
+2. **Confirm health is green**: every `rapidstylers-*` container should show `(healthy)`. The API container's healthcheck curls `/actuator/health`; a `DOWN` aggregate returns 503 and marks it unhealthy.
+3. **Confirm Redis actually connected — do not skip this.** The app logs one line at startup; grep it in the API logs:
+   ```bash
+   docker logs rapidstylers-api 2>&1 | grep -i "Redis connected\|Redis connection FAILED"
+   ```
+   - `Redis connected - host=... port=... auth=... probe=OK (PONG)` → good.
+   - `Redis connection FAILED ... Redis-backed features ... will silently fall back to the database` → Redis is configured wrong (host/port/password) or down. The API **starts anyway** and looks fine while geo search, rate limiting, read cache, idempotency, and notification dedup all silently bypass Redis — this is the classic silent degradation. Fix the `REDIS_*` env values and redeploy before you call the deploy done.
+   - If this log line is **absent** entirely, you are not running a build that includes the `RedisStartupMonitor`; confirm the image was rebuilt from current source.
+4. **Confirm the bootstrap admin seeded**: if `admin_accounts` is empty, the API seeds it from `ADMIN_EMAIL`/`ADMIN_PASSWORD` on boot. A weak/default password is refused (see the `Refusing to seed bootstrap admin` WARN); the admin-account API rejects them too.
+5. **Smoke the public surface**: `curl -i https://api.rapidstylers.ca/actuator/health` returns 200/`{"status":"UP"}`, then hit a catalog endpoint (e.g. `/rapid_stylers/list_service`) with the API key and confirm 200.
+6. **Check for the silent-fallback signs**: scan the boot log for `Redis connection FAILED` and any `Refusing to seed bootstrap admin` lines before moving on.
+
 ## Troubleshooting
 
 | Symptom | First place to check |
@@ -286,7 +307,7 @@ Only HTTP(S) should be public. Redis, Kafka, Kafka UI, MySQL, and admin tooling 
 | Upload signature fails | Confirm Cloudinary env values and allowed folder prefix: `profile`, `id`, `store`, or `portfolio`. |
 | Vercel shows fallback blog posts | The deployed frontend likely cannot reach this backend or has the wrong API key/base URL. |
 | Kafka consumer appears idle | Check `KAFKA_BOOTSTRAP_SERVERS`, topic names, and Kafka UI at `localhost:8089`. |
-| Redis rate limits do not share across runs | Confirm the app is using `REDIS_HOST=localhost` and `REDIS_PORT=6380` locally. |
+| Redis rate limits / cache do not share across runs | `docker logs rapidstylers-api 2>&1 | grep -i "Redis connection"`. If you see `Redis connection FAILED`, fix `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` and redeploy. |
 
 ## Recruiter Notes
 

@@ -11,6 +11,7 @@ import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
+import com.macrotel.rapidstylers.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.repo.*;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
@@ -131,6 +132,8 @@ public class AppService {
     RefundRepo refundRepo;
     @Autowired
     PayoutReversalService payoutReversalService;
+    @Autowired
+    ReadCacheService readCacheService;
 
     /** Ops email address for payment dispute / reconciliation alerts (empty = disabled). */
     @Value("${app.admin.alert-email:}")
@@ -917,6 +920,7 @@ public class AppService {
             IdentificationEntity identificationEntity = new IdentificationEntity();
             identificationEntity.setIdentificationName(identificationData.getIdentificationName());
             identificationRepo.save(identificationEntity);
+            evict(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(identificationData.getIdentificationName()+ " successfully added to list of identification");
@@ -931,16 +935,21 @@ public class AppService {
     public BaseResponse listIdentification(){
         BaseResponse response = new BaseResponse(true);
         try{
-            List<IdentificationEntity> getAllIdentification = identificationRepo.findAll();
-            List<Object> result = new ArrayList<>();
-            for(IdentificationEntity identificationEntity : getAllIdentification){
-                HashMap<String, String> idMap = new HashMap<>();
-                idMap.put("id", String.valueOf(identificationEntity.getId()));
-                idMap.put("identificationName", identificationEntity.getIdentificationName());
-                idMap.put("status", identificationEntity.getStatus());
-                idMap.put("dateCreated", identificationEntity.getInsertedDate());
-                result.add(idMap);
-            }
+            List<Object> result = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_CATALOG_IDENTIFICATIONS, ReadCacheService.CATALOG_TTL, null,
+                    () -> {
+                        List<IdentificationEntity> getAllIdentification = identificationRepo.findAll();
+                        List<Object> built = new ArrayList<>();
+                        for(IdentificationEntity identificationEntity : getAllIdentification){
+                            HashMap<String, String> idMap = new HashMap<>();
+                            idMap.put("id", String.valueOf(identificationEntity.getId()));
+                            idMap.put("identificationName", identificationEntity.getIdentificationName());
+                            idMap.put("status", identificationEntity.getStatus());
+                            idMap.put("dateCreated", identificationEntity.getInsertedDate());
+                            built.add(idMap);
+                        }
+                        return built;
+                    });
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
@@ -971,6 +980,7 @@ public class AppService {
             IdentificationEntity identificationEntity = isIdentificationExist.get();
             identificationEntity.setIdentificationName(identificationData.getIdentificationName());
             identificationRepo.save(identificationEntity);
+            evict(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Identification Updated Successful");
@@ -994,6 +1004,7 @@ public class AppService {
             }
             IdentificationEntity identificationEntity = getIdentification.get();
             identificationRepo.delete(identificationEntity);
+            evict(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Identification deleted successful");
             response.setData(EMPTY_DATA);
@@ -1018,6 +1029,7 @@ public class AppService {
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
             serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
+            evict(ReadCacheService.KEY_CATALOG_SERVICES);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(serviceTypeData.getServiceName()+ " successfully added to list of service");
@@ -1031,18 +1043,23 @@ public class AppService {
     public BaseResponse listService(){
         BaseResponse response = new BaseResponse(true);
         try{
-            List<ServiceEntity> getAllService = serviceRepo.findAll();
-            List<Object> result = new ArrayList<>();
-            for(ServiceEntity serviceEntity : getAllService){
-                HashMap<String, String> serviceMap = new HashMap<>();
-                serviceMap.put("id", String.valueOf(serviceEntity.getId()));
-                serviceMap.put("serviceName", serviceEntity.getServiceName());
-                serviceMap.put("status", serviceEntity.getStatus());
-                serviceMap.put("dateCreated", serviceEntity.getInsertedDt());
-                serviceMap.put("imageUrl", serviceEntity.getServiceImageUrl());
-                serviceMap.put("description", serviceEntity.getDescription());
-                result.add(serviceMap);
-            }
+            List<Object> result = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_CATALOG_SERVICES, ReadCacheService.CATALOG_TTL, null,
+                    () -> {
+                        List<ServiceEntity> getAllService = serviceRepo.findAll();
+                        List<Object> built = new ArrayList<>();
+                        for(ServiceEntity serviceEntity : getAllService){
+                            HashMap<String, String> serviceMap = new HashMap<>();
+                            serviceMap.put("id", String.valueOf(serviceEntity.getId()));
+                            serviceMap.put("serviceName", serviceEntity.getServiceName());
+                            serviceMap.put("status", serviceEntity.getStatus());
+                            serviceMap.put("dateCreated", serviceEntity.getInsertedDt());
+                            serviceMap.put("imageUrl", serviceEntity.getServiceImageUrl());
+                            serviceMap.put("description", serviceEntity.getDescription());
+                            built.add(serviceMap);
+                        }
+                        return built;
+                    });
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
@@ -1074,6 +1091,7 @@ public class AppService {
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
             serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
+            evict(ReadCacheService.KEY_CATALOG_SERVICES);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Service Updated Successful");
@@ -1096,6 +1114,7 @@ public class AppService {
             }
             ServiceEntity serviceEntity = getService.get();
             serviceRepo.delete(serviceEntity);
+            evict(ReadCacheService.KEY_CATALOG_SERVICES);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Service deleted successful");
             response.setData(EMPTY_DATA);
@@ -1108,19 +1127,24 @@ public class AppService {
     public BaseResponse listBlogPosts(){
         BaseResponse response = new BaseResponse(true);
         try{
-            List<BlogPostEntity> allPosts = blogPostRepo.findAll();
-            allPosts.sort(Comparator.comparing(BlogPostEntity::getId).reversed());
-            List<Object> result = new ArrayList<>();
-            for(BlogPostEntity post : allPosts){
-                HashMap<String, String> postMap = new HashMap<>();
-                postMap.put("id", String.valueOf(post.getId()));
-                postMap.put("title", post.getTitle());
-                postMap.put("category", post.getCategory());
-                postMap.put("imageUrl", post.getImageUrl());
-                postMap.put("author", post.getAuthor());
-                postMap.put("dateCreated", post.getInsertedDt());
-                result.add(postMap);
-            }
+            List<Object> result = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.BLOG_TTL, null,
+                    () -> {
+                        List<BlogPostEntity> allPosts = blogPostRepo.findAll();
+                        allPosts.sort(Comparator.comparing(BlogPostEntity::getId).reversed());
+                        List<Object> built = new ArrayList<>();
+                        for(BlogPostEntity post : allPosts){
+                            HashMap<String, String> postMap = new HashMap<>();
+                            postMap.put("id", String.valueOf(post.getId()));
+                            postMap.put("title", post.getTitle());
+                            postMap.put("category", post.getCategory());
+                            postMap.put("imageUrl", post.getImageUrl());
+                            postMap.put("author", post.getAuthor());
+                            postMap.put("dateCreated", post.getInsertedDt());
+                            built.add(postMap);
+                        }
+                        return built;
+                    });
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
@@ -1133,22 +1157,28 @@ public class AppService {
     public BaseResponse singleBlogPost(String id){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<BlogPostEntity> post = blogPostRepo.findById(Long.parseLong(id));
-            if(post.isEmpty()){
+            Map<String, String> postMap = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_CATALOG_BLOG + id, ReadCacheService.BLOG_TTL, null,
+                    () -> {
+                        Optional<BlogPostEntity> post = blogPostRepo.findById(Long.parseLong(id));
+                        if(post.isEmpty()) return null;
+                        BlogPostEntity blogPost = post.get();
+                        HashMap<String, String> map = new HashMap<>();
+                        map.put("id", String.valueOf(blogPost.getId()));
+                        map.put("title", blogPost.getTitle());
+                        map.put("category", blogPost.getCategory());
+                        map.put("content", blogPost.getContent());
+                        map.put("imageUrl", blogPost.getImageUrl());
+                        map.put("author", blogPost.getAuthor());
+                        map.put("dateCreated", blogPost.getInsertedDt());
+                        return map;
+                    });
+            if(postMap == null){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("No blog article found for such id");
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            BlogPostEntity blogPost = post.get();
-            HashMap<String, String> postMap = new HashMap<>();
-            postMap.put("id", String.valueOf(blogPost.getId()));
-            postMap.put("title", blogPost.getTitle());
-            postMap.put("category", blogPost.getCategory());
-            postMap.put("content", blogPost.getContent());
-            postMap.put("imageUrl", blogPost.getImageUrl());
-            postMap.put("author", blogPost.getAuthor());
-            postMap.put("dateCreated", blogPost.getInsertedDt());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(postMap);
@@ -1175,6 +1205,7 @@ public class AppService {
             post.setAuthor(blogPostData.getAuthor() == null || blogPostData.getAuthor().isEmpty()
                     ? "RapidStylers Team" : AppUtils.sanitizeText(blogPostData.getAuthor()));
             blogPostRepo.save(post);
+            evict(ReadCacheService.KEY_CATALOG_BLOGS);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article created successfully");
@@ -1210,6 +1241,7 @@ public class AppService {
                 post.setAuthor(AppUtils.sanitizeText(blogPostData.getAuthor()));
             }
             blogPostRepo.save(post);
+            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + blogPostData.getId());
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article updated successfully");
@@ -1231,6 +1263,7 @@ public class AppService {
                 return response;
             }
             blogPostRepo.delete(getPost.get());
+            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + id);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article deleted successfully");
             response.setData(EMPTY_DATA);
@@ -1640,6 +1673,7 @@ public class AppService {
             String previousStatus = styler.getVerificationStatus();
             styler.setVerificationStatus(action);
             stylerRepo.save(styler);
+            evict(ReadCacheService.KEY_STYLER_DTO + stylerId);
             if(!Objects.equals(previousStatus, action)){
                 notifySavedCustomers(stylerId, "VERIFICATION", "Professional verification updated",
                         "The verification status for " + (styler.getBusinessName() == null ? "your saved professional" : styler.getBusinessName())
@@ -1662,7 +1696,7 @@ public class AppService {
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getAllStylers){
                 if(isApprovedStyler(stylerEntity)){
-                    result.add(dtoService.stylerAccountDTO(stylerEntity));
+                    result.add(cachedStylerAccountDTO(stylerEntity));
                 }
             }
             Collections.reverse(result);
@@ -1683,7 +1717,7 @@ public class AppService {
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerByName){
                 if(isApprovedStyler(stylerEntity)){
-                    result.add(dtoService.stylerAccountDTO(stylerEntity));
+                    result.add(cachedStylerAccountDTO(stylerEntity));
                 }
             }
             Collections.reverse(result);
@@ -1702,14 +1736,21 @@ public class AppService {
         try{
             // Trim defensively so padded values (" Alberta ") still match.
             province = province == null ? "" : province.trim();
-            List<StylerEntity> getStylerByProvince = stylerRepo.findByProvinceIgnoreCase(province);
-            List<Object> result = new ArrayList<>();
-            for(StylerEntity stylerEntity : getStylerByProvince){
-                if(isApprovedStyler(stylerEntity)){
-                    result.add(dtoService.stylerAccountDTO(stylerEntity));
-                }
-            }
-            Collections.reverse(result);
+            final String provinceKey = province;
+            List<Object> result = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_SEARCH_PROVINCE + provinceKey,
+                    ReadCacheService.SEARCH_LIST_TTL, ReadCacheService.SEARCH_LIST_JITTER,
+                    () -> {
+                        List<StylerEntity> getStylerByProvince = stylerRepo.findByProvinceIgnoreCase(provinceKey);
+                        List<Object> built = new ArrayList<>();
+                        for(StylerEntity stylerEntity : getStylerByProvince){
+                            if(isApprovedStyler(stylerEntity)){
+                                built.add(cachedStylerAccountDTO(stylerEntity));
+                            }
+                        }
+                        Collections.reverse(built);
+                        return built;
+                    });
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
@@ -1745,6 +1786,7 @@ public class AppService {
            }
            SubServiceEntity subServiceEntity = new SubServiceEntity(subServiceData);
            subServiceRepo.save(subServiceEntity);
+           evict(ReadCacheService.KEY_STYLER_SUBSERVICES + subServiceData.getStylerId());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Sub Service created successful");
             response.setData(EMPTY_DATA);
@@ -1771,6 +1813,7 @@ public class AppService {
             service.setPrice(appUtils.currencyFormat(data.getPrice()));
             service.setDurationMinutes(duration);
             subServiceRepo.save(service);
+            evict(ReadCacheService.KEY_STYLER_SUBSERVICES + stylerId);
             if(!Objects.equals(previousPrice, service.getPrice())){
                 notifySavedCustomers(stylerId, "PRICE", "Saved professional price changed",
                         "The price for " + service.getName() + " is now $" + service.getPrice() + ".");
@@ -1799,15 +1842,9 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            List<SubServiceEntity> getStylerSubService = subServiceRepo.findByStylerId(stylerId);
-            List<Object> result = new ArrayList<>();
-            for(SubServiceEntity subServiceEntity : getStylerSubService){
-                result.add(dtoService.subServiceDTO(subServiceEntity));
-            }
-            Collections.reverse(result);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
+            response.setData(cachedSubServices(stylerId));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -1858,6 +1895,7 @@ public class AppService {
             stylerPortfolioData.setCategory(category);
             StylerPortfolioEntity stylerPortfolioEntity = new StylerPortfolioEntity(stylerPortfolioData);
             stylerPortfolioRepo.save(stylerPortfolioEntity);
+            evict(ReadCacheService.KEY_STYLER_PORTFOLIO + stylerPortfolioData.getStylerId());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Work added to your portfolio");
             response.setData(EMPTY_DATA);
@@ -1906,15 +1944,9 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            List<StylerPortfolioEntity> getStylerPortfolio = stylerPortfolioRepo.findByStylerId(stylerId);
-            List<Object> result = new ArrayList<>();
-            for(StylerPortfolioEntity stylerPortfolioEntity : getStylerPortfolio){
-                result.add(dtoService.stylerPortfolioDTO(stylerPortfolioEntity));
-            }
-            Collections.reverse(result);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
+            response.setData(cachedPortfolio(stylerId));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -1985,6 +2017,7 @@ public class AppService {
             }
             String category = item.getCategory() == null ? "" : item.getCategory();
             stylerPortfolioRepo.delete(item);
+            evict(ReadCacheService.KEY_STYLER_PORTFOLIO + item.getStylerId());
             // Notify the stylist their work was removed (best effort — never fail the delete on mail).
             if(stylerEmail != null && !stylerEmail.isBlank()){
                 try{
@@ -2033,6 +2066,7 @@ public class AppService {
                 return response;
             }
             stylerPortfolioRepo.delete(item);
+            evict(ReadCacheService.KEY_STYLER_PORTFOLIO + stylerId);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Photo removed from your portfolio");
             response.setData(EMPTY_DATA);
@@ -2272,6 +2306,8 @@ public class AppService {
             if(review.isEmpty() || !Arrays.asList("APPROVED", "REJECTED").contains(status)) return errorResponse(response, "Invalid review or moderation action");
             review.get().setModerationStatus(status);
             reviewRepo.save(review.get());
+            evict(ReadCacheService.KEY_STYLER_REVIEWS + review.get().getStylerId(),
+                    ReadCacheService.KEY_STYLER_DTO + review.get().getStylerId());
             audit(adminId, "ADMIN", "MODERATE_REVIEW", "REVIEW", String.valueOf(reviewId), status);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Review moderation updated");
@@ -2291,16 +2327,9 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            //Get Reviews
-            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerIdAndModerationStatus(stylerId, "APPROVED");
-            List<Object> result = new ArrayList<>();
-            for(ReviewEntity reviewEntity : getStylerReviews){
-                result.add(dtoService.stylerReviewDTO(reviewEntity));
-            }
-            Collections.reverse(result);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
+            response.setData(cachedReviews(stylerId));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -2418,7 +2447,7 @@ public class AppService {
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(availabilitySlots(stylerId));
+            response.setData(cachedAvailabilitySlots(stylerId));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -2439,6 +2468,7 @@ public class AppService {
             }
             if(slots == null || slots.isEmpty()){
                 availabilityRepo.deleteByStylerId(stylerId);
+                evictAvailabilityCache(stylerId);
                 notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                         "The working hours for your saved professional have been cleared. Open their profile to view the latest schedule.");
                 response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -2480,6 +2510,7 @@ public class AppService {
                 toSave.add(new AvailabilityEntity(stylerId, slot));
             }
             availabilityRepo.saveAll(toSave);
+            evictAvailabilityCache(stylerId);
             notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                     "The working hours for your saved professional have been updated. Open their profile to view the latest schedule.");
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -2505,7 +2536,7 @@ public class AppService {
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(exceptionSlots(stylerId));
+            response.setData(cachedExceptionSlots(stylerId));
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -2533,6 +2564,7 @@ public class AppService {
             }
             AvailabilityExceptionEntity entity = new AvailabilityExceptionEntity(stylerId, exceptionData);
             availabilityExceptionRepo.save(entity);
+            evictAvailabilityCache(stylerId);
             notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                     "Your saved professional marked " + exceptionData.getBlockedDate() + " as unavailable.");
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -2557,6 +2589,7 @@ public class AppService {
                 return response;
             }
             availabilityExceptionRepo.deleteByStylerIdAndId(stylerId, exceptionId);
+            evictAvailabilityCache(stylerId);
             notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                     "A previously unavailable date was restored for your saved professional.");
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -2660,6 +2693,7 @@ public class AppService {
             styler.setIncludedTravelKm(includedKm);
             styler.setBaseTravelFee(fee);
             stylerRepo.save(styler);
+            evict(ReadCacheService.KEY_STYLER_DTO + stylerId);
             if(!Objects.equals(previousFee, fee)){
                 notifySavedCustomers(stylerId, "TRAVEL_FEE", "Saved professional updated their home-visit fee",
                         "Your saved professional's home-visit fee is now $" + fee
@@ -2675,6 +2709,122 @@ public class AppService {
         } catch(Exception ex){
             LOG.warning("Home visit settings update failed: " + ex.getMessage());
             return errorResponse(response, "Could not update home visit settings");
+        }
+    }
+
+    // ---- Read-cache helpers (single-flight + jittered TTL, see ReadCacheService) ----
+
+    /** Styler profile DTO through the read cache; evicted on verification/travel/review writes. */
+    private StylerAccountDTO cachedStylerAccountDTO(StylerEntity styler){
+        return readCacheService.getOrLoad(
+                ReadCacheService.KEY_STYLER_DTO + styler.getStylerId(),
+                ReadCacheService.DTO_TTL, ReadCacheService.DTO_JITTER,
+                () -> dtoService.stylerAccountDTO(styler));
+    }
+
+    /** Sub-service list through the read cache; evicted on sub-service writes. */
+    private List<Object> cachedSubServices(String stylerId){
+        return readCacheService.getOrLoad(
+                ReadCacheService.KEY_STYLER_SUBSERVICES + stylerId,
+                ReadCacheService.STYLER_PART_TTL, ReadCacheService.STYLER_PART_JITTER,
+                () -> {
+                    List<SubServiceEntity> rows = subServiceRepo.findByStylerId(stylerId);
+                    List<Object> built = new ArrayList<>();
+                    for(SubServiceEntity entity : rows){
+                        built.add(dtoService.subServiceDTO(entity));
+                    }
+                    Collections.reverse(built);
+                    return built;
+                });
+    }
+
+    /** Portfolio list through the read cache; evicted on portfolio writes. */
+    private List<Object> cachedPortfolio(String stylerId){
+        return readCacheService.getOrLoad(
+                ReadCacheService.KEY_STYLER_PORTFOLIO + stylerId,
+                ReadCacheService.STYLER_PART_TTL, ReadCacheService.STYLER_PART_JITTER,
+                () -> {
+                    List<StylerPortfolioEntity> rows = stylerPortfolioRepo.findByStylerId(stylerId);
+                    List<Object> built = new ArrayList<>();
+                    for(StylerPortfolioEntity entity : rows){
+                        built.add(dtoService.stylerPortfolioDTO(entity));
+                    }
+                    Collections.reverse(built);
+                    return built;
+                });
+    }
+
+    /** Approved reviews through the read cache; evicted on review moderation writes. */
+    private List<Object> cachedReviews(String stylerId){
+        return readCacheService.getOrLoad(
+                ReadCacheService.KEY_STYLER_REVIEWS + stylerId,
+                ReadCacheService.STYLER_PART_TTL, ReadCacheService.STYLER_PART_JITTER,
+                () -> {
+                    List<ReviewEntity> rows = reviewRepo.findByStylerIdAndModerationStatus(stylerId, "APPROVED");
+                    List<Object> built = new ArrayList<>();
+                    for(ReviewEntity entity : rows){
+                        built.add(dtoService.stylerReviewDTO(entity));
+                    }
+                    Collections.reverse(built);
+                    return built;
+                });
+    }
+
+    /** Weekly availability through the read cache; evicted on availability/exception writes. */
+    private List<Object> cachedAvailabilitySlots(String stylerId){
+        return readCacheService.getOrLoad(
+                ReadCacheService.KEY_STYLER_AVAILABILITY + stylerId,
+                ReadCacheService.AVAILABILITY_TTL, ReadCacheService.AVAILABILITY_JITTER,
+                () -> availabilitySlots(stylerId));
+    }
+
+    /** Date-based exceptions through the read cache; evicted with the weekly cache. */
+    private List<Object> cachedExceptionSlots(String stylerId){
+        return readCacheService.getOrLoad(
+                ReadCacheService.KEY_STYLER_AVAILABILITY + stylerId + ":exceptions",
+                ReadCacheService.AVAILABILITY_TTL, ReadCacheService.AVAILABILITY_JITTER,
+                () -> exceptionSlots(stylerId));
+    }
+
+    /** Appointment count + active booked slots; evicted on every booking-lifecycle write. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> cachedAppointmentSummary(String stylerId){
+        return readCacheService.getOrLoad(
+                ReadCacheService.KEY_STYLER_APPOINTMENTS + stylerId,
+                ReadCacheService.APPOINTMENTS_TTL, ReadCacheService.APPOINTMENTS_JITTER,
+                () -> {
+                    List<BookAppointmentEntity> rows = bookAppointmentRepo.findByStylerId(stylerId);
+                    Map<String, Object> payload = new LinkedHashMap<>();
+                    payload.put("appointmentCount", String.valueOf(rows == null ? 0 : rows.size()));
+                    List<Object> bookedSlots = new ArrayList<>();
+                    if(rows != null){
+                        for(BookAppointmentEntity appointment : rows){
+                            // Cancelled (4) and rejected (2) appointments free the slot.
+                            if("2".equals(appointment.getStatus()) || "4".equals(appointment.getStatus())) continue;
+                            HashMap<String, String> slot = new HashMap<>();
+                            slot.put("appointmentDate", appointment.getAppointmentDate());
+                            slot.put("arrivalTime", appointment.getArrivalTime());
+                            slot.put("status", appointment.getStatus());
+                            slot.put("durationMinutes", String.valueOf(appointment.getDurationMinutes() == null
+                                    ? DEFAULT_SERVICE_DURATION_MINUTES : appointment.getDurationMinutes()));
+                            bookedSlots.add(slot);
+                        }
+                    }
+                    payload.put("bookedSlots", bookedSlots);
+                    return payload;
+                });
+    }
+
+    /** Clears both weekly and exception availability cache keys for a stylist. */
+    private void evictAvailabilityCache(String stylerId){
+        evict(ReadCacheService.KEY_STYLER_AVAILABILITY + stylerId,
+                ReadCacheService.KEY_STYLER_AVAILABILITY + stylerId + ":exceptions");
+    }
+
+    /** Null-safe eviction — unit tests constructing AppService directly (no cache wired) never break. */
+    private void evict(String... keys){
+        if(readCacheService != null){
+            readCacheService.evict(keys);
         }
     }
 
@@ -2696,64 +2846,39 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            int ratingPercentage= 0;
-            //Get Styler Information
+            int ratingPercentage = 0;
+            // Get Styler Information — every part below is read through its own
+            // cache (single-flight + jittered TTL), so a warm profile costs exactly
+            // one DB query (the styler row above) plus N Redis reads.
             StylerEntity stylerEntity = isStylerExist.get();
-            //Get Styler Sub service information
-            List<SubServiceEntity> getStylerSubService = subServiceRepo.findByStylerId(stylerId);
-            List<Object> subServiceResult = new ArrayList<>();
-            for(SubServiceEntity subServiceEntity : getStylerSubService){
-                subServiceResult.add(dtoService.subServiceDTO(subServiceEntity));
-            }
-            //Get Styler Portfolio information
-            List<StylerPortfolioEntity> getStylerPortfolio = stylerPortfolioRepo.findByStylerId(stylerId);
-            List<Object> stylerPortfolioResult = new ArrayList<>();
-            for(StylerPortfolioEntity stylerPortfolioEntity : getStylerPortfolio){
-                stylerPortfolioResult.add(dtoService.stylerPortfolioDTO(stylerPortfolioEntity));
-            }
-            //Get Styler Portfolio reviews
-            List<ReviewEntity> getStylerReviews = reviewRepo.findByStylerIdAndModerationStatus(stylerId, "APPROVED");
-            List<Object> stylerReviewResult = new ArrayList<>();
+            List<Object> subServiceResult = cachedSubServices(stylerId);
+            List<Object> stylerPortfolioResult = cachedPortfolio(stylerId);
+            List<Object> stylerReviewResult = cachedReviews(stylerId);
             int totalRating = 0;
             double ratingCount = 0;
-            for(ReviewEntity reviewEntity : getStylerReviews){
-                 ratingCount += 1;
-                 totalRating += reviewEntity.getRatingScore();
-                stylerReviewResult.add(dtoService.stylerReviewDTO(reviewEntity));
+            for(Object reviewObj : stylerReviewResult){
+                if(reviewObj instanceof StylerReviewDTO){
+                    ratingCount += 1;
+                    try {
+                        totalRating += Integer.parseInt(((StylerReviewDTO) reviewObj).getRatingScore());
+                    } catch(NumberFormatException ignored){ }
+                }
             }
-            ratingPercentage = (int) ((totalRating/(ratingCount * 5)) *100);
-            Collections.reverse(stylerReviewResult);
-            Collections.reverse(stylerPortfolioResult);
-            Collections.reverse(subServiceResult);
+            ratingPercentage = ratingCount == 0 ? 0 : (int) ((totalRating/(ratingCount * 5)) *100);
             HashMap<String, Object> stylerInformationMap = new HashMap<>();
-            stylerInformationMap.put("stylerInformation", dtoService.stylerAccountDTO(stylerEntity));
+            stylerInformationMap.put("stylerInformation", cachedStylerAccountDTO(stylerEntity));
             stylerInformationMap.put("stylerSubService" , subServiceResult);
             stylerInformationMap.put("stylerPortfolio" , stylerPortfolioResult);
             stylerInformationMap.put("stylerReviews" , stylerReviewResult);
             stylerInformationMap.put("ratingPercentage", String.valueOf(ratingPercentage));
-            // Real appointment tally for the profile stats — no more hardcoded "500".
-            List<BookAppointmentEntity> stylerAppointments = bookAppointmentRepo.findByStylerId(stylerId);
-            stylerInformationMap.put("appointmentCount", String.valueOf(stylerAppointments == null ? 0 : stylerAppointments.size()));
-            // Weekly availability so the booking modal can show/enforce real working hours.
-            stylerInformationMap.put("availability", availabilitySlots(stylerId));
-            // Date-based exceptions (vacation, sick day) so the modal can gray out blocked days.
-            stylerInformationMap.put("exceptions", exceptionSlots(stylerId));
-            // Active bookings (date + arrival time) so the modal can gray out taken
-            // windows. Cancelled (4) and rejected (2) appointments free the slot.
-            List<Object> bookedSlots = new ArrayList<>();
-            if(stylerAppointments != null){
-                for(BookAppointmentEntity appointment : stylerAppointments){
-                    if("2".equals(appointment.getStatus()) || "4".equals(appointment.getStatus())) continue;
-                    HashMap<String, String> slot = new HashMap<>();
-                    slot.put("appointmentDate", appointment.getAppointmentDate());
-                    slot.put("arrivalTime", appointment.getArrivalTime());
-                    slot.put("status", appointment.getStatus());
-                    slot.put("durationMinutes", String.valueOf(appointment.getDurationMinutes() == null
-                            ? DEFAULT_SERVICE_DURATION_MINUTES : appointment.getDurationMinutes()));
-                    bookedSlots.add(slot);
-                }
-            }
-            stylerInformationMap.put("bookedSlots", bookedSlots);
+            // Real appointment tally + active booked slots (cached, evicted on booking writes).
+            Map<String, Object> appointmentSummary = cachedAppointmentSummary(stylerId);
+            stylerInformationMap.put("appointmentCount", appointmentSummary.get("appointmentCount"));
+            // Weekly availability + date-based exceptions so the booking modal can
+            // show real working hours and gray out blocked/taken windows.
+            stylerInformationMap.put("availability", cachedAvailabilitySlots(stylerId));
+            stylerInformationMap.put("exceptions", cachedExceptionSlots(stylerId));
+            stylerInformationMap.put("bookedSlots", appointmentSummary.get("bookedSlots"));
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(stylerInformationMap);
@@ -3103,6 +3228,17 @@ public class AppService {
         return response;
     }
 
+    /** Cache-effectiveness snapshot (hits/misses/loads/evictions + per-key top) since boot. */
+    public BaseResponse getCacheStats(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(readCacheService == null ? new LinkedHashMap<String, Object>() : readCacheService.stats());
+        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
+        return response;
+    }
+
     public BaseResponse getAdminKpis(){
         BaseResponse response = new BaseResponse(true);
         try {
@@ -3172,13 +3308,19 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            List<StylerEntity> getStylerData = stylerRepo.findByServiceTypeId(serviceId);
-            List<Object> result = new ArrayList<>();
-            for(StylerEntity stylerEntity : getStylerData){
-                if(isApprovedStyler(stylerEntity)){
-                    result.add(dtoService.stylerAccountDTO(stylerEntity));
-                }
-            }
+            List<Object> result = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_SEARCH_SERVICE + serviceId,
+                    ReadCacheService.SEARCH_LIST_TTL, ReadCacheService.SEARCH_LIST_JITTER,
+                    () -> {
+                        List<StylerEntity> getStylerData = stylerRepo.findByServiceTypeId(serviceId);
+                        List<Object> built = new ArrayList<>();
+                        for(StylerEntity stylerEntity : getStylerData){
+                            if(isApprovedStyler(stylerEntity)){
+                                built.add(cachedStylerAccountDTO(stylerEntity));
+                            }
+                        }
+                        return built;
+                    });
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
@@ -3377,6 +3519,8 @@ public class AppService {
                     "New booking request",
                     "A client has requested an appointment. Please confirm or decline it from your dashboard.");
 
+            // The stylist's profile shows booked slots — refresh it for the next viewer.
+            evict(ReadCacheService.KEY_STYLER_APPOINTMENTS + bookAppointmentData.getStylerId());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Appointment booked successfully");
             response.setData(EMPTY_DATA);
@@ -4455,6 +4599,8 @@ public class AppService {
                                 : "This appointment has been cancelled by the client.");
             }
 
+            // Booked-slot cache is display data; evict so the next profile view is fresh.
+            evict(ReadCacheService.KEY_STYLER_APPOINTMENTS + appointment.getStylerId());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(successMessage);
             response.setData(EMPTY_DATA);
@@ -5068,22 +5214,31 @@ public class AppService {
             List<Map.Entry<String, Double>> sorted = new ArrayList<>(allStylerDistances.entrySet());
             sorted.sort(Map.Entry.comparingByValue());
 
-            // Step 4: Fetch full data from MySQL for sorted IDs
+            // Step 4: Fetch all matching stylers in ONE batch query (kills the
+            // per-styler N+1), then build DTOs through the read cache.
+            List<String> stylerIds = new ArrayList<>();
+            for(Map.Entry<String, Double> entry : sorted){
+                stylerIds.add(entry.getKey());
+            }
+            Map<String, StylerEntity> stylersById = new HashMap<>();
+            for(StylerEntity styler : stylerRepo.findByStylerIdIn(stylerIds)){
+                stylersById.put(styler.getStylerId(), styler);
+            }
             List<Object> result = new ArrayList<>();
             for(Map.Entry<String, Double> entry : sorted){
                 String stylerId = entry.getKey();
                 double distKm = entry.getValue();
-                Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
-                if(stylerOpt.isPresent()){
-                    StylerEntity styler = stylerOpt.get();
-                    if(!isApprovedStyler(styler)) continue;
-                    if(serviceTypeId != null && !serviceTypeId.isEmpty()){
-                        if(!serviceTypeId.equals(styler.getServiceTypeId())) continue;
-                    }
-                    StylerAccountDTO dto = dtoService.stylerAccountDTO(styler);
-                    dto.setDistanceKm(Math.round(distKm * 10.0) / 10.0);
-                    result.add(dto);
+                StylerEntity styler = stylersById.get(stylerId);
+                if(styler == null) continue;
+                if(!isApprovedStyler(styler)) continue;
+                if(serviceTypeId != null && !serviceTypeId.isEmpty()){
+                    if(!serviceTypeId.equals(styler.getServiceTypeId())) continue;
                 }
+                // Copy the shared cached DTO before stamping this result's
+                // distance so concurrent searches never corrupt each other.
+                StylerAccountDTO dto = objectMapper.convertValue(cachedStylerAccountDTO(styler), StylerAccountDTO.class);
+                dto.setDistanceKm(Math.round(distKm * 10.0) / 10.0);
+                result.add(dto);
             }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);

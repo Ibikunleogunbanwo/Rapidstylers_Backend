@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -72,6 +73,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/book_appointment", "CUSTOMER");
         allow("/rapid_stylers/cancel_appointment", "CUSTOMER");
         allow("/rapid_stylers/retry_appointment_payment", "CUSTOMER");
+        allow("/rapid_stylers/card_setup_intent", "CUSTOMER");
         allow("/rapid_stylers/decrypt", "CUSTOMER", "STYLER", "ADMIN");
 
         allow("/rapid_stylers/styler_appointments", "STYLER");
@@ -113,6 +115,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/admin/support_tickets", "ADMIN");
         allow("/rapid_stylers/admin/update_support_ticket", "ADMIN");
         allow("/rapid_stylers/admin/kpis", "ADMIN");
+        allow("/rapid_stylers/admin/cache_stats", "ADMIN");
         allow("/rapid_stylers/admin/settings/commission", "ADMIN");
         allow("/rapid_stylers/admin/audit_logs", "ADMIN");
         allow("/rapid_stylers/admin/styler_connect_statuses", "ADMIN");
@@ -120,12 +123,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/list_feedback", "ADMIN");
         allow("/rapid_stylers/admin/failed_events", "ADMIN");
         allow("/rapid_stylers/admin/failed_events/{id}/retry", "ADMIN");
+        allow("/rapid_stylers/admin/recovery_campaigns", "ADMIN");
         allow("/rapid_stylers/admin/refund", "ADMIN");
         allow("/rapid_stylers/admin/refunds", "ADMIN");
         allow("/rapid_stylers/admin/payment_reconciliation", "ADMIN");
 
         // Database-backed admin account management
         allow("/rapid_stylers/admin/accounts", "ADMIN");
+        allow("/rapid_stylers/admin/accounts/{id}/password", "ADMIN");
         allow("/rapid_stylers/admin/accounts/{id}/disable", "ADMIN");
         allow("/rapid_stylers/admin/accounts/{id}/enable", "ADMIN");
     }
@@ -147,7 +152,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         SecurityContextHolder.clearContext();
 
         String path = request.getRequestURI();
-        Set<String> requiredRoles = ROLE_PATHS.get(path);
+        Set<String> requiredRoles = requiredRolesFor(path);
         if (requiredRoles == null) {
             filterChain.doFilter(request, response);
             return;
@@ -187,5 +192,31 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static void allow(String path, String... roles) {
         ROLE_PATHS.put(path, Set.of(roles));
+    }
+
+    /**
+     * Returns the roles required for an incoming request path. Registered
+     * patterns may include Ant `{id}` placeholders (e.g. the admin account
+     * management and failed-event retry routes), so we match with AntPathMatcher
+     * rather than exact string equality. Exact (placeholder-free) matches take
+     * precedence, so a concrete route is never shadowed by a placeholder one.
+     */
+    private static Set<String> requiredRolesFor(String path) {
+        Set<String> exact = ROLE_PATHS.get(path);
+        if (exact != null) {
+            return exact;
+        }
+        AntPathMatcher matcher = new AntPathMatcher();
+        Set<String> placeholderMatch = null;
+        boolean hasPlaceholderMatch = false;
+        for (Map.Entry<String, Set<String>> entry : ROLE_PATHS.entrySet()) {
+            if (matcher.match(entry.getKey(), path)) {
+                if (!hasPlaceholderMatch) {
+                    placeholderMatch = entry.getValue();
+                    hasPlaceholderMatch = true;
+                }
+            }
+        }
+        return placeholderMatch;
     }
 }

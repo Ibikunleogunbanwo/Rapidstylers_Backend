@@ -968,6 +968,15 @@ public class ApplicationController {
         return new ResponseEntity<>(appService.getAdminKpis(), HttpStatus.OK);
     }
 
+    /** Read-cache effectiveness (hits/misses/loads/evictions + per-key top) since boot. */
+    @GetMapping("/admin/cache_stats")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminCacheStats(HttpServletRequest request){
+        String adminId = currentAccountId(request);
+        if(adminId == null) return unauthorized();
+        return new ResponseEntity<>(appService.getCacheStats(), HttpStatus.OK);
+    }
+
     @GetMapping("/admin/audit_logs")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminAuditLogs(HttpServletRequest request){

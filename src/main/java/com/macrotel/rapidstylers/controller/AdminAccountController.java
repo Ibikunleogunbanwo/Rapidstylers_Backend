@@ -1,7 +1,9 @@
 package com.macrotel.rapidstylers.controller;
 
+import com.macrotel.rapidstylers.config.AdminAccountInitializer;
 import com.macrotel.rapidstylers.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.pojo.AdminAccountData;
+import com.macrotel.rapidstylers.pojo.AdminPasswordData;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import org.springframework.http.ResponseEntity;
@@ -65,12 +67,45 @@ public class AdminAccountController {
             response.setData(new Object[0]);
             return ResponseEntity.ok(response);
         }
+        String weakMessage = weakPasswordMessage(data.getPassword());
+        if (weakMessage != null) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage(weakMessage);
+            response.setData(new Object[0]);
+            return ResponseEntity.ok(response);
+        }
         AdminAccountEntity account = new AdminAccountEntity();
         account.setEmail(email);
         account.setPasswordHash(passwordEncoder.encode(data.getPassword()));
         account.setEnabled(true);
         account.setRole("ADMIN");
         account = adminAccountRepo.save(account);
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setData(toView(account));
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/password")
+    public ResponseEntity<BaseResponse> changeAdminPassword(@PathVariable Long id,
+                                                            @Valid @RequestBody AdminPasswordData data) {
+        BaseResponse response = new BaseResponse();
+        String weakMessage = weakPasswordMessage(data.getPassword());
+        if (weakMessage != null) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage(weakMessage);
+            response.setData(new Object[0]);
+            return ResponseEntity.ok(response);
+        }
+        AdminAccountEntity account = adminAccountRepo.findById(id).orElse(null);
+        if (account == null) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Admin account not found.");
+            response.setData(new Object[0]);
+            return ResponseEntity.ok(response);
+        }
+        account.setPasswordHash(passwordEncoder.encode(data.getPassword()));
+        adminAccountRepo.save(account);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));
@@ -102,6 +137,23 @@ public class AdminAccountController {
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Rejects the well-known bootstrap default and other obviously weak values
+     * so a default/placeholder password can never be persisted through the API
+     * (mirrors AdminAccountInitializer's bootstrap guard). Returns null when the
+     * password is acceptable.
+     */
+    private String weakPasswordMessage(String password) {
+        String trimmed = password == null ? "" : password.trim();
+        if (trimmed.length() < 8) {
+            return "Password must be at least 8 characters";
+        }
+        if (AdminAccountInitializer.isWeakBootstrapPassword(trimmed)) {
+            return "Password is too weak; use a strong, unique passphrase";
+        }
+        return null;
     }
 
     private Map<String, Object> toView(AdminAccountEntity account) {

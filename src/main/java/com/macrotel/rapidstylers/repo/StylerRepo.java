@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,9 @@ public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
     Optional<StylerEntity> findByEmailAddress(String emailAddress);
 
     Optional<StylerEntity> findByStylerId(String stylerId);
+
+    /** Batch fetch used by search/discovery paths to avoid per-styler N+1 lookups. */
+    List<StylerEntity> findByStylerIdIn(Collection<String> stylerIds);
 
     /** Serializes booking attempts for one stylist inside the booking transaction. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

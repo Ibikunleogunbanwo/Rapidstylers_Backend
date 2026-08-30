@@ -44,6 +44,12 @@ public class AdminAccountInitializer implements CommandLineRunner {
         if (adminAccountRepo.existsByEmailIgnoreCase(email)) {
             return;
         }
+        if (isWeakBootstrapPassword(adminPassword.trim())) {
+            log.warn("Refusing to seed bootstrap admin from ADMIN_PASSWORD: password is a known "
+                    + "default or too weak. Set a strong ADMIN_PASSWORD and restart, or create "
+                    + "the account manually.");
+            return;
+        }
         AdminAccountEntity account = new AdminAccountEntity();
         account.setEmail(email);
         account.setPasswordHash(passwordEncoder.encode(adminPassword));
@@ -51,5 +57,34 @@ public class AdminAccountInitializer implements CommandLineRunner {
         account.setRole("ADMIN");
         adminAccountRepo.save(account);
         log.info("Seeded bootstrap admin account for {}", email);
+    }
+
+    /**
+     * True when a bootstrap password is the well-known placeholder/default or is
+     * otherwise obviously weak. Shared by the controller so a default can never
+     * be persisted through the admin API either. Length (>=8) is enforced by the
+     * @Size validators; this catches known strings independent of a length check.
+     */
+    public static boolean isWeakBootstrapPassword(String password) {
+        if (password == null) {
+            return true;
+        }
+        String normalized = password.trim().toLowerCase()
+                .replace("_", "")
+                .replace("-", "")
+                .replace(" ", "");
+        if (normalized.length() < 6) {
+            return true;
+        }
+        String[] knownWeak = {
+                "changeme", "changeit", "password", "admin", "admin123",
+                "administrator", "rapidstylers", "letmein", "welcome", "qwerty", "123456"
+        };
+        for (String weak : knownWeak) {
+            if (normalized.contains(weak)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

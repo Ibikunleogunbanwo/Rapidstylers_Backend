@@ -109,7 +109,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
-      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES}
+      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-15}
       ENCRYPT_KEY: ${ENCRYPT_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -134,6 +134,9 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      # prod redis runs without a password; set REDIS_PASSWORD in the VPS .env
+      # only if you later enable `redis-server --requirepass <pw>`.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       KAFKA_BOOTSTRAP_SERVERS: kafka:19094
       KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
       KAFKA_TOPIC_DOMAIN_EVENTS: ${KAFKA_TOPIC_DOMAIN_EVENTS:-rapidstylers.domain-events}
