@@ -10,39 +10,27 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Ensures the core transactional tables use InnoDB so that @Transactional
- * rollback, unique-constraint enforcement and SELECT ... FOR UPDATE actually
- * work. The legacy schema was created with MyISAM, which silently auto-commits
+ * Ensures every table uses InnoDB so that @Transactional rollback,
+ * unique-constraint enforcement and SELECT ... FOR UPDATE actually work.
+ * The legacy schema was created with MyISAM, which silently auto-commits
  * every statement: a booking whose slot-lock insert collides would leave its
  * appointment row committed (a phantom booking) because nothing can be rolled
  * back, and pessimistic locks are ignored. The same MyISAM hazard undermines
  * refund-exactly-once (refunds, payout_reversals), transactional outbox writes
- * (outbox_events), refresh-token revocation (refresh_tokens) and the stylist
- * row lock (stylers). Fresh databases already create InnoDB tables (Hibernate's
- * dialect default), so on those this is a no-op; only legacy MyISAM tables are
- * converted. Never fails startup.
+ * (outbox_events), refresh-token revocation (refresh_tokens), the stylist row
+ * lock (stylers), and — beyond the transaction-critical set — account creation,
+ * OTP verification, login attempts, audit and notification writes.
+ *
+ * <p>Instead of a fixed list, the reconciler discovers every non-InnoDB base
+ * table in the current schema at startup and converts it, so legacy tables are
+ * caught now and any that appear later are handled without a code change. Fresh
+ * databases already create InnoDB tables (Hibernate's dialect default), so on
+ * those this is a no-op. Never fails startup.
  */
 @Component
 public class InnoDbReconciler implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(InnoDbReconciler.class);
-
-    /**
-     * Tables that participate in transactional flows and must be InnoDB for
-     * rollback, row locking, and unique-constraint enforcement to be trustworthy.
-     * Appointments and slot locks guard the booking race; refresh tokens, refunds,
-     * payout reversals, outbox events and stylers carry the other write-critical
-     * flows. (The wider legacy schema is still MyISAM; this list is the
-     * transaction-critical set.)
-     */
-    private static final List<String> TRANSACTIONAL_TABLES = List.of(
-            "appointments",
-            "booking_slot_locks",
-            "refresh_tokens",
-            "refunds",
-            "payout_reversals",
-            "outbox_events",
-            "stylers");
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -53,13 +41,24 @@ public class InnoDbReconciler implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         try {
-            for (String table : TRANSACTIONAL_TABLES) {
+            List<String> legacyTables = jdbcTemplate.queryForList(
+                    "SELECT table_name FROM information_schema.tables "
+                            + "WHERE table_schema = DATABASE() "
+                            + "AND table_type = 'BASE TABLE' "
+                            + "AND engine IS NOT NULL "
+                            + "AND lower(engine) <> 'innodb' "
+                            + "ORDER BY table_name",
+                    String.class);
+            for (String table : legacyTables) {
                 ensureInnoDb(table);
+            }
+            if (!legacyTables.isEmpty()) {
+                log.info("InnoDB reconciler converted {} legacy table(s) to InnoDB.", legacyTables.size());
             }
         } catch (Exception ex) {
             // Best-effort reconciliation only; never block or fail startup.
-            log.warn("InnoDB reconciliation skipped — some booking tables may stay on "
-                    + "MyISAM, where transactions and row locks do not work. Error: {}", ex.getMessage());
+            log.warn("InnoDB reconciliation skipped — some tables may stay on MyISAM, "
+                    + "where transactions and row locks do not work. Error: {}", ex.getMessage());
         }
     }
 
@@ -68,11 +67,7 @@ public class InnoDbReconciler implements ApplicationRunner {
                 "SELECT engine FROM information_schema.tables "
                         + "WHERE table_schema = DATABASE() AND table_name = ?",
                 String.class, table);
-        if (engine == null) {
-            // Table not yet created (fresh database): Hibernate creates it as InnoDB.
-            return;
-        }
-        if ("InnoDB".equalsIgnoreCase(engine)) {
+        if (engine == null || "InnoDB".equalsIgnoreCase(engine)) {
             return;
         }
         jdbcTemplate.execute("ALTER TABLE `" + table + "` ENGINE=InnoDB");
