@@ -8,6 +8,7 @@ import com.macrotel.rapidstylers.service.GeocodingService;
 import com.macrotel.rapidstylers.service.PaymentReconciliationService;
 import com.macrotel.rapidstylers.service.RefreshTokenService;
 import com.macrotel.rapidstylers.security.JwtUtil;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -131,6 +132,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/create_identification")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> createIdentification(@Valid @RequestBody IdentificationData identificationData){
         BaseResponse baseResponse = appService.createIdentificationType(identificationData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -145,6 +147,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/delete_identification")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> deleteIdentification(@RequestBody Map<String, String> body){
         String id = body.getOrDefault("id", "");
         BaseResponse baseResponse = appService.deleteIdentification(id);
@@ -152,12 +155,14 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/update_identification")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> updateIdentification(@Valid @RequestBody IdentificationData identificationData){
         BaseResponse baseResponse = appService.updateIdentification(identificationData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/create_service")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> createService(@Valid @RequestBody ServiceTypeData serviceTypeData){
         BaseResponse baseResponse = appService.createServiceType(serviceTypeData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -172,6 +177,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/delete_service")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> deleteService(@RequestBody Map<String, String> body){
         String id = body.getOrDefault("id", "");
         BaseResponse baseResponse = appService.deleteService(id);
@@ -179,6 +185,7 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/update_service")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> updateService(@Valid @RequestBody ServiceTypeData serviceTypeData){
         BaseResponse baseResponse = appService.updateService(serviceTypeData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -211,6 +218,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/create_blog")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> createBlog(@Valid @RequestBody BlogPostData blogPostData){
         BaseResponse baseResponse = appService.createBlogPost(blogPostData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -218,6 +226,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/update_blog")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> updateBlog(@Valid @RequestBody BlogPostData blogPostData){
         BaseResponse baseResponse = appService.updateBlogPost(blogPostData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -225,6 +234,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/delete_blog")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> deleteBlog(@RequestBody Map<String, String> body){
         String id = body.getOrDefault("id", "");
         BaseResponse baseResponse = appService.deleteBlogPost(id);
@@ -264,12 +274,14 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
     @GetMapping("/admin/styler_verification_queue")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> stylerVerificationQueue(){
         BaseResponse baseResponse = appService.getStylerVerificationQueue();
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/admin/update_styler_verification")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> updateStylerVerification(@Valid @RequestBody VerificationActionData verificationActionData){
         BaseResponse baseResponse = appService.updateStylerVerification(verificationActionData);
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -404,12 +416,14 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
     @GetMapping("/admin/all_portfolios")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> allPortfolios(){
         BaseResponse baseResponse = appService.listAllPortfolios();
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/admin/delete_portfolio_image")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> deletePortfolioImage(@Valid @RequestBody PortfolioActionData portfolioActionData){
         BaseResponse baseResponse = appService.adminDeletePortfolioImage(portfolioActionData.getPortfolioId());
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -428,6 +442,7 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
     @GetMapping("/admin/review_moderation_queue")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> reviewModerationQueue(HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -435,6 +450,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/admin/update_review_moderation")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> updateReviewModeration(@RequestBody Map<String, Object> body, HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -831,6 +847,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/styler_business_summaries")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminStylerBusinessSummaries(HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -838,6 +855,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/styler_connect_statuses")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> adminStylerConnectStatuses(){
         BaseResponse baseResponse = appService.getAdminStylerConnectStatuses();
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -893,6 +911,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/support_tickets")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminSupportTickets(HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -900,12 +919,14 @@ public class ApplicationController {
     }
 
     @PostMapping("/admin/update_support_ticket")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminUpdateSupportTicket(@Valid @RequestBody SupportTicketActionData data, HttpServletRequest request){
         String adminId = currentAccountId(request);
         return new ResponseEntity<>(appService.updateSupportTicket(data, adminId), HttpStatus.OK);
     }
 
     @GetMapping("/admin/settings/commission")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminCommissionSetting(HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -913,6 +934,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/admin/settings/commission")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminUpdateCommissionSetting(@RequestBody Map<String, Object> body, HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -929,6 +951,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/recovery_campaigns")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminRecoveryCampaigns(HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -938,6 +961,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/kpis")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminKpis(HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -945,6 +969,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/audit_logs")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminAuditLogs(HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -953,6 +978,7 @@ public class ApplicationController {
 
     /** Admin-only: sends a test email through EmailConfig to verify delivery. */
     @PostMapping("/admin/test_email")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminTestEmail(@RequestBody Map<String, String> body, HttpServletRequest request){
         String adminId = currentAccountId(request);
         if(adminId == null) return unauthorized();
@@ -1043,6 +1069,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/failed_events")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminFailedEvents(HttpServletRequest request) {
         String adminId = requireAdmin(request);
         if (adminId == null) return unauthorized();
@@ -1050,6 +1077,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/admin/failed_events/{id}/retry")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminRetryFailedEvent(@PathVariable("id") Long id, HttpServletRequest request) {
         String adminId = requireAdmin(request);
         if (adminId == null) return unauthorized();
@@ -1057,6 +1085,7 @@ public class ApplicationController {
     }
 
     @PostMapping("/admin/refund")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminRefund(@RequestBody RefundRequestData data, HttpServletRequest request) {
         String adminId = requireAdmin(request);
         if (adminId == null) return unauthorized();
@@ -1064,6 +1093,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/refunds")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminRefunds(HttpServletRequest request) {
         String adminId = requireAdmin(request);
         if (adminId == null) return unauthorized();
@@ -1071,6 +1101,7 @@ public class ApplicationController {
     }
 
     @GetMapping("/admin/payment_reconciliation")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminPaymentReconciliation(HttpServletRequest request) {
         String adminId = requireAdmin(request);
         if (adminId == null) return unauthorized();

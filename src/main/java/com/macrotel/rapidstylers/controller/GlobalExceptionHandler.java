@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -51,6 +52,15 @@ public class GlobalExceptionHandler {
         BaseResponse baseResponse = new BaseResponse();
         baseResponse.setStatusCode(ERROR_STATUS_CODE);
         baseResponse.setMessage("This operation conflicts with existing data. Please try different values.");
+        return baseResponse;
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public BaseResponse handleAccessDenied(AccessDeniedException ex) {
+        BaseResponse baseResponse = new BaseResponse();
+        baseResponse.setStatusCode(ERROR_STATUS_CODE);
+        baseResponse.setMessage("You do not have permission to perform this action.");
         return baseResponse;
     }
 

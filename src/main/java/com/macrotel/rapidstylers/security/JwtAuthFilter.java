@@ -4,6 +4,10 @@ import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -12,7 +16,9 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -117,6 +123,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/admin/refund", "ADMIN");
         allow("/rapid_stylers/admin/refunds", "ADMIN");
         allow("/rapid_stylers/admin/payment_reconciliation", "ADMIN");
+
+        // Database-backed admin account management
+        allow("/rapid_stylers/admin/accounts", "ADMIN");
+        allow("/rapid_stylers/admin/accounts/{id}/disable", "ADMIN");
+        allow("/rapid_stylers/admin/accounts/{id}/enable", "ADMIN");
     }
 
     @Autowired
@@ -130,6 +141,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // No Spring Security persistence filter is registered for this stateless
+        // setup, so clear any context a prior request on this thread may have left,
+        // then re-establish it below only when a valid token is present.
+        SecurityContextHolder.clearContext();
+
         String path = request.getRequestURI();
         Set<String> requiredRoles = ROLE_PATHS.get(path);
         if (requiredRoles == null) {
@@ -142,16 +158,29 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 ? authHeader.substring(7)
                 : null;
         Claims claims = (token == null) ? null : jwtUtil.parseToken(token);
-        String role = (claims == null) ? null : claims.get("role", String.class);
 
-        if (role == null || !requiredRoles.contains(role)) {
+        // Populate the Spring Security context for any valid token so method-level
+        // @PreAuthorize checks see the role as an authority. Anonymous requests
+        // (no token) get no authentication and are handled by the shared API key.
+        if (claims != null) {
+            String role = claims.get("role", String.class);
+            if (role != null) {
+                List<GrantedAuthority> authorities =
+                        Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role));
+                SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities));
+            }
+        }
+
+        String role = (claims == null) ? null : claims.get("role", String.class);
+        if (requiredRoles != null && (role == null || !requiredRoles.contains(role))) {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setContentType("application/json");
             response.getWriter().write("{\"status\": false, \"error\": \"Authorized role required\"}");
             return;
         }
 
-        request.setAttribute("accountId", claims.getSubject());
+        request.setAttribute("accountId", claims == null ? null : claims.getSubject());
         request.setAttribute("role", role);
         filterChain.doFilter(request, response);
     }
