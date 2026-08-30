@@ -24,10 +24,14 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- Raise the platform commission default from 10% to 12%. Only touches rows that
 -- still carry the legacy default (10), so an admin-set custom value is preserved.
+-- `platform_settings` may not exist yet on a fresh database (Hibernate creates it
+-- after Flyway), so @legacy_row is read via dynamic SQL only when the table exists.
 SET @settings_table := (SELECT COUNT(*) FROM information_schema.TABLES
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'platform_settings');
-SET @legacy_row := (SELECT COUNT(*) FROM platform_settings
-                WHERE setting_key = 'commission_percent' AND setting_value = '10');
+SET @legacy_sql := IF(@settings_table > 0,
+                "SET @legacy_row := (SELECT COUNT(*) FROM platform_settings WHERE setting_key = 'commission_percent' AND setting_value = '10')",
+                'SET @legacy_row := 0');
+PREPARE stmt_legacy FROM @legacy_sql; EXECUTE stmt_legacy; DEALLOCATE PREPARE stmt_legacy;
 SET @sql2 := IF(@settings_table > 0 AND @legacy_row > 0,
                 "UPDATE platform_settings SET setting_value='12' WHERE setting_key='commission_percent' AND setting_value='10'",
                 'SELECT 1');
