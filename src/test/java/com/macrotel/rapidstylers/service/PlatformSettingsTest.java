@@ -28,7 +28,7 @@ class PlatformSettingsTest {
         platformSettingRepo = mock(PlatformSettingRepo.class);
         appService.platformSettingRepo = platformSettingRepo;
         // .env default (application.properties seed).
-        ReflectionTestUtils.setField(appService, "stripeCommissionPercent", 10.0);
+        ReflectionTestUtils.setField(appService, "stripeCommissionPercent", 12.0);
         ReflectionTestUtils.setField(appService, "cachedCommissionPercent", null);
     }
 
@@ -36,7 +36,7 @@ class PlatformSettingsTest {
     void fallsBackToEnvDefaultWhenNoSettingRowExists() {
         when(platformSettingRepo.findBySettingKey(anyString())).thenReturn(Optional.empty());
         BaseResponse response = appService.getCommissionSetting("ADMIN1");
-        assertEquals(10.0, ((Number) ((Map<?, ?>) response.getData()).get("commissionPercent")).doubleValue());
+        assertEquals(12.0, ((Number) ((Map<?, ?>) response.getData()).get("commissionPercent")).doubleValue());
     }
 
     @Test

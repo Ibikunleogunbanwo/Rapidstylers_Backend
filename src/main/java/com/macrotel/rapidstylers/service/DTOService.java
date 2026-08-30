@@ -74,8 +74,7 @@ public class DTOService {
         stylerAccountDTO.setLatitude(stylerEntity.getLatitude());
         stylerAccountDTO.setLongitude(stylerEntity.getLongitude());
         stylerAccountDTO.setIncludedTravelKm(stylerEntity.getIncludedTravelKm() == null ? 15.0 : stylerEntity.getIncludedTravelKm());
-        stylerAccountDTO.setExtraTravelRatePerKm(stylerEntity.getExtraTravelRatePerKm() == null ? "0.00" : stylerEntity.getExtraTravelRatePerKm());
-        stylerAccountDTO.setMaxServiceDistanceKm(stylerEntity.getMaxServiceDistanceKm());
+        stylerAccountDTO.setBaseTravelFee(stylerEntity.getBaseTravelFee() == null ? "0.00" : stylerEntity.getBaseTravelFee());
         stylerAccountDTO.setPhoneNumber(stylerEntity.getPhoneNumber());
         stylerAccountDTO.setDescription(stylerEntity.getDescription());
         stylerAccountDTO.setVerificationStatus(stylerEntity.getVerificationStatus());
@@ -177,8 +176,8 @@ public class DTOService {
                 ? 0.0 : bookAppointmentEntity.getTravelDistanceKm());
         appointmentDTO.setBillableTravelKm(bookAppointmentEntity.getBillableTravelKm() == null
                 ? 0.0 : bookAppointmentEntity.getBillableTravelKm());
-        appointmentDTO.setExtraTravelRatePerKm(bookAppointmentEntity.getExtraTravelRatePerKm() == null
-                ? "0.00" : bookAppointmentEntity.getExtraTravelRatePerKm());
+        appointmentDTO.setBaseTravelFee(bookAppointmentEntity.getBaseTravelFee() == null
+                ? "0.00" : bookAppointmentEntity.getBaseTravelFee());
         appointmentDTO.setPrice(bookAppointmentEntity.getPrice());
         appointmentDTO.setServiceTime(bookAppointmentEntity.getServiceTime());
         appointmentDTO.setArrivalTime(bookAppointmentEntity.getArrivalTime());
@@ -197,6 +196,10 @@ public class DTOService {
         appointmentDTO.setPaymentStatus(bookAppointmentEntity.getPaymentStatus());
         appointmentDTO.setPaymentFailureCode(bookAppointmentEntity.getPaymentFailureCode());
         appointmentDTO.setStripeTransferId(bookAppointmentEntity.getStripeTransferId());
+        appointmentDTO.setCommissionPercent(bookAppointmentEntity.getCommissionPercent());
+        appointmentDTO.setPlatformFeeCents(bookAppointmentEntity.getPlatformFeeCents());
+        appointmentDTO.setStylistShareCents(bookAppointmentEntity.getStylistShareCents());
+        appointmentDTO.setStylerNote(bookAppointmentEntity.getStylerNote());
         appointmentDTO.setCompletedAt(bookAppointmentEntity.getCompletedAt());
         populateRefund(appointmentDTO, bookAppointmentEntity.getAppointmentId());
         return appointmentDTO;

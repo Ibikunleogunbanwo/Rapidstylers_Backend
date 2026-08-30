@@ -526,6 +526,31 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    @GetMapping("/styler/travel_settings")
+    public ResponseEntity<BaseResponse> stylerTravelSettings(HttpServletRequest request){
+        String accountId = currentAccountId(request);
+        if(accountId == null){
+            return unauthorized();
+        }
+        BaseResponse baseResponse = appService.stylerTravelSettings(accountId);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @PostMapping("/update_styler_travel_settings")
+    public ResponseEntity<BaseResponse> updateStylerTravelSettings(@RequestBody Map<String, Object> body, HttpServletRequest request){
+        String accountId = currentAccountId(request);
+        if(accountId == null){
+            return unauthorized();
+        }
+        Object included = body.get("includedTravelKm");
+        Double includedKm = included == null ? null : Double.valueOf(included.toString());
+        String fee = body.get("baseTravelFee") == null ? null : String.valueOf(body.get("baseTravelFee"));
+        BaseResponse baseResponse = appService.updateStylerTravelSettings(accountId, includedKm, fee);
+        HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
     @GetMapping("/styler_availability_exceptions")
     public ResponseEntity<BaseResponse> stylerAvailabilityExceptions(HttpServletRequest request){
         String accountId = currentAccountId(request);
@@ -565,7 +590,8 @@ public class ApplicationController {
         if(accountId == null){
             return unauthorized();
         }
-        BaseResponse baseResponse = appService.acceptAppointment(accountId, appointmentActionData.getAppointmentId());
+        BaseResponse baseResponse = appService.acceptAppointment(accountId, appointmentActionData.getAppointmentId(),
+                appointmentActionData.getDecisionNote());
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -576,7 +602,8 @@ public class ApplicationController {
         if(accountId == null){
             return unauthorized();
         }
-        BaseResponse baseResponse = appService.declineAppointment(accountId, appointmentActionData.getAppointmentId());
+        BaseResponse baseResponse = appService.declineAppointment(accountId, appointmentActionData.getAppointmentId(),
+                appointmentActionData.getDecisionNote());
         HttpStatus status = (Objects.equals(baseResponse.getStatusCode(), "200") || Objects.equals(baseResponse.getStatusCode(),"400"))?HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return new ResponseEntity<>(baseResponse,status);
     }

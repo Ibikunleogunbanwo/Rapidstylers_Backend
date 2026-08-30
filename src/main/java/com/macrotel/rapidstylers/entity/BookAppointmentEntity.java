@@ -42,7 +42,7 @@ public class BookAppointmentEntity implements Serializable {
     private Double includedTravelKm;
     private Double travelDistanceKm;
     private Double billableTravelKm;
-    private String extraTravelRatePerKm;
+    private String baseTravelFee;
     private String price;
     private String status;
     private String appointmentId;
@@ -56,6 +56,13 @@ public class BookAppointmentEntity implements Serializable {
     private LocalDateTime paymentAuthorizationDueAt;
     private String paymentFailureCode;
     private String stripeTransferId;
+    /** Platform commission percent snapped at booking creation (payouts use this, not the live rate). */
+    private Double commissionPercent;
+    /** Fee breakdown persisted at completion: platform fee and stylist net share in minor units. */
+    private Long platformFeeCents;
+    private Long stylistShareCents;
+    /** Stylist decision note recorded at accept/decline (e.g. accepted anyway, or declined due to distance). */
+    private String stylerNote;
     /** When the appointment was marked completed (status "0") — gates the styler cancel window. */
     private LocalDateTime completedAt;
 
@@ -85,7 +92,7 @@ public class BookAppointmentEntity implements Serializable {
         this.includedTravelKm = 15.0;
         this.travelDistanceKm = 0.0;
         this.billableTravelKm = 0.0;
-        this.extraTravelRatePerKm = "0.00";
+        this.baseTravelFee = "0.00";
         this.status = "1";
         this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss"));
         this.appointmentId = appUtils.randomAlphanumeric(5);

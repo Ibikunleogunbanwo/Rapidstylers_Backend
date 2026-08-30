@@ -28,8 +28,7 @@ public class StylerAccountDTO {
     private Double longitude;
     private Double distanceKm;
     private Double includedTravelKm;
-    private String extraTravelRatePerKm;
-    private Double maxServiceDistanceKm;
+    private String baseTravelFee;
     // true when the stylist can receive payouts (Connect onboarding COMPLETE,
     // or payments are not configured at all). Drives the marketplace "payments
     // pending" flag and the booking block.

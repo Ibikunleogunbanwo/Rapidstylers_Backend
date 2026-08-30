@@ -72,6 +72,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/styler_availability", "STYLER");
         allow("/rapid_stylers/update_styler_availability", "STYLER");
         allow("/rapid_stylers/styler_availability_exceptions", "STYLER");
+        allow("/rapid_stylers/styler/travel_settings", "STYLER");
+        allow("/rapid_stylers/update_styler_travel_settings", "STYLER");
         allow("/rapid_stylers/add_availability_exception", "STYLER");
         allow("/rapid_stylers/delete_availability_exception", "STYLER");
         allow("/rapid_stylers/accept_appointment", "STYLER");

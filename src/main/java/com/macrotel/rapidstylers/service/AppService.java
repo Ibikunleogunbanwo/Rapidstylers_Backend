@@ -97,7 +97,7 @@ public class AppService {
     JwtUtil jwtUtil;
     @Autowired
     StripeService stripeService;
-    @Value("${app.stripe.commission-percent:10}")
+    @Value("${app.stripe.commission-percent:12}")
     private double stripeCommissionPercent;
     @Autowired
     PlatformSettingRepo platformSettingRepo;
@@ -2610,6 +2610,74 @@ public class AppService {
         return result;
     }
 
+    /** Returns the stylist's current home-visit travel settings (free radius + flat fee). */
+    public BaseResponse stylerTravelSettings(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        Optional<StylerEntity> styler = stylerRepo.findByStylerId(stylerId);
+        if(styler.isEmpty()){
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Invalid Styler Id");
+            response.setData(EMPTY_DATA);
+            return response;
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("includedTravelKm", styler.get().getIncludedTravelKm() == null ? 15.0 : styler.get().getIncludedTravelKm());
+        data.put("baseTravelFee", styler.get().getBaseTravelFee() == null ? "0.00" : styler.get().getBaseTravelFee());
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setData(data);
+        return response;
+    }
+
+    /** Updates the stylist's flat home-visit fee and the included free radius. */
+    public BaseResponse updateStylerTravelSettings(String stylerId, Double includedTravelKm, String baseTravelFee){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            if(isStylerExist.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Styler Id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if(includedTravelKm != null && includedTravelKm < 0){
+                return errorResponse(response, "Included travel distance cannot be negative");
+            }
+            Double includedKm = includedTravelKm == null ? 15.0 : includedTravelKm;
+            String fee;
+            String rawFee = baseTravelFee == null ? "0.00" : baseTravelFee.trim().replace(",", "");
+            try {
+                BigDecimal feeAmount = new BigDecimal(rawFee);
+                if(feeAmount.signum() < 0){
+                    return errorResponse(response, "Home visit fee cannot be negative");
+                }
+                fee = feeAmount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+            } catch(NumberFormatException ex){
+                return errorResponse(response, "Home visit fee must be a valid amount");
+            }
+            StylerEntity styler = isStylerExist.get();
+            String previousFee = styler.getBaseTravelFee();
+            styler.setIncludedTravelKm(includedKm);
+            styler.setBaseTravelFee(fee);
+            stylerRepo.save(styler);
+            if(!Objects.equals(previousFee, fee)){
+                notifySavedCustomers(stylerId, "TRAVEL_FEE", "Saved professional updated their home-visit fee",
+                        "Your saved professional's home-visit fee is now $" + fee
+                                + ". Check their profile for the latest details.");
+            }
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("includedTravelKm", includedKm);
+            data.put("baseTravelFee", fee);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Home visit settings updated");
+            response.setData(data);
+            return response;
+        } catch(Exception ex){
+            LOG.warning("Home visit settings update failed: " + ex.getMessage());
+            return errorResponse(response, "Could not update home visit settings");
+        }
+    }
+
     public BaseResponse getStylerDetails(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try {
@@ -2995,7 +3063,7 @@ public class AppService {
                 return errorResponse(response, "Commission must be between 0 and 100");
             }
             PlatformSettingEntity setting = platformSettingRepo.findBySettingKey(COMMISSION_SETTING_KEY)
-                    .orElseGet(() -> new PlatformSettingEntity(COMMISSION_SETTING_KEY, "10"));
+                    .orElseGet(() -> new PlatformSettingEntity(COMMISSION_SETTING_KEY, "12"));
             setting.setSettingValue(String.valueOf(percent));
             platformSettingRepo.save(setting);
             cachedCommissionPercent = percent;
@@ -3250,8 +3318,11 @@ public class AppService {
             appointment.setIncludedTravelKm(pricing.includedTravelKm);
             appointment.setTravelDistanceKm(pricing.travelDistanceKm);
             appointment.setBillableTravelKm(pricing.billableTravelKm);
-            appointment.setExtraTravelRatePerKm(pricing.extraTravelRatePerKm);
+            appointment.setBaseTravelFee(pricing.baseTravelFee);
             appointment.setPrice(pricing.totalPrice);
+            // Snapshot the commission at booking time so the payout is deterministic
+            // even if the admin later changes the platform rate.
+            appointment.setCommissionPercent(effectiveCommissionPercent());
 
             // Stripe: authorize near-term bookings immediately. Future bookings
             // receive a due timestamp and are authorized by the payment scheduler
@@ -3457,7 +3528,7 @@ public class AppService {
         BigDecimal serviceUnitPrice = amount(rawServicePrice);
         BigDecimal servicePrice = serviceUnitPrice.multiply(BigDecimal.valueOf(people)).setScale(2, RoundingMode.HALF_UP);
         double includedKm = styler.getIncludedTravelKm() == null ? 15.0 : styler.getIncludedTravelKm();
-        BigDecimal ratePerKm = amount(styler.getExtraTravelRatePerKm() == null ? "0.00" : styler.getExtraTravelRatePerKm());
+        BigDecimal baseTravelFee = amount(styler.getBaseTravelFee() == null ? "0.00" : styler.getBaseTravelFee());
         double distanceKm = 0.0;
         double billableKm = 0.0;
         BigDecimal travelFee = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -3470,11 +3541,11 @@ public class AppService {
             if(distanceKm < 0){
                 throw new IllegalArgumentException("Travel distance cannot be negative");
             }
-            if(styler.getMaxServiceDistanceKm() != null && distanceKm > styler.getMaxServiceDistanceKm()){
-                throw new IllegalArgumentException("This professional does not serve that distance");
-            }
             billableKm = roundKm(Math.max(0.0, distanceKm - includedKm));
-            travelFee = ratePerKm.multiply(BigDecimal.valueOf(billableKm)).setScale(2, RoundingMode.HALF_UP);
+            // Flat home-visit fee beyond the included radius — no per-km pricing.
+            if(billableKm > 0){
+                travelFee = baseTravelFee.setScale(2, RoundingMode.HALF_UP);
+            }
         }
 
         BigDecimal total = servicePrice.add(travelFee).setScale(2, RoundingMode.HALF_UP);
@@ -3484,7 +3555,7 @@ public class AppService {
                 includedKm,
                 distanceKm,
                 billableKm,
-                money(ratePerKm),
+                money(baseTravelFee),
                 money(total));
     }
 
@@ -3643,9 +3714,25 @@ public class AppService {
 
     /** Platform commission in minor units, based on the effective commission percent. */
     private long commissionCents(long amountCents){
-        double percent = effectiveCommissionPercent();
+        return commissionCents(amountCents, effectiveCommissionPercent());
+    }
+
+    /** Platform commission in minor units at an explicit percent (package-private for tests). */
+    long commissionCents(long amountCents, double percent){
         if(percent <= 0 || amountCents <= 0) return 0L;
         return Math.round(amountCents * percent / 100.0);
+    }
+
+    /**
+     * Commission percent for a booking: the rate snapped at booking creation when
+     * present, else the current effective rate. Payouts must use this so a later
+     * admin commission change never retroactively rewrites a completed booking.
+     */
+    double effectiveCommissionPercentForBooking(BookAppointmentEntity appointment){
+        if(appointment != null && appointment.getCommissionPercent() != null){
+            return appointment.getCommissionPercent();
+        }
+        return effectiveCommissionPercent();
     }
 
     /**
@@ -3723,18 +3810,18 @@ public class AppService {
         private final Double includedTravelKm;
         private final Double travelDistanceKm;
         private final Double billableTravelKm;
-        private final String extraTravelRatePerKm;
+        private final String baseTravelFee;
         private final String totalPrice;
 
         private TravelPricing(String servicePrice, String travelFee, Double includedTravelKm,
                               Double travelDistanceKm, Double billableTravelKm,
-                              String extraTravelRatePerKm, String totalPrice) {
+                              String baseTravelFee, String totalPrice) {
             this.servicePrice = servicePrice;
             this.travelFee = travelFee;
             this.includedTravelKm = includedTravelKm;
             this.travelDistanceKm = travelDistanceKm;
             this.billableTravelKm = billableTravelKm;
-            this.extraTravelRatePerKm = extraTravelRatePerKm;
+            this.baseTravelFee = baseTravelFee;
             this.totalPrice = totalPrice;
         }
 
@@ -3745,7 +3832,7 @@ public class AppService {
             data.put("includedTravelKm", includedTravelKm);
             data.put("travelDistanceKm", travelDistanceKm);
             data.put("billableTravelKm", billableTravelKm);
-            data.put("extraTravelRatePerKm", extraTravelRatePerKm);
+            data.put("baseTravelFee", baseTravelFee);
             data.put("totalPrice", totalPrice);
             return data;
         }
@@ -3937,12 +4024,24 @@ public class AppService {
 
     @Transactional(rollbackFor = Exception.class)
     public BaseResponse acceptAppointment(String stylerId, String appointmentId){
-        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "3", new String[]{"1"}, "Appointment confirmed");
+        return acceptAppointment(stylerId, appointmentId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse acceptAppointment(String stylerId, String appointmentId, String decisionNote){
+        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "3", new String[]{"1"},
+                "Appointment confirmed", decisionNote);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public BaseResponse declineAppointment(String stylerId, String appointmentId){
-        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "2", new String[]{"1"}, "Appointment rejected");
+        return declineAppointment(stylerId, appointmentId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse declineAppointment(String stylerId, String appointmentId, String decisionNote){
+        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "2", new String[]{"1"},
+                "Appointment rejected", decisionNote);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -4170,6 +4269,12 @@ public class AppService {
      */
     private BaseResponse transitionAppointment(String ownerId, ActorRole actorRole, String appointmentId,
                                                String newStatus, String[] allowedFrom, String successMessage){
+        return transitionAppointment(ownerId, actorRole, appointmentId, newStatus, allowedFrom, successMessage, null);
+    }
+
+    private BaseResponse transitionAppointment(String ownerId, ActorRole actorRole, String appointmentId,
+                                               String newStatus, String[] allowedFrom, String successMessage,
+                                               String decisionNote){
         BaseResponse response = new BaseResponse(true);
         try{
             Optional<BookAppointmentEntity> isExist = bookAppointmentRepo.findByAppointmentIdForUpdate(appointmentId);
@@ -4260,6 +4365,9 @@ public class AppService {
                 appointment.setCompletedAt(LocalDateTime.now(applicationZone()));
             }
             appointment.setStatus(newStatus);
+            if(decisionNote != null && !decisionNote.isBlank()){
+                appointment.setStylerNote(AppUtils.sanitizeText(decisionNote.trim()));
+            }
             bookAppointmentRepo.save(appointment);
             if("2".equals(newStatus) || "4".equals(newStatus)){
                 // Rejected and customer-cancelled bookings release their held slots.
@@ -4289,7 +4397,13 @@ public class AppService {
                         String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
                         long totalCents = centsFromPrice(appointment.getPaymentAmount() == null
                                 ? appointment.getPrice() : appointment.getPaymentAmount());
-                        long stylistShareCents = totalCents - commissionCents(totalCents);
+                        double percent = effectiveCommissionPercentForBooking(appointment);
+                        long commission = commissionCents(totalCents, percent);
+                        long stylistShareCents = totalCents - commission;
+                        appointment.setCommissionPercent(appointment.getCommissionPercent() == null
+                                ? percent : appointment.getCommissionPercent());
+                        appointment.setPlatformFeeCents(commission);
+                        appointment.setStylistShareCents(stylistShareCents);
                         if(destination != null && stylistShareCents > 0){
                             com.stripe.model.Transfer transfer = stripeService.transferStylistShare(
                                     destination, stylistShareCents, appointment.getAppointmentId());
@@ -4297,6 +4411,8 @@ public class AppService {
                                 appointment.setStripeTransferId(transfer.getId());
                             }
                         }
+                        // Persist the fee breakdown (and transfer id, previously never saved here).
+                        bookAppointmentRepo.save(appointment);
                     } catch(Exception ex){
                         LOG.warning("Stylist payout transfer failed: " + ex.getMessage());
                         response.setStatusCode(ERROR_STATUS_CODE);

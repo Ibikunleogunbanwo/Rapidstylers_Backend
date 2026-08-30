@@ -55,8 +55,7 @@ public class StylerData {
     private Double latitude;
     private Double longitude;
     private Double includedTravelKm;
-    private String extraTravelRatePerKm;
-    private Double maxServiceDistanceKm;
+    private String baseTravelFee;
     @javax.validation.constraints.AssertTrue(message = "You must agree to the Terms and Conditions")
     private boolean agreeToTerms;
 

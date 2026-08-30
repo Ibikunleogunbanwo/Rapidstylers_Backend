@@ -38,6 +38,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -325,7 +327,7 @@ class BookingWorkflowTest {
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
         styler.setIncludedTravelKm(15.0);
-        styler.setExtraTravelRatePerKm("2.50");
+        styler.setBaseTravelFee("25.00");
         SubServiceEntity service = service(90);
         when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
         when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(styler));
@@ -345,12 +347,46 @@ class BookingWorkflowTest {
         assertEquals("200", response.getStatusCode());
         verify(appointmentRepo).saveAndFlush(argThat(appointment ->
                 "100.00".equals(appointment.getServicePrice())
-                        && "18.75".equals(appointment.getTravelFee())
-                        && "118.75".equals(appointment.getPrice())
+                        && "25.00".equals(appointment.getTravelFee())
+                        && "125.00".equals(appointment.getPrice())
                         && Double.valueOf(15.0).equals(appointment.getIncludedTravelKm())
                         && Double.valueOf(22.5).equals(appointment.getTravelDistanceKm())
                         && Double.valueOf(7.5).equals(appointment.getBillableTravelKm())
-                        && "2.50".equals(appointment.getExtraTravelRatePerKm())));
+                        && "25.00".equals(appointment.getBaseTravelFee())));
+    }
+
+    @Test
+    void homeServiceBookingWithinIncludedRadiusHasNoTravelFee() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("homeService");
+        data.setTravelDistanceKm(12.0);
+        UserEntity customer = new UserEntity();
+        customer.setUserId("CUSTOMER1");
+        StylerEntity styler = approvedStyler();
+        styler.setIncludedTravelKm(15.0);
+        styler.setBaseTravelFee("25.00");
+        SubServiceEntity service = service(90);
+        when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
+        when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(styler));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service));
+        when(appointmentRepo.findByUserIdAndStylerIdAndAppointmentDateValueAndAppointmentStartTimeAndStatusIn(
+                anyString(), anyString(), any(), any(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findDuplicateBooking(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDateValue(anyString(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDate(anyString(), anyString())).thenReturn(Collections.emptyList());
+        when(availabilityRepo.findByStylerId(anyString())).thenReturn(Collections.emptyList());
+        when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
+        when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BaseResponse response = appService.bookAppointment(data);
+
+        assertEquals("200", response.getStatusCode());
+        verify(appointmentRepo).saveAndFlush(argThat(appointment ->
+                "100.00".equals(appointment.getServicePrice())
+                        && "0.00".equals(appointment.getTravelFee())
+                        && "100.00".equals(appointment.getPrice())
+                        && Double.valueOf(0.0).equals(appointment.getBillableTravelKm())));
     }
 
     @Test
@@ -426,22 +462,22 @@ class BookingWorkflowTest {
         com.macrotel.rapidstylers.service.DTOService dtoService = new com.macrotel.rapidstylers.service.DTOService();
         BookAppointmentEntity appointment = appointment("APPT-TRAVEL", "1");
         appointment.setServicePrice("100.00");
-        appointment.setTravelFee("18.75");
-        appointment.setPrice("118.75");
+        appointment.setTravelFee("25.00");
+        appointment.setPrice("125.00");
         appointment.setIncludedTravelKm(15.0);
         appointment.setTravelDistanceKm(22.5);
         appointment.setBillableTravelKm(7.5);
-        appointment.setExtraTravelRatePerKm("2.50");
+        appointment.setBaseTravelFee("25.00");
 
         AppointmentDTO dto = dtoService.appointmentDTO(appointment);
 
         assertEquals("100.00", dto.getServicePrice());
-        assertEquals("18.75", dto.getTravelFee());
-        assertEquals("118.75", dto.getPrice());
+        assertEquals("25.00", dto.getTravelFee());
+        assertEquals("125.00", dto.getPrice());
         assertEquals(15.0, dto.getIncludedTravelKm());
         assertEquals(22.5, dto.getTravelDistanceKm());
         assertEquals(7.5, dto.getBillableTravelKm());
-        assertEquals("2.50", dto.getExtraTravelRatePerKm());
+        assertEquals("25.00", dto.getBaseTravelFee());
     }
 
     @Test
@@ -475,6 +511,32 @@ class BookingWorkflowTest {
         BaseResponse cancelled = appService.cancelAppointment("CUSTOMER1", "APPT-2");
         assertEquals("200", cancelled.getStatusCode());
         verify(slotLockRepo).deleteByAppointmentId("APPT-2");
+    }
+
+    @Test
+    void acceptWithDecisionNoteRecordsSanitizedNote() {
+        BookAppointmentEntity pending = appointment("1");
+        pending.setAppointmentId("APPT-NOTE");
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT-NOTE")).thenReturn(Optional.of(pending));
+
+        BaseResponse accepted = appService.acceptAppointment("STYLER1", "APPT-NOTE", " Accepted anyway — far but worth it ");
+
+        assertEquals("200", accepted.getStatusCode());
+        assertEquals("3", pending.getStatus());
+        assertEquals("Accepted anyway — far but worth it", pending.getStylerNote());
+    }
+
+    @Test
+    void decisionNoteIsSanitizedAndMirroredInDto() {
+        BookAppointmentEntity pending = appointment("1");
+        pending.setAppointmentId("APPT-NOTE2");
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT-NOTE2")).thenReturn(Optional.of(pending));
+
+        appService.acceptAppointment("STYLER1", "APPT-NOTE2", "<script>alert(1)</script>accepted");
+        assertNotNull(pending.getStylerNote());
+        assertFalse(pending.getStylerNote().contains("<script>"));
+
+        assertEquals(pending.getStylerNote(), new com.macrotel.rapidstylers.service.DTOService().appointmentDTO(pending).getStylerNote());
     }
 
     @Test

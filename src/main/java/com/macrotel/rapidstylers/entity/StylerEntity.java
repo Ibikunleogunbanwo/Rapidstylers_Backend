@@ -43,8 +43,8 @@ public class StylerEntity implements Serializable {
     private String stylerId;
     private String description;
     private Double includedTravelKm;
-    private String extraTravelRatePerKm;
-    private Double maxServiceDistanceKm;
+    /** Flat home-visit fee charged once the distance exceeds the included radius (no per-km pricing). */
+    private String baseTravelFee;
     // Professional verification workflow: PENDING / APPROVED / REJECTED / SUSPENDED.
     // New registrations start PENDING and only APPROVED stylers are visible in
     // public search and bookable. Distinct from `status` (active/inactive account).
@@ -89,7 +89,6 @@ public class StylerEntity implements Serializable {
         this.verificationStatus = "PENDING";
         this.termsAcceptedAt = stylerData.isAgreeToTerms() ? LocalDateTime.now() : null;
         this.includedTravelKm = stylerData.getIncludedTravelKm() == null ? 15.0 : stylerData.getIncludedTravelKm();
-        this.extraTravelRatePerKm = stylerData.getExtraTravelRatePerKm() == null ? "0.00" : stylerData.getExtraTravelRatePerKm();
-        this.maxServiceDistanceKm = stylerData.getMaxServiceDistanceKm();
+        this.baseTravelFee = stylerData.getBaseTravelFee() == null ? "0.00" : stylerData.getBaseTravelFee();
     }
 }

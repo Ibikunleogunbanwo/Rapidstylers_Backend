@@ -20,7 +20,7 @@ public class AppointmentDTO {
     private Double includedTravelKm;
     private Double travelDistanceKm;
     private Double billableTravelKm;
-    private String extraTravelRatePerKm;
+    private String baseTravelFee;
     private String price;
     private String status;
     /** Raw status code ('1' pending, '3' accepted, '2' rejected, '0' completed, '4' cancelled) so the UI can render actions. */
@@ -30,6 +30,10 @@ public class AppointmentDTO {
     private String paymentStatus;
     private String paymentFailureCode;
     private String stripeTransferId;
+    private Double commissionPercent;
+    private Long platformFeeCents;
+    private Long stylistShareCents;
+    private String stylerNote;
     /** When the appointment was marked completed — lets the UI gate the styler cancel action. */
     private LocalDateTime completedAt;
     /** Completed refund for this appointment, when one exists — shown to customers. */
