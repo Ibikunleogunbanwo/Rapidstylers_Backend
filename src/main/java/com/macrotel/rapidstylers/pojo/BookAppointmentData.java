@@ -30,5 +30,13 @@ public class BookAppointmentData {
     private Double travelDistanceKm;
     /** Optional client-generated key used to safely retry a booking request. */
     private String idempotencyKey;
+    /**
+     * One-time Stripe payment method (pm_...) collected by the booking modal
+     * via Stripe Elements. Used to authorize near-term bookings immediately;
+     * persisted as a token reference (never the card itself) so the scheduler
+     * can authorize far-future bookings when the window opens. Optional for
+     * legacy/preview calls.
+     */
+    private String paymentMethodId;
 
 }

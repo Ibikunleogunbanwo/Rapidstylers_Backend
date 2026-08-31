@@ -3555,47 +3555,88 @@ public class AppService {
             // even if the admin later changes the platform rate.
             appointment.setCommissionPercent(effectiveCommissionPercent());
 
-            // Stripe: authorize near-term bookings immediately. Future bookings
-            // receive a due timestamp and are authorized by the payment scheduler
-            // inside Stripe's safe card-authorization window.
-            if(stripeService.isConfigured() && shouldAuthorizeNow(appointmentDate, appointmentStart)){
-                Optional<CardDetailsEntity> card = cardDetailsRepo.findByUserId(bookAppointmentData.getUserId());
-                if(card.isEmpty() || card.get().getStripeCustomerId() == null || card.get().getStripePaymentMethodId() == null){
+            // Stripe: authorize near-term bookings immediately with the one-time
+            // card the booking modal collected via Elements. We never persist the
+            // card for near-term bookings — the authorization is one-off. Far-future
+            // bookings keep the scheduler: we persist only a Stripe token reference
+            // (customer + payment-method ids, never the card itself) so the payment
+            // scheduler can authorize inside Stripe's safe card-authorization window.
+            if(stripeService.isConfigured()){
+                String pm = bookAppointmentData.getPaymentMethodId();
+                UserEntity buyer = isUserExist.get();
+                if(pm == null || pm.trim().isEmpty()){
                     return paymentErrorResponse(response, "NO_PAYMENT_METHOD",
-                            "Please add a payment method to your account before booking");
+                            "A card is required to confirm this booking");
                 }
-                try {
-                    String connectAccountId = isStylerExist.get().getStripeConnectAccountId();
-                    String destination = connectAccountId == null || connectAccountId.isBlank() ? null : connectAccountId;
-                    long amountCents = centsFromPrice(pricing.totalPrice);
-                    PaymentIntent intent = stripeService.authorizeBookingPayment(
-                            card.get().getStripeCustomerId(), card.get().getStripePaymentMethodId(),
-                            amountCents, appointment.getAppointmentId(), destination, commissionCents(amountCents));
-                    appointment.setPaymentIntentId(intent.getId());
-                    appointment.setPaymentStatus("AUTHORIZED");
-                    appointment.setPaymentAmount(pricing.totalPrice);
-                    appointment.setPaymentAuthorizationDueAt(null);
-                } catch(com.stripe.exception.CardException ex){
-                    // Distinguish card problems so the frontend can prompt the
-                    // customer to update their saved card instead of showing a generic error.
-                    if("expired_card".equals(ex.getCode())){
-                        return paymentErrorResponse(response, "CARD_EXPIRED",
-                                "Your saved card has expired. Please update your card and try again.");
+                String connectAccountId = isStylerExist.get().getStripeConnectAccountId();
+                String destination = connectAccountId == null || connectAccountId.isBlank() ? null : connectAccountId;
+                long amountCents = centsFromPrice(pricing.totalPrice);
+
+                if(shouldAuthorizeNow(appointmentDate, appointmentStart)){
+                    // Near-term: authorize immediately with the one-time payment method.
+                    // Reuse an existing Stripe customer id if the user has one; otherwise
+                    // create one purely to host the authorization (no card persisted).
+                    try {
+                        String customerId = cardDetailsRepo.findByUserId(bookAppointmentData.getUserId())
+                                .map(CardDetailsEntity::getStripeCustomerId)
+                                .filter(cid -> cid != null && !cid.isEmpty())
+                                .orElseGet(() -> {
+                                    try {
+                                        return stripeService.getOrCreateCustomer(null,
+                                                buyer.getEmailAddress(),
+                                                (buyer.getFirstname() + " " + buyer.getLastname()).trim()).getId();
+                                    } catch(Exception e){
+                                        LOG.warning("Stripe customer create failed: " + e.getMessage());
+                                        return null;
+                                    }
+                                });
+                        if(customerId == null){
+                            return paymentErrorResponse(response, "PAYMENT_ERROR",
+                                    "Payment could not be authorized — please try again");
+                        }
+                        PaymentIntent intent = stripeService.authorizeBookingPayment(
+                                customerId, pm, amountCents, appointment.getAppointmentId(),
+                                destination, commissionCents(amountCents));
+                        appointment.setPaymentIntentId(intent.getId());
+                        appointment.setPaymentStatus("AUTHORIZED");
+                        appointment.setPaymentAmount(pricing.totalPrice);
+                        appointment.setPaymentAuthorizationDueAt(null);
+                    } catch(com.stripe.exception.CardException ex){
+                        if("expired_card".equals(ex.getCode())){
+                            return paymentErrorResponse(response, "CARD_EXPIRED",
+                                    "Your card has expired. Please try another card.");
+                        }
+                        String detail = ex.getDeclineCode() == null || ex.getDeclineCode().isBlank()
+                                ? "" : " (" + ex.getDeclineCode().replace('_', ' ') + ")";
+                        return paymentErrorResponse(response, "CARD_DECLINED",
+                                "Your card was declined" + detail + ". Please try another card.");
+                    } catch(com.stripe.exception.StripeException ex){
+                        LOG.warning("Payment authorization failed: " + ex.getMessage());
+                        return paymentErrorResponse(response, "PAYMENT_ERROR",
+                                "Payment could not be authorized — please check your card or try again");
                     }
-                    String detail = ex.getDeclineCode() == null || ex.getDeclineCode().isBlank()
-                            ? "" : " (" + ex.getDeclineCode().replace('_', ' ') + ")";
-                    return paymentErrorResponse(response, "CARD_DECLINED",
-                            "Your card was declined" + detail + ". Please update your card and try again.");
-                } catch(com.stripe.exception.StripeException ex){
-                    LOG.warning("Payment authorization failed: " + ex.getMessage());
-                    return paymentErrorResponse(response, "PAYMENT_ERROR",
-                            "Payment could not be authorized — please check your card or try again");
+                } else {
+                    // Far-future: schedule the authorization. Persist a Stripe token
+                    // reference (never the raw card) so the scheduler can authorize
+                    // within the window; capture-on-acceptance still uses the intent id.
+                    try {
+                        String existingCustomerId = cardDetailsRepo.findByUserId(bookAppointmentData.getUserId())
+                                .map(CardDetailsEntity::getStripeCustomerId)
+                                .filter(cid -> cid != null && !cid.isEmpty())
+                                .orElse(null);
+                        Customer customer = stripeService.getOrCreateCustomer(existingCustomerId,
+                                buyer.getEmailAddress(),
+                                (buyer.getFirstname() + " " + buyer.getLastname()).trim());
+                        upsertPaymentReference(bookAppointmentData.getUserId(), customer.getId(), pm);
+                        appointment.setPaymentStatus("PAYMENT_SCHEDULED");
+                        appointment.setPaymentAmount(pricing.totalPrice);
+                        appointment.setPaymentAuthorizationDueAt(paymentAuthorizationDueAt(appointmentDate, appointmentStart));
+                    } catch(com.stripe.exception.StripeException ex){
+                        LOG.warning("Payment reference save failed: " + ex.getMessage());
+                        return paymentErrorResponse(response, "PAYMENT_ERROR",
+                                "Payment could not be set up — please try again");
+                    }
                 }
-            }
-            if(stripeService.isConfigured() && !shouldAuthorizeNow(appointmentDate, appointmentStart)){
-                appointment.setPaymentStatus("PAYMENT_SCHEDULED");
-                appointment.setPaymentAmount(pricing.totalPrice);
-                appointment.setPaymentAuthorizationDueAt(paymentAuthorizationDueAt(appointmentDate, appointmentStart));
             }
             bookAppointmentRepo.saveAndFlush(appointment);
             reserveBookingSlots(appointment, appointmentDate, appointmentStart, durationMinutes);
@@ -5163,6 +5204,20 @@ public class AppService {
             return errorResponse(response, "Could not start card setup — please try again");
         }
         return response;
+    }
+
+    /**
+     * Persists only the Stripe token references needed for a far-future booking
+     * so the payment scheduler can authorize when the window opens. Never stores
+     * the card itself (number/expiry/cvv) — only customer + payment-method ids.
+     */
+    private void upsertPaymentReference(String userId, String stripeCustomerId, String paymentMethodId){
+        Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(userId);
+        CardDetailsEntity entity = existing.orElseGet(CardDetailsEntity::new);
+        entity.setUserId(userId);
+        entity.setStripeCustomerId(stripeCustomerId);
+        entity.setStripePaymentMethodId(paymentMethodId);
+        cardDetailsRepo.save(entity);
     }
 
     /**

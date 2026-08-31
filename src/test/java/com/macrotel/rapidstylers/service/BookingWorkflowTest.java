@@ -117,6 +117,7 @@ class BookingWorkflowTest {
     void declinedCardBookingReturnsCardErrorCodeForTheUi() throws Exception {
         BookAppointmentData data = bookingData();
         data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
+        data.setPaymentMethodId("pm_123");
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -157,6 +158,7 @@ class BookingWorkflowTest {
     void expiredCardBookingReturnsExpiredCode() throws Exception {
         BookAppointmentData data = bookingData();
         data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
+        data.setPaymentMethodId("pm_123");
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -194,6 +196,7 @@ class BookingWorkflowTest {
     void connectedStylistBookingRoutesTransferAndCommission() throws Exception {
         BookAppointmentData data = bookingData();
         data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
+        data.setPaymentMethodId("pm_123");
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
@@ -258,6 +261,7 @@ class BookingWorkflowTest {
     void bookingAllowedForOnboardedStylerWhenPaymentsLive() throws Exception {
         BookAppointmentData data = bookingData();
         data.setAppointmentDate(LocalDate.now().plusDays(1).toString());
+        data.setPaymentMethodId("pm_123");
         UserEntity customer = new UserEntity();
         customer.setUserId("CUSTOMER1");
         StylerEntity styler = approvedStyler();
