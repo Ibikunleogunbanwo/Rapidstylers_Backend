@@ -139,6 +139,14 @@ public class AppService {
     @Value("${app.admin.alert-email:}")
     private String adminAlertEmail;
 
+    // Read-cache warm-up bounds (see warmReadCaches). warmInFlight prevents a
+    // concurrent re-run from doubling the load when warming overlaps startup.
+    @Value("${app.cache.warm-enabled:true}")
+    private boolean warmReadCachesEnabled = true;
+    @Value("${app.cache.warm-max-stylers:25}")
+    private int warmMaxStylers = 25;
+    private final java.util.concurrent.atomic.AtomicBoolean warmInFlight = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     // Global rate-limit budgets (shared across OTP generation, OTP verification
     // and login so failures on one surface lock out the others).
     private static final int AUTH_WINDOW_SECONDS = 900;   // 15 min
@@ -937,19 +945,7 @@ public class AppService {
         try{
             List<Object> result = readCacheService.getOrLoad(
                     ReadCacheService.KEY_CATALOG_IDENTIFICATIONS, ReadCacheService.CATALOG_TTL, null,
-                    () -> {
-                        List<IdentificationEntity> getAllIdentification = identificationRepo.findAll();
-                        List<Object> built = new ArrayList<>();
-                        for(IdentificationEntity identificationEntity : getAllIdentification){
-                            HashMap<String, String> idMap = new HashMap<>();
-                            idMap.put("id", String.valueOf(identificationEntity.getId()));
-                            idMap.put("identificationName", identificationEntity.getIdentificationName());
-                            idMap.put("status", identificationEntity.getStatus());
-                            idMap.put("dateCreated", identificationEntity.getInsertedDate());
-                            built.add(idMap);
-                        }
-                        return built;
-                    });
+                    this::loadCatalogIdentifications);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
@@ -1045,21 +1041,7 @@ public class AppService {
         try{
             List<Object> result = readCacheService.getOrLoad(
                     ReadCacheService.KEY_CATALOG_SERVICES, ReadCacheService.CATALOG_TTL, null,
-                    () -> {
-                        List<ServiceEntity> getAllService = serviceRepo.findAll();
-                        List<Object> built = new ArrayList<>();
-                        for(ServiceEntity serviceEntity : getAllService){
-                            HashMap<String, String> serviceMap = new HashMap<>();
-                            serviceMap.put("id", String.valueOf(serviceEntity.getId()));
-                            serviceMap.put("serviceName", serviceEntity.getServiceName());
-                            serviceMap.put("status", serviceEntity.getStatus());
-                            serviceMap.put("dateCreated", serviceEntity.getInsertedDt());
-                            serviceMap.put("imageUrl", serviceEntity.getServiceImageUrl());
-                            serviceMap.put("description", serviceEntity.getDescription());
-                            built.add(serviceMap);
-                        }
-                        return built;
-                    });
+                    this::loadCatalogServices);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
@@ -1129,22 +1111,7 @@ public class AppService {
         try{
             List<Object> result = readCacheService.getOrLoad(
                     ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.BLOG_TTL, null,
-                    () -> {
-                        List<BlogPostEntity> allPosts = blogPostRepo.findAll();
-                        allPosts.sort(Comparator.comparing(BlogPostEntity::getId).reversed());
-                        List<Object> built = new ArrayList<>();
-                        for(BlogPostEntity post : allPosts){
-                            HashMap<String, String> postMap = new HashMap<>();
-                            postMap.put("id", String.valueOf(post.getId()));
-                            postMap.put("title", post.getTitle());
-                            postMap.put("category", post.getCategory());
-                            postMap.put("imageUrl", post.getImageUrl());
-                            postMap.put("author", post.getAuthor());
-                            postMap.put("dateCreated", post.getInsertedDt());
-                            built.add(postMap);
-                        }
-                        return built;
-                    });
+                    this::loadCatalogBlogs);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
@@ -2813,6 +2780,128 @@ public class AppService {
                     payload.put("bookedSlots", bookedSlots);
                     return payload;
                 });
+    }
+
+    /**
+     * Warm the read cache after a cold start (deploy / Redis flush) so the first
+     * real users don't pay the full DB load. Bounded and intended to be called on
+     * a background thread (see CacheWarmer) so it never delays startup or readiness.
+     *
+     * Warms the bounded catalog keys always (services, identifications, blogs),
+     * then at most {@code max-warable-stylers} approved stylist profiles. If a
+     * warmer invocation is in-flight, this is a no-op (never doubles the load).
+     * All failures are swallowed — the cache is a speed-up, never a dependency.
+     */
+    public void warmReadCaches(){
+        if(readCacheService == null || !warmReadCachesEnabled){
+            return;
+        }
+        if(!warmInFlight.compareAndSet(false, true)){
+            return; // a previous warm is still running — never double the load
+        }
+        try{
+            // Bounded catalog keys — cheap and read on every page load.
+            readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_SERVICES,
+                    ReadCacheService.CATALOG_TTL, null, this::loadCatalogServices);
+            readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS,
+                    ReadCacheService.CATALOG_TTL, null, this::loadCatalogIdentifications);
+            readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_BLOGS,
+                    ReadCacheService.BLOG_TTL, null, this::loadCatalogBlogs);
+
+            // Bounded set of approved stylists, most active first. We cannot know
+            // prior cross-restart hit frequency (counters reset on boot), so we warm
+            // the most recently updated approved profiles, capped by config.
+            if(stylerRepo != null){
+                List<StylerEntity> approved = new ArrayList<>();
+                for(StylerEntity styler : stylerRepo.findAll()){
+                    if(isApprovedStyler(styler)){
+                        approved.add(styler);
+                    }
+                }
+                approved.sort((a, b) -> {
+                    String da = a.getInsertedDt() != null ? a.getInsertedDt() : "";
+                    String db = b.getInsertedDt() != null ? b.getInsertedDt() : "";
+                    return db.compareTo(da);
+                });
+                int limit = Math.max(0, warmMaxStylers);
+                for(StylerEntity styler : approved){
+                    if(limit-- <= 0){
+                        break;
+                    }
+                    warmStylerCache(styler);
+                }
+            }
+            LOG.info("Read cache warmed (catalog + up to " + warmMaxStylers + " approved profiles)");
+        }
+        catch(Exception ex){
+            LOG.warning("Read cache warm-up failed (best-effort): " + ex.getMessage());
+        }
+        finally{
+            warmInFlight.set(false);
+        }
+    }
+
+    // ---- Catalog read-cache loaders (shared by the list APIs and warm-up) ----
+
+    List<Object> loadCatalogServices(){
+        List<ServiceEntity> getAllService = serviceRepo.findAll();
+        List<Object> built = new ArrayList<>();
+        for(ServiceEntity serviceEntity : getAllService){
+            HashMap<String, String> serviceMap = new HashMap<>();
+            serviceMap.put("id", String.valueOf(serviceEntity.getId()));
+            serviceMap.put("serviceName", serviceEntity.getServiceName());
+            serviceMap.put("status", serviceEntity.getStatus());
+            serviceMap.put("dateCreated", serviceEntity.getInsertedDt());
+            serviceMap.put("imageUrl", serviceEntity.getServiceImageUrl());
+            serviceMap.put("description", serviceEntity.getDescription());
+            built.add(serviceMap);
+        }
+        return built;
+    }
+
+    private List<Object> loadCatalogIdentifications(){
+        List<IdentificationEntity> getAllIdentification = identificationRepo.findAll();
+        List<Object> built = new ArrayList<>();
+        for(IdentificationEntity identificationEntity : getAllIdentification){
+            HashMap<String, String> idMap = new HashMap<>();
+            idMap.put("id", String.valueOf(identificationEntity.getId()));
+            idMap.put("identificationName", identificationEntity.getIdentificationName());
+            idMap.put("status", identificationEntity.getStatus());
+            idMap.put("dateCreated", identificationEntity.getInsertedDate());
+            built.add(idMap);
+        }
+        return built;
+    }
+
+    private List<Object> loadCatalogBlogs(){
+        List<BlogPostEntity> allPosts = blogPostRepo.findAll();
+        allPosts.sort(Comparator.comparing(BlogPostEntity::getId).reversed());
+        List<Object> built = new ArrayList<>();
+        for(BlogPostEntity post : allPosts){
+            HashMap<String, String> postMap = new HashMap<>();
+            postMap.put("id", String.valueOf(post.getId()));
+            postMap.put("title", post.getTitle());
+            postMap.put("category", post.getCategory());
+            postMap.put("imageUrl", post.getImageUrl());
+            postMap.put("author", post.getAuthor());
+            postMap.put("dateCreated", post.getInsertedDt());
+            built.add(postMap);
+        }
+        return built;
+    }
+
+    /** Warms every read-cache partition for one stylist (best-effort, never throws). */
+    private void warmStylerCache(StylerEntity styler){
+        try{
+            cachedStylerAccountDTO(styler);
+            cachedSubServices(styler.getStylerId());
+            cachedPortfolio(styler.getStylerId());
+            cachedReviews(styler.getStylerId());
+            cachedAvailabilitySlots(styler.getStylerId());
+            cachedExceptionSlots(styler.getStylerId());
+        } catch(Exception ignored){
+            // Individual stylist partitions are not worth aborting the whole warm for.
+        }
     }
 
     /** Clears both weekly and exception availability cache keys for a stylist. */
