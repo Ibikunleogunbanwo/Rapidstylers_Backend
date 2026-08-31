@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.security;
 
+import com.macrotel.rapidstylers.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,9 @@ class JwtAuthFilterTest {
         jwtUtil = mock(JwtUtil.class);
         filter = new JwtAuthFilter();
         ReflectionTestUtils.setField(filter, "jwtUtil", jwtUtil);
+        // The filter calls this on valid-token requests; a no-op mock keeps the
+        // existing role/route assertions the focus of the test.
+        ReflectionTestUtils.setField(filter, "sessionActivityService", mock(SessionActivityService.class));
     }
 
     @Test

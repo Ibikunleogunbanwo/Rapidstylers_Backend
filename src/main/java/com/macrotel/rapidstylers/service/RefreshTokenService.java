@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.entity.RefreshTokenEntity;
 import com.macrotel.rapidstylers.repo.RefreshTokenRepo;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,12 @@ public class RefreshTokenService {
     private long refreshTtlDays;
 
     private final RefreshTokenRepo refreshTokenRepo;
+
+    // Optional (may be null in unit tests): anchors the absolute session cap to the
+    // moment a fresh login issues its refresh-token family.
+    @Autowired(required = false)
+    private SessionActivityService sessionActivityService;
+
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public RefreshTokenService(RefreshTokenRepo refreshTokenRepo) {
@@ -30,7 +37,13 @@ public class RefreshTokenService {
     /** Issue a new refresh token for an account. Returns the raw token string. */
     public String issue(String accountId, String role) {
         String familyId = UUID.randomUUID().toString();
-        return createAndPersist(accountId, role, familyId);
+        String raw = createAndPersist(accountId, role, familyId);
+        // A fresh family is a fresh login — record its start so the absolute
+        // session cap (e.g. 8h for admins) has an anchor. Best-effort.
+        if (sessionActivityService != null) {
+            sessionActivityService.markLogin(accountId, role);
+        }
+        return raw;
     }
 
     /**

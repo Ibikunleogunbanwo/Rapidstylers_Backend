@@ -6,6 +6,7 @@ import com.macrotel.rapidstylers.pojo.SignInData;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.security.JwtUtil;
 import com.macrotel.rapidstylers.service.RateLimiterService;
+import com.macrotel.rapidstylers.service.RefreshTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
@@ -44,10 +45,14 @@ class AdminSignInTest {
         when(rateLimiterService.clientIp()).thenReturn("127.0.0.1");
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
 
+        RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
+        when(refreshTokenService.issue(anyString(), anyString())).thenReturn("admin-refresh");
+
         ReflectionTestUtils.setField(controller, "adminAccountRepo", adminAccountRepo);
         ReflectionTestUtils.setField(controller, "passwordEncoder", passwordEncoder);
         ReflectionTestUtils.setField(controller, "jwtUtil", jwtUtil);
         ReflectionTestUtils.setField(controller, "rateLimiterService", rateLimiterService);
+        ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
     }
 
     private AdminAccountEntity account(boolean enabled) {
@@ -75,6 +80,7 @@ class AdminSignInTest {
         ResponseEntity<BaseResponse> res = controller.adminSignIn(credentials(ADMIN_EMAIL, "secret"));
         assertEquals("200", res.getBody().getStatusCode());
         assertEquals("admin-jwt", res.getBody().getToken());
+        assertEquals("admin-refresh", res.getBody().getRefreshToken());
     }
 
     @Test

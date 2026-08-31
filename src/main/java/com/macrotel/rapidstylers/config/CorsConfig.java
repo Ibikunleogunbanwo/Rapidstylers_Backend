@@ -24,7 +24,9 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(parseAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "x-api-key"));
+        // X-Step-Up-Password is used for admin step-up re-auth (refunds, admin-account
+        // changes); it must be allow-listed or the browser preflight drops the header.
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "x-api-key", "X-Step-Up-Password"));
         config.setExposedHeaders(List.of("Authorization"));
         config.setMaxAge(3600L);
         source.registerCorsConfiguration("/**", config);

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.security;
 
+import com.macrotel.rapidstylers.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
@@ -138,6 +139,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Autowired
     private JwtUtil jwtUtil;
 
+    // Records real user activity in Redis so the refresh endpoint can enforce the
+    // role-based idle timeout. Only fires for ROLE_PATHS requests (true user data
+    // traffic), never for /auth/refresh, so silent token renewal does not reset idle.
+    @Autowired
+    private SessionActivityService sessionActivityService;
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -187,6 +194,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         request.setAttribute("accountId", claims == null ? null : claims.getSubject());
         request.setAttribute("role", role);
+        // A valid token + a protected route that the role may call = evidence of
+        // real activity. Best-effort Redis write; never fails the request.
+        if (claims != null && role != null) {
+            sessionActivityService.touch(claims.getSubject(), role);
+        }
         filterChain.doFilter(request, response);
     }
 

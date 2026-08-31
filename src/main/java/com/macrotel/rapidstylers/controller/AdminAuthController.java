@@ -7,6 +7,7 @@ import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.security.JwtUtil;
 import com.macrotel.rapidstylers.service.LoginAttemptService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
+import com.macrotel.rapidstylers.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -49,6 +50,9 @@ public class AdminAuthController {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private RefreshTokenService refreshTokenService;
+
     private static final int AUTH_WINDOW_SECONDS = 900;   // 15 min
     private static final int AUTH_MAX_FAILURES = 5;       // per email
     private static final int AUTH_IP_MAX_FAILURES = 20;   // per IP
@@ -86,6 +90,10 @@ public class AdminAuthController {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setToken(jwtUtil.generateToken(existing.get().getEmail(), "ADMIN"));
+            // DB-admin sessions get a rotating refresh token too, so the server-side
+            // idle (30 min) + absolute (8h) admin caps apply the same way they do
+            // for customers/stylers instead of a blunt 15-min hard logout.
+            response.setRefreshToken(refreshTokenService.issue(existing.get().getEmail(), "ADMIN"));
             response.setData(data);
             rateLimiterService.clear("auth:" + emailAddress);
             rateLimiterService.clear("auth_ip:" + ip);

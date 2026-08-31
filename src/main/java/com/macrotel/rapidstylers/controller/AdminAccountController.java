@@ -6,7 +6,12 @@ import com.macrotel.rapidstylers.pojo.AdminAccountData;
 import com.macrotel.rapidstylers.pojo.AdminPasswordData;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.service.StepUpService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,9 +45,16 @@ public class AdminAccountController {
     private final AdminAccountRepo adminAccountRepo;
     private final PasswordEncoder passwordEncoder;
 
+    private StepUpService stepUpService;
+
     public AdminAccountController(AdminAccountRepo adminAccountRepo, PasswordEncoder passwordEncoder) {
         this.adminAccountRepo = adminAccountRepo;
         this.passwordEncoder = passwordEncoder;
+    }
+
+    @Autowired
+    public void setStepUpService(StepUpService stepUpService) {
+        this.stepUpService = stepUpService;
     }
 
     @GetMapping
@@ -55,6 +67,34 @@ public class AdminAccountController {
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(admins);
         return ResponseEntity.ok(response);
+    }
+
+    private ResponseEntity<BaseResponse> stepUpRequired() {
+        BaseResponse response = new BaseResponse();
+        response.setStatusCode("403");
+        response.setMessage("Re-authentication required. Please re-enter your admin password.");
+        response.setData(new Object[0]);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    /**
+     * Sensitive admin-account mutations require step-up: the acting admin (from
+     * the JWT subject, set as the accountId request attribute) must re-prove their
+     * password via the X-Step-Up-Password header.
+     */
+    private ResponseEntity<BaseResponse> requireStepUp() {
+        String actor = null;
+        javax.servlet.http.HttpServletRequest request = null;
+        var attrs = RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof ServletRequestAttributes) {
+            request = ((ServletRequestAttributes) attrs).getRequest();
+            actor = (String) request.getAttribute("accountId");
+        }
+        String presented = request == null ? null : request.getHeader("X-Step-Up-Password");
+        if (stepUpService == null || !stepUpService.verify(actor, presented)) {
+            return stepUpRequired();
+        }
+        return null; // cleared
     }
 
     @PostMapping
@@ -74,6 +114,8 @@ public class AdminAccountController {
             response.setData(new Object[0]);
             return ResponseEntity.ok(response);
         }
+        ResponseEntity<BaseResponse> stepUp = requireStepUp();
+        if (stepUp != null) return stepUp;
         AdminAccountEntity account = new AdminAccountEntity();
         account.setEmail(email);
         account.setPasswordHash(passwordEncoder.encode(data.getPassword()));
@@ -97,6 +139,8 @@ public class AdminAccountController {
             response.setData(new Object[0]);
             return ResponseEntity.ok(response);
         }
+        ResponseEntity<BaseResponse> stepUp = requireStepUp();
+        if (stepUp != null) return stepUp;
         AdminAccountEntity account = adminAccountRepo.findById(id).orElse(null);
         if (account == null) {
             response.setStatusCode(ERROR_STATUS_CODE);
@@ -123,6 +167,8 @@ public class AdminAccountController {
     }
 
     private ResponseEntity<BaseResponse> setEnabled(Long id, boolean enabled) {
+        ResponseEntity<BaseResponse> stepUp = requireStepUp();
+        if (stepUp != null) return stepUp;
         BaseResponse response = new BaseResponse();
         AdminAccountEntity account = adminAccountRepo.findById(id).orElse(null);
         if (account == null) {

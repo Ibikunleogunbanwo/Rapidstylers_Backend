@@ -7,6 +7,8 @@ import com.macrotel.rapidstylers.service.GalleryService;
 import com.macrotel.rapidstylers.service.GeocodingService;
 import com.macrotel.rapidstylers.service.PaymentReconciliationService;
 import com.macrotel.rapidstylers.service.RefreshTokenService;
+import com.macrotel.rapidstylers.service.SessionActivityService;
+import com.macrotel.rapidstylers.service.StepUpService;
 import com.macrotel.rapidstylers.security.JwtUtil;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +40,10 @@ public class ApplicationController {
     EncryptionConfig encryptionConfig;
     @Autowired
     RefreshTokenService refreshTokenService;
+    @Autowired
+    SessionActivityService sessionActivityService;
+    @Autowired
+    StepUpService stepUpService;
     @Autowired
     PaymentReconciliationService paymentReconciliationService;
     @Autowired
@@ -1041,6 +1047,19 @@ public class ApplicationController {
             response.setMessage("Invalid or expired refresh token");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
         }
+        // Server-side session policy, enforced at the re-auth boundary so it can't
+        // be bypassed by silent access-token renewal: (1) idle past the role window,
+        // or (2) the session outlived its absolute lifetime (admin's hard cap). In
+        // either case terminate every tab/device by revoking the whole refresh-token
+        // family and return 401 so the client re-prompts login.
+        if (sessionActivityService.isIdle(tokenEntity.getAccountId(), tokenEntity.getRole())
+                || sessionActivityService.absoluteExpired(tokenEntity.getAccountId(), tokenEntity.getRole())) {
+            sessionActivityService.clear(tokenEntity.getAccountId());
+            refreshTokenService.revokeAllForAccount(tokenEntity.getAccountId(), tokenEntity.getRole());
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Session expired. Please sign in again.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
         // Rotate: revoke old, issue new in same family
         String newRefreshToken = refreshTokenService.rotate(refreshTokenValue);
         if (newRefreshToken == null) {
@@ -1072,6 +1091,9 @@ public class ApplicationController {
             refreshTokenService.revoke(refreshTokenValue);
         }
         refreshTokenService.revokeAllForAccount(accountId, role);
+        if (accountId != null) {
+            sessionActivityService.clear(accountId);
+        }
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage("Logged out successfully");
         return ResponseEntity.ok(response);
@@ -1098,6 +1120,11 @@ public class ApplicationController {
     public ResponseEntity<BaseResponse> adminRefund(@RequestBody RefundRequestData data, HttpServletRequest request) {
         String adminId = requireAdmin(request);
         if (adminId == null) return unauthorized();
+        // Step-up: refunds move real money, so the acting admin must re-prove their
+        // password (X-Step-Up-Password), not just present a valid session token.
+        if (!stepUpService.verify(adminId, request.getHeader("X-Step-Up-Password"))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(stepUpRequired());
+        }
         return new ResponseEntity<>(appService.adminRefund(adminId, data), HttpStatus.OK);
     }
 
@@ -1141,6 +1168,14 @@ public class ApplicationController {
         baseResponse.setMessage("Authentication required");
         baseResponse.setData(EMPTY_DATA);
         return new ResponseEntity<>(baseResponse, HttpStatus.UNAUTHORIZED);
+    }
+
+    private BaseResponse stepUpRequired(){
+        BaseResponse baseResponse = new BaseResponse();
+        baseResponse.setStatusCode("403");
+        baseResponse.setMessage("Re-authentication required. Please re-enter your admin password.");
+        baseResponse.setData(EMPTY_DATA);
+        return baseResponse;
     }
 
     @ResponseStatus(HttpStatus.BAD_REQUEST)

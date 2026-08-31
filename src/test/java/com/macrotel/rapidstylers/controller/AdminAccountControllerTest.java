@@ -5,6 +5,8 @@ import com.macrotel.rapidstylers.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.pojo.AdminPasswordData;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.service.StepUpService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -25,6 +27,17 @@ class AdminAccountControllerTest {
     private final AdminAccountRepo repo = mock(AdminAccountRepo.class);
     private final AdminAccountController controller =
             new AdminAccountController(repo, new BCryptPasswordEncoder());
+
+    @BeforeEach
+    void allowStepUp() {
+        // These tests exercise the password policy in isolation; stand in for a
+        // satisfied step-up so they aren't blocked by the 403 re-auth gate.
+        StepUpService stepUp = mock(StepUpService.class);
+        // any() (not anyString()) so it also matches the null actor/password when
+        // these pure-DTO tests call the controller outside a real request thread.
+        when(stepUp.verify(any(), any())).thenReturn(true);
+        controller.setStepUpService(stepUp);
+    }
 
     private AdminAccountEntity admin() {
         AdminAccountEntity e = new AdminAccountEntity();
