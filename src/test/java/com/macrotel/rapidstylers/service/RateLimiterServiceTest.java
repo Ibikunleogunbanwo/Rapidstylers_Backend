@@ -150,6 +150,19 @@ class RateLimiterServiceTest {
     }
 
     @Test
+    void dockerBridgeGatewayPeerResolvesRealClientFromXff() {
+        // Production topology: Nginx on the host forwards 127.0.0.1:9095 through
+        // the Docker userland proxy, so the app sees the bridge gateway (172.18.0.1)
+        // as its immediate peer while X-Forwarded-For carries the real client IP.
+        // Trusting that bridge peer is what makes per-IP rate limiting work.
+        rateLimiterService.trustedProxies = RateLimiterService.parseTrustedProxies("127.0.0.1/32,172.18.0.1/32");
+
+        setRequest("172.18.0.1", "203.0.113.42");
+        assertEquals("203.0.113.42", rateLimiterService.clientIp(),
+                "Trusted Docker bridge peer must resolve the real client from X-Forwarded-For");
+    }
+
+    @Test
     void chainOfOnlyTrustedProxiesFallsBackToPeer() {
         rateLimiterService.trustedProxies = RateLimiterService.parseTrustedProxies("1.1.1.1, 10.0.0.0/8");
 
