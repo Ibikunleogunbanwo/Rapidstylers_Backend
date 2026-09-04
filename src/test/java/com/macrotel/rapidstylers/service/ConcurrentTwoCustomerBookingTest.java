@@ -273,7 +273,7 @@ class ConcurrentTwoCustomerBookingTest {
     private String[] registerCustomer(String email) throws Exception {
         apiPost("/generate_sign_up_otp_code", Map.of("emailAddress", email), null, null);
         String otp = lastOtp();
-        apiPost("/verify_otp_code", Map.of("otpCode", otp), null, null);
+        apiPost("/verify_otp_code", Map.of("emailAddress", email, "otpCode", otp), null, null);
 
         Map<String, Object> userData = new LinkedHashMap<>();
         userData.put("firstname", "Race");
@@ -295,7 +295,7 @@ class ConcurrentTwoCustomerBookingTest {
     private String registerStyler() throws Exception {
         apiPost("/styler_generate_otp", Map.of("emailAddress", stylerEmail), null, null);
         String otp = lastOtp();
-        apiPost("/styler_verify_otp", Map.of("otpCode", otp), null, null);
+        apiPost("/styler_verify_otp", Map.of("emailAddress", stylerEmail, "otpCode", otp), null, null);
 
         Map<String, Object> stylerData = new LinkedHashMap<>();
         stylerData.put("firstname", "Race");

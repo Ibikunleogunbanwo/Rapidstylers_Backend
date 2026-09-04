@@ -3,7 +3,7 @@ package com.macrotel.rapidstylers.service;
 import org.springframework.data.geo.*;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.GeoOperations;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Scheduled;
 
@@ -21,6 +21,12 @@ import java.util.logging.Logger;
  *   ZREM    stylers:geo <stylerId>                 — remove a stylist
  *
  * All operations are O(log N) — no DB stress.
+ *
+ * Members are plain styler IDs, so this uses the string-serialized template:
+ * through a JSON value serializer every member would be stored quoted on the
+ * zset ("JS1234") — self-consistent for reads, but unreadable via redis-cli
+ * and impossible to remove with a plain-string ZREM, which silently leaves
+ * stale geo entries (the rate-limiter class of bug).
  */
 @Service
 public class LocationCacheService {
@@ -28,11 +34,11 @@ public class LocationCacheService {
     private static final Logger LOG = Logger.getLogger(LocationCacheService.class.getName());
     private static final String GEO_KEY = "stylers:geo";
 
-    private final RedisTemplate<String, Object> redisTemplate;
-    private final GeoOperations<String, Object> geoOps;
+    private final StringRedisTemplate redisTemplate;
+    private final GeoOperations<String, String> geoOps;
     private final AtomicLong totalFailures = new AtomicLong();
 
-    public LocationCacheService(RedisTemplate<String, Object> redisTemplate) {
+    public LocationCacheService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
         this.geoOps = redisTemplate.opsForGeo();
     }
@@ -85,15 +91,15 @@ public class LocationCacheService {
             Distance distance = new Distance(radius, RedisGeoCommands.DistanceUnit.KILOMETERS);
             Circle circle = new Circle(center, distance);
 
-            GeoResults<RedisGeoCommands.GeoLocation<Object>> results =
+            GeoResults<RedisGeoCommands.GeoLocation<String>> results =
                     geoOps.radius(GEO_KEY, circle, RedisGeoCommands.GeoRadiusCommandArgs.newGeoRadiusArgs()
                             .sortAscending()
                             .includeDistance());
 
             Map<String, Double> stylerDistances = new LinkedHashMap<>();
             if (results != null) {
-                for (GeoResult<RedisGeoCommands.GeoLocation<Object>> result : results) {
-                    String stylerId = String.valueOf(result.getContent().getName());
+                for (GeoResult<RedisGeoCommands.GeoLocation<String>> result : results) {
+                    String stylerId = result.getContent().getName();
                     double distKm = result.getDistance().getValue();
                     stylerDistances.put(stylerId, distKm);
                 }

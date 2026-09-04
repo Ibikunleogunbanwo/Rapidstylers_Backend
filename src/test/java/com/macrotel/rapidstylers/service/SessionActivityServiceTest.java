@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -23,14 +23,14 @@ class SessionActivityServiceTest {
     private static final String KEY = "rapidstylers:session:activity:acc1";
     private static final String START_KEY = "rapidstylers:session:start:acc1";
 
-    private RedisTemplate<String, Object> redisTemplate;
-    private ValueOperations<String, Object> valueOps;
+    private StringRedisTemplate redisTemplate;
+    private ValueOperations<String, String> valueOps;
     private SessionActivityService service;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        redisTemplate = mock(RedisTemplate.class);
+        redisTemplate = mock(StringRedisTemplate.class);
         valueOps = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
 

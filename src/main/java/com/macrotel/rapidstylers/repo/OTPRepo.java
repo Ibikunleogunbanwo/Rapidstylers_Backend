@@ -15,10 +15,14 @@ public interface OTPRepo extends JpaRepository<OTPEntity,Long> {
                     "WHERE email_address =:emailAddress AND purpose=:purpose AND is_used='1' ORDER BY id DESC LIMIT 1", nativeQuery = true)
     Optional<OTPEntity> checkSignUpValidityOtp(@Param("emailAddress") String emailAddress, @Param("purpose") String purpose);
 
-    Optional<OTPEntity> findByCode(String otpCode);
-
-    @Query(value = "SELECT o FROM OTPEntity o WHERE o.code =:otpCode AND o.isUsed='1'")
-    Optional<OTPEntity> checkUserCode(@Param("otpCode") String otpCode);
+    /**
+     * Most recent unverified (is_used='1') OTP for an email, any purpose.
+     * Purpose is validated at the service layer, and the code is compared
+     * against its BCrypt hash — the plaintext is never stored.
+     */
+    @Query(value = "SELECT * FROM otp_codes " +
+                    "WHERE email_address =:emailAddress AND is_used='1' ORDER BY id DESC LIMIT 1", nativeQuery = true)
+    Optional<OTPEntity> findLatestUnusedByEmail(@Param("emailAddress") String emailAddress);
 
     @Query(value = "SELECT * FROM otp_codes " +
                     "WHERE email_address =:emailAddress AND purpose='USER SIGN UP' AND is_used='0' ORDER BY id DESC LIMIT 1", nativeQuery = true)

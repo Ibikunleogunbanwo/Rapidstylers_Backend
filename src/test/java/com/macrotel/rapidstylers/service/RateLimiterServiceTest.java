@@ -3,7 +3,7 @@ package com.macrotel.rapidstylers.service;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -29,13 +29,13 @@ import static org.mockito.Mockito.when;
 
 class RateLimiterServiceTest {
 
-    private RedisTemplate<String, Object> redisTemplate;
-    private ValueOperations<String, Object> valueOperations;
+    private StringRedisTemplate redisTemplate;
+    private ValueOperations<String, String> valueOperations;
     private RateLimiterService rateLimiterService;
 
     @BeforeEach
     void setUp() {
-        redisTemplate = mock(RedisTemplate.class);
+        redisTemplate = mock(StringRedisTemplate.class);
         valueOperations = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         rateLimiterService = new RateLimiterService(redisTemplate);

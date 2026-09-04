@@ -75,7 +75,7 @@ public class CloudinaryController {
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Too many upload signature requests. Please try again later.");
                 response.setData(Collections.emptyList());
-                return ResponseEntity.ok(response);
+                return ApiResponses.respond(response);
             }
 
             long timestamp = Instant.now().getEpochSecond();
@@ -85,7 +85,7 @@ public class CloudinaryController {
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Upload folder is not allowed");
                 response.setData(Collections.emptyList());
-                return ResponseEntity.ok(response);
+                return ApiResponses.respond(response);
             }
             if (rateLimiterService != null) {
                 rateLimiterService.record(rateLimitKey, 900);
@@ -110,7 +110,7 @@ public class CloudinaryController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(new BaseResponse(true));
         }
-        return ResponseEntity.ok(response);
+        return ApiResponses.respond(response);
     }
 
     private String sanitizeFolderPrefix(String folderPrefix) {
@@ -166,7 +166,7 @@ public class CloudinaryController {
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Cloudinary delete returned: " + result);
                 response.setData(Collections.emptyList());
-                return ResponseEntity.ok(response);
+                return ApiResponses.respond(response);
             }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -177,7 +177,7 @@ public class CloudinaryController {
             response.setMessage("Delete failed: " + e.getMessage());
             response.setData(Collections.emptyList());
         }
-        return ResponseEntity.ok(response);
+        return ApiResponses.respond(response);
     }
 
     private String sha1(String input) throws Exception {

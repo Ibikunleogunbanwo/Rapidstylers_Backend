@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
@@ -58,7 +58,15 @@ public class RateLimiterService {
                     + "return c",
             Long.class);
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    /**
+     * StringRedisTemplate (plain-string key AND value serializer) is essential
+     * here: the Lua script increments counters and expires them with a numeric
+     * TTL passed as ARGV. A JSON/Jackson value serializer would quote that
+     * ARGV ("900") so Redis rejects EXPIRE and the counter is left with no
+     * TTL — permanently blocking the key once it reaches the cap. Keys and
+     * values for rate limiting are always plain strings.
+     */
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${app.rate-limit.trusted-proxies:}")
     private String trustedProxiesConfig;
@@ -70,7 +78,7 @@ public class RateLimiterService {
     private final Map<String, MemoryBucket> memoryBuckets = new ConcurrentHashMap<>();
     private final AtomicLong memoryLastPruned = new AtomicLong(0L);
 
-    public RateLimiterService(RedisTemplate<String, Object> redisTemplate) {
+    public RateLimiterService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
@@ -99,11 +107,11 @@ public class RateLimiterService {
     /** True when the recorded attempts within the active TTL window reached max. */
     public boolean isBlocked(String key, int windowSeconds, int max) {
         try {
-            Object raw = redisTemplate.opsForValue().get(key);
+            String raw = redisTemplate.opsForValue().get(key);
             if (raw == null) {
                 return false;
             }
-            return Long.parseLong(String.valueOf(raw)) >= max;
+            return Long.parseLong(raw) >= max;
         } catch (Exception ignored) {
             // Redis unavailable — fall through to the in-memory fallback below.
         }

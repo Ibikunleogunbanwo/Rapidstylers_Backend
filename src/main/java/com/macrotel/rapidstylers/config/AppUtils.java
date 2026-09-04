@@ -91,6 +91,25 @@ public class AppUtils {
         return new BCryptPasswordEncoder().matches(rawPassword, storedHash);
     }
 
+    /**
+     * BCrypt-encode a one-time password (OTP) code for storage. OTPs are
+     * never stored in plaintext, so a leaked otp_codes table cannot be
+     * replayed or read directly.
+     */
+    public String hashOtp(String otpCode) {
+        return new BCryptPasswordEncoder().encode(otpCode);
+    }
+
+    /**
+     * Verify a raw OTP code against a stored BCrypt hash.
+     */
+    public boolean otpMatches(String rawOtpCode, String storedHash) {
+        if (storedHash == null || storedHash.isEmpty()) {
+            return false;
+        }
+        return new BCryptPasswordEncoder().matches(rawOtpCode, storedHash);
+    }
+
     private String md5(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
