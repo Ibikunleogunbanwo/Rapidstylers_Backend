@@ -22,11 +22,25 @@ import java.sql.ResultSet;
  * (BCryptPasswordEncoder). Verified codes are intentionally NOT touched — only
  * the representation changes, so a code still inside its validity window keeps
  * verifying for the user who received it by email.
+ *
+ * <p>Like every other migration here, the run is guarded by an
+ * {@code information_schema} existence check: on a fresh database the
+ * {@code otp_codes} table does not exist yet (Hibernate {@code ddl-auto=update}
+ * creates entity tables only AFTER Flyway runs), so the migration must be a
+ * no-op there — a table that does not exist yet cannot hold legacy plaintext
+ * rows to rehash.
  */
 public class V12__RehashPlaintextOtpCodes extends BaseJavaMigration {
 
     @Override
     public void migrate(Context context) throws Exception {
+        if (!tableExists(context, "otp_codes")) {
+            // Fresh schema: otp_codes will be created empty by Hibernate after
+            // Flyway, so there is nothing to rehash. Matches the guarded-SQL
+            // convention of V1-V11.
+            return;
+        }
+
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
         String findPlaintext = "SELECT id, code FROM otp_codes "
@@ -46,6 +60,17 @@ public class V12__RehashPlaintextOtpCodes extends BaseJavaMigration {
                     update.addBatch();
                 }
                 update.executeBatch();
+            }
+        }
+    }
+
+    private boolean tableExists(Context context, String table) throws Exception {
+        String sql = "SELECT COUNT(*) FROM information_schema.TABLES "
+                + "WHERE TABLE_SCHEMA = DATABASE() AND LOWER(TABLE_NAME) = LOWER(?)";
+        try (PreparedStatement ps = context.getConnection().prepareStatement(sql)) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getLong(1) > 0;
             }
         }
     }
