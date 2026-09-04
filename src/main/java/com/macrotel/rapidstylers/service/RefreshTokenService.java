@@ -2,24 +2,36 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.entity.RefreshTokenEntity;
 import com.macrotel.rapidstylers.repo.RefreshTokenRepo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class RefreshTokenService {
 
     @Value("${app.jwt.refresh-ttl-days:7}")
     private long refreshTtlDays;
+
+    @Value("${app.security.refresh-token-max-live-per-account:10}")
+    private int maxLiveRefreshTokensPerAccount;
+
+    private static final Logger LOG = LoggerFactory.getLogger(RefreshTokenService.class);
 
     private final RefreshTokenRepo refreshTokenRepo;
 
@@ -82,6 +94,27 @@ public class RefreshTokenService {
         return createAndPersist(active.getAccountId(), active.getRole(), active.getFamilyId());
     }
 
+    /**
+     * Theft response for the refresh endpoint. A refresh token whose hash is
+     * known but already revoked (rotated out or logged out) should never be
+     * presented again — replaying one is the classic stolen-session signal, so
+     * the entire family is burned to force the legitimate session to
+     * re-authenticate too. Tokens that are unknown, or that merely expired
+     * without ever being revoked, get no burn: they are plain rejections, not
+     * theft evidence.
+     *
+     * @return true if a family was burned (the token was a known revoked token)
+     */
+    public boolean burnFamilyForReplayedToken(String rawToken) {
+        String hash = sha256Hex(rawToken);
+        RefreshTokenEntity known = refreshTokenRepo.findByTokenHash(hash).orElse(null);
+        if (known != null && known.isRevoked()) {
+            revokeFamily(known.getFamilyId());
+            return true;
+        }
+        return false;
+    }
+
     /** Validate a refresh token. Returns the entity if valid, null otherwise. */
     public RefreshTokenEntity validate(String rawToken) {
         String hash = sha256Hex(rawToken);
@@ -128,6 +161,66 @@ public class RefreshTokenService {
         refreshTokenRepo.save(entity);
 
         return rawToken;
+    }
+
+    /**
+     * Periodic refresh-token hygiene:
+     *
+     *  1. Deletes every expired row (revoked or not) — an expired token can never
+     *     validate again, and deleting it bounds table growth to roughly one refresh
+     *     TTL of rotation/logout history.
+     *  2. Caps live (unexpired, unrevoked) tokens per account. Every rotation
+     *     replaces the live row with a newer one, so a genuinely active session
+     *     always owns a recent row — a live row older than the account's newest
+     *     {@code maxLivePerAccount} is an abandoned login (e.g. fresh sign-ins that
+     *     were never logged out, which is how dozens of unrevoked admin tokens
+     *     accumulate). Surplus rows are revoked so those stale sessions must
+     *     re-authenticate, but kept as revoked replay-evidence until they expire
+     *     naturally.
+     *
+     * @return {@code {deletedExpired, revokedSurplus}} for callers/tests
+     */
+    @Transactional
+    public long[] housekeep(int maxLivePerAccount) {
+        LocalDateTime now = LocalDateTime.now();
+        long deletedExpired = refreshTokenRepo.deleteByExpiresAtBefore(now);
+
+        long revokedSurplus = 0;
+        Map<String, List<RefreshTokenEntity>> liveByAccount = refreshTokenRepo.findByRevokedFalse().stream()
+                .collect(Collectors.groupingBy(RefreshTokenEntity::getAccountId));
+        for (List<RefreshTokenEntity> accountRows : liveByAccount.values()) {
+            if (accountRows.size() <= maxLivePerAccount) {
+                continue;
+            }
+            // Oldest first, so the revoked surplus is the least-recently issued.
+            accountRows.sort(Comparator.comparingLong(RefreshTokenEntity::getId));
+            int surplus = accountRows.size() - maxLivePerAccount;
+            for (int i = 0; i < surplus; i++) {
+                RefreshTokenEntity stale = accountRows.get(i);
+                stale.setRevoked(true);
+                refreshTokenRepo.save(stale);
+            }
+            revokedSurplus += surplus;
+        }
+
+        if (deletedExpired > 0 || revokedSurplus > 0) {
+            LOG.info("Refresh-token housekeeping: deleted {} expired, revoked {} surplus live tokens (cap {}/account)",
+                    deletedExpired, revokedSurplus, maxLivePerAccount);
+        }
+        return new long[]{deletedExpired, revokedSurplus};
+    }
+
+    /**
+     * Scheduled wrapper — deliberately never fires at boot: {@code initialDelay}
+     * matches the interval, so the first run happens one full interval after
+     * startup (never during short-lived {@code @SpringBootTest} contexts, which
+     * share the dev database), then every interval thereafter.
+     */
+    @Scheduled(
+            fixedDelayString = "${app.security.refresh-token-housekeep-delay-ms:3600000}",
+            initialDelayString = "${app.security.refresh-token-housekeep-delay-ms:3600000}")
+    public void scheduledHousekeeping() {
+        housekeep(maxLiveRefreshTokensPerAccount);
     }
 
     private String sha256Hex(String input) {
