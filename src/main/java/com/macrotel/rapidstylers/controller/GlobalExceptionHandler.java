@@ -24,7 +24,7 @@ public class GlobalExceptionHandler {
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    @ResponseStatus(HttpStatus.OK)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     public BaseResponse handleValidationExceptions(MethodArgumentNotValidException ex) {
         BaseResponse baseResponse = new BaseResponse();
         baseResponse.setStatusCode(ERROR_STATUS_CODE);
@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    @ResponseStatus(HttpStatus.OK)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     public BaseResponse handleDataIntegrity(DataIntegrityViolationException ex) {
         logger.error("Data integrity violation: {}", ex.getMessage());
         BaseResponse baseResponse = new BaseResponse();
@@ -59,13 +59,14 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public BaseResponse handleAccessDenied(AccessDeniedException ex) {
         BaseResponse baseResponse = new BaseResponse();
-        baseResponse.setStatusCode(ERROR_STATUS_CODE);
+        baseResponse.setStatusCode("403");
         baseResponse.setMessage("You do not have permission to perform this action.");
+        baseResponse.setData(new Object[0]);
         return baseResponse;
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    @ResponseStatus(HttpStatus.OK)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     public BaseResponse handleIllegalArgument(IllegalArgumentException ex) {
         BaseResponse baseResponse = new BaseResponse();
         baseResponse.setStatusCode(ERROR_STATUS_CODE);
@@ -74,12 +75,13 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    @ResponseStatus(HttpStatus.OK)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public BaseResponse handleGenericException(Exception ex) {
         logger.error("Unexpected error: {}", ex.getMessage(), ex);
         BaseResponse baseResponse = new BaseResponse();
-        baseResponse.setStatusCode(ERROR_STATUS_CODE);
+        baseResponse.setStatusCode("500");
         baseResponse.setMessage("Something went wrong. Please try again later.");
+        baseResponse.setData(new Object[0]);
         return baseResponse;
     }
 }

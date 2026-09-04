@@ -4,17 +4,19 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.GeoOperations;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 
 /**
- * Redis configuration for geospatial location caching.
- * 
- * Uses Redis GEO commands to store and query stylist locations:
- * - GEOADD: store styler lat/lng when they register or update their address
- * - GEORADIUS: find all stylers within a given radius of a point
- * - GEODIST: calculate distance between two points
+ * Redis configuration for JSON-typed caching.
+ *
+ * The value serializer is GenericJackson2JsonRedisSerializer (keys stay plain
+ * strings), which is required ONLY by the read cache's typed payloads
+ * (ReadCacheService). Everything that stores plain strings — rate limiting,
+ * idempotency claims, session activity, notification dedup, and the geo index
+ * (styler IDs) — deliberately uses Boot's StringRedisTemplate instead: sending
+ * plain-string data through this Jackson serializer would quote every value on
+ * the wire and break plain-string readers (the rate-limiter class of bug).
  */
 @Configuration
 public class RedisConfig {
@@ -29,10 +31,5 @@ public class RedisConfig {
         template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
         template.afterPropertiesSet();
         return template;
-    }
-
-    @Bean
-    public GeoOperations<String, Object> geoOperations(RedisTemplate<String, Object> redisTemplate) {
-        return redisTemplate.opsForGeo();
     }
 }

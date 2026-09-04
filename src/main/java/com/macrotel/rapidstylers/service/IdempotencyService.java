@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -10,15 +10,20 @@ import java.util.logging.Logger;
 /**
  * Atomic, short-lived claims used to prevent duplicate mutation requests.
  * Also stores completed responses for replay on duplicate requests.
+ *
+ * Values are plain strings (UUID markers, response JSON), so this uses the
+ * string-serialized template — storing them through a JSON value serializer
+ * would quote every value on the wire and break any plain-string reader
+ * (cross-serializer access is exactly what broke rate limiting before).
  */
 @Service
 public class IdempotencyService {
 
     private static final Logger LOG = Logger.getLogger(IdempotencyService.class.getName());
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
-    public IdempotencyService(RedisTemplate<String, Object> redisTemplate) {
+    public IdempotencyService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
@@ -70,9 +75,15 @@ public class IdempotencyService {
 
     public void release(Claim claim) {
         if (claim == null || !claim.acquired || claim.key == null) return;
-        Object current = redisTemplate.opsForValue().get(claim.key);
-        if (claim.marker.equals(current)) {
-            redisTemplate.delete(claim.key);
+        try {
+            String current = redisTemplate.opsForValue().get(claim.key);
+            if (claim.marker.equals(current)) {
+                redisTemplate.delete(claim.key);
+            }
+        } catch (Exception ex) {
+            // Best-effort cleanup — a claim that cannot be released only lingers
+            // until its TTL expires; never throw on the request path.
+            LOG.warning("Failed to release idempotency claim: " + ex.getMessage());
         }
     }
 

@@ -164,7 +164,11 @@ class RegistrationToBookingJourneyTest {
         // ---- 1. Customer registers ------------------------------------------------
         assertOk(apiPost("/generate_sign_up_otp_code", Map.of("emailAddress", custEmail), null));
         String custOtp = lastOtp();
-        assertOk(apiPost("/verify_otp_code", Map.of("otpCode", custOtp), null));
+        // OTP is stored as a BCrypt hash, never plaintext (mailbox sim still sees the raw code)
+        OTPEntity storedCustOtp = otpRepo.findLatestUnusedByEmail(custEmail).orElseThrow();
+        assertFalse(storedCustOtp.getCode().equals(custOtp), "OTP must not be stored in plaintext");
+        assertTrue(storedCustOtp.getCode().startsWith("$2"), "OTP must be stored as a BCrypt hash");
+        assertOk(apiPost("/verify_otp_code", Map.of("emailAddress", custEmail, "otpCode", custOtp), null));
 
         Map<String, Object> userData = new LinkedHashMap<>();
         userData.put("firstname", "Journey");
@@ -185,7 +189,11 @@ class RegistrationToBookingJourneyTest {
         // ---- 2. Styler registers ---------------------------------------------------
         assertOk(apiPost("/styler_generate_otp", Map.of("emailAddress", stylerEmail), null));
         String stylerOtp = lastOtp();
-        assertOk(apiPost("/styler_verify_otp", Map.of("otpCode", stylerOtp), null));
+        // OTP is stored as a BCrypt hash, never plaintext (mailbox sim still sees the raw code)
+        OTPEntity storedStylerOtp = otpRepo.findLatestUnusedByEmail(stylerEmail).orElseThrow();
+        assertFalse(storedStylerOtp.getCode().equals(stylerOtp), "OTP must not be stored in plaintext");
+        assertTrue(storedStylerOtp.getCode().startsWith("$2"), "OTP must be stored as a BCrypt hash");
+        assertOk(apiPost("/styler_verify_otp", Map.of("emailAddress", stylerEmail, "otpCode", stylerOtp), null));
 
         String identificationId = firstListId("/list_identification");
         String serviceTypeId = firstListId("/list_service");

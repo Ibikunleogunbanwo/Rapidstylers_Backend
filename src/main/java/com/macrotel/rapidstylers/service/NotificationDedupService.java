@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -22,6 +22,10 @@ import java.util.logging.Logger;
  * legitimately reprocess the event. Redis outages degrade safely: the claim
  * is treated as available (at-least-once delivery is preserved, only the
  * duplicate protection is lost).
+ *
+ * Values are plain strings ("1"), so this uses the string-serialized template
+ * — a JSON value serializer would quote them on the wire and break any
+ * plain-string reader (the rate-limiter class of bug).
  */
 @Service
 public class NotificationDedupService {
@@ -30,13 +34,13 @@ public class NotificationDedupService {
 
     private static final String KEY_PREFIX = "notif:delivered:";
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
     private final AtomicLong totalDegradations = new AtomicLong();
 
     @Value("${app.notifications.dedup-ttl-hours:24}")
     private long ttlHours;
 
-    public NotificationDedupService(RedisTemplate<String, Object> redisTemplate) {
+    public NotificationDedupService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 

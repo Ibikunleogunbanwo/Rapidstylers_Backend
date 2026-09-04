@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.geo.Circle;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.GeoOperations;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,15 +22,15 @@ import static org.mockito.Mockito.when;
  */
 class LocationCacheServiceTest {
 
-    private RedisTemplate<String, Object> redisTemplate;
-    private GeoOperations<String, Object> geoOps;
-    private ZSetOperations<String, Object> zSetOps;
+    private StringRedisTemplate redisTemplate;
+    private GeoOperations<String, String> geoOps;
+    private ZSetOperations<String, String> zSetOps;
     private LocationCacheService service;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        redisTemplate = mock(RedisTemplate.class);
+        redisTemplate = mock(StringRedisTemplate.class);
         geoOps = mock(GeoOperations.class);
         zSetOps = mock(ZSetOperations.class);
         when(redisTemplate.opsForGeo()).thenReturn(geoOps);

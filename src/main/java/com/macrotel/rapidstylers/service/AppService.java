@@ -193,19 +193,10 @@ public class AppService {
     public BaseResponse generateSignUpOtpCode(OTPData otpData){
         BaseResponse response = new BaseResponse(true);
         try{
-            // Check email across BOTH tables
-            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(otpData.getEmailAddress());
-            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(otpData.getEmailAddress());
-            if(isEmailExist.isPresent() || isStylerEmailExist.isPresent()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Email Address already exists, Kindly choose another email");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            // Global rate limiting: failed login/verify attempts block further
-            // OTP sends for this email, and OTP generation itself is capped.
             String email = otpData.getEmailAddress();
             String ip = rateLimiterService.clientIp();
+            // Global rate limiting: failed login/verify attempts block further
+            // OTP sends for this email, and OTP generation itself is capped.
             if (rateLimiterService.isBlocked("auth:" + email, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
                     || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
                 response.setStatusCode(ERROR_STATUS_CODE);
@@ -216,6 +207,17 @@ public class AppService {
             if (rateLimiterService.isBlocked("otp_gen:" + email, OTP_GEN_WINDOW_SECONDS, OTP_GEN_MAX)) {
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Too many OTP requests. Please try again in a few minutes.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Enumeration-safe: an email already registered in EITHER table gets
+            // the same generic success response as a fresh one — no OTP is issued
+            // and no mail is sent, so valid and invalid addresses are indistinguishable.
+            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(email);
+            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(email);
+            if(isEmailExist.isPresent() || isStylerEmailExist.isPresent()){
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
                 response.setData(EMPTY_DATA);
                 return response;
             }
@@ -239,7 +241,7 @@ public class AppService {
             OTPEntity otpEntity = new OTPEntity();
             otpEntity.setEmailAddress(email);
             otpEntity.setPurpose("USER SIGN UP");
-            otpEntity.setCode(otpCode);
+            otpEntity.setCode(appUtils.hashOtp(otpCode));
             otpRepo.save(otpEntity);
 
             //Send Mail to user
@@ -262,7 +264,7 @@ public class AppService {
         return response;
     }
 
-    public BaseResponse verifyUserOTP(String otpCode){
+    public BaseResponse verifyUserOTP(String emailAddress, String otpCode){
         BaseResponse response = new BaseResponse(true);
         String ip = rateLimiterService.clientIp();
         try{
@@ -275,9 +277,18 @@ public class AppService {
                 return response;
             }
             rateLimiterService.record("otp_verify:" + ip, OTP_VERIFY_WINDOW_SECONDS);
-            Optional<OTPEntity> isOTPExist = otpRepo.checkUserCode(otpCode);
-            if(isOTPExist.isEmpty()){
-                // Email is unknown for a bad code — count failures against the IP.
+            if (emailAddress == null || emailAddress.isBlank() || otpCode == null || otpCode.isBlank()) {
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid OTP Code");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Codes are bound to the email they were issued for: look up by email
+            // (never by code), then compare the code against its stored hash.
+            Optional<OTPEntity> isOTPExist = otpRepo.findLatestUnusedByEmail(emailAddress);
+            if(isOTPExist.isEmpty() || !appUtils.otpMatches(otpCode, isOTPExist.get().getCode())){
+                // Wrong code or unknown email — count failures against the IP.
                 rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid OTP Code");
@@ -285,7 +296,15 @@ public class AppService {
                 return response;
             }
             OTPEntity otpData = isOTPExist.get();
-            String emailAddress = otpData.getEmailAddress();
+            String otpPurpose = otpData.getPurpose();
+            // Purpose-scoped: this endpoint only verifies signup / password-reset codes.
+            if(!otpPurpose.equals("USER SIGN UP") && !otpPurpose.equals("FORGET PASSWORD")){
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid OTP Code");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             // Lockout: failed logins/verifies for this email block verification too.
             if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)) {
                 response.setStatusCode(ERROR_STATUS_CODE);
@@ -294,7 +313,6 @@ public class AppService {
                 return response;
             }
             String previousOtpTime =  otpData.getInsertedDt();
-            String otpPurpose = otpData.getPurpose();
             LocalDateTime previousTime = LocalDateTime.parse(previousOtpTime, DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss"));
             LocalDateTime currentTime = LocalDateTime.now();
             long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
@@ -1246,19 +1264,10 @@ public class AppService {
     public BaseResponse stylerGenerateOtp(OTPData otpData){
         BaseResponse response = new BaseResponse(true);
         try{
-            // Check email across BOTH tables
-            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(otpData.getEmailAddress());
-            Optional<UserEntity> isUserEmailExist = userRepo.findByEmailAddress(otpData.getEmailAddress());
-            if(isStylerEmailExist.isPresent() || isUserEmailExist.isPresent()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Email Address already exists, Kindly choose another email");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            // Global rate limiting (shared with login/verify failures and the
-            // customer flow): lockouts block further sends, generation is capped.
             String emailAddress = otpData.getEmailAddress();
             String ip = rateLimiterService.clientIp();
+            // Global rate limiting (shared with login/verify failures and the
+            // customer flow): lockouts block further sends, generation is capped.
             if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
                     || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
                 response.setStatusCode(ERROR_STATUS_CODE);
@@ -1269,6 +1278,17 @@ public class AppService {
             if (rateLimiterService.isBlocked("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS, OTP_GEN_MAX)) {
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Too many OTP requests. Please try again in a few minutes.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Enumeration-safe: an email already registered in EITHER table gets
+            // the same generic success response as a fresh one — no OTP is issued
+            // and no mail is sent, so valid and invalid addresses are indistinguishable.
+            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(emailAddress);
+            Optional<UserEntity> isUserEmailExist = userRepo.findByEmailAddress(emailAddress);
+            if(isStylerEmailExist.isPresent() || isUserEmailExist.isPresent()){
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
                 response.setData(EMPTY_DATA);
                 return response;
             }
@@ -1292,7 +1312,7 @@ public class AppService {
             OTPEntity otpEntity = new OTPEntity();
             otpEntity.setEmailAddress(emailAddress);
             otpEntity.setPurpose("STYLER SIGN UP");
-            otpEntity.setCode(otpCode);
+            otpEntity.setCode(appUtils.hashOtp(otpCode));
             otpRepo.save(otpEntity);
 
             // Send email
@@ -1318,7 +1338,7 @@ public class AppService {
     /**
      * Verify stylist OTP — same logic as user OTP but with STYLER SIGN UP purpose.
      */
-    public BaseResponse stylerVerifyOtp(String otpCode){
+    public BaseResponse stylerVerifyOtp(String emailAddress, String otpCode){
         BaseResponse response = new BaseResponse(true);
         String ip = rateLimiterService.clientIp();
         try{
@@ -1331,9 +1351,18 @@ public class AppService {
                 return response;
             }
             rateLimiterService.record("otp_verify:" + ip, OTP_VERIFY_WINDOW_SECONDS);
-            Optional<OTPEntity> isOTPExist = otpRepo.checkUserCode(otpCode);
-            if(isOTPExist.isEmpty()){
-                // Email is unknown for a bad code — count failures against the IP.
+            if (emailAddress == null || emailAddress.isBlank() || otpCode == null || otpCode.isBlank()) {
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid OTP Code");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Codes are bound to the email they were issued for: look up by email
+            // (never by code), then compare the code against its stored hash.
+            Optional<OTPEntity> isOTPExist = otpRepo.findLatestUnusedByEmail(emailAddress);
+            if(isOTPExist.isEmpty() || !appUtils.otpMatches(otpCode, isOTPExist.get().getCode())){
+                // Wrong code or unknown email — count failures against the IP.
                 rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid OTP Code");
@@ -1341,7 +1370,15 @@ public class AppService {
                 return response;
             }
             OTPEntity otpData = isOTPExist.get();
-            String emailAddress = otpData.getEmailAddress();
+            String otpPurpose = otpData.getPurpose();
+            // Purpose-scoped: this endpoint only verifies styler sign-up codes.
+            if(!otpPurpose.equals("STYLER SIGN UP")){
+                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid OTP Code");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             // Lockout: failed logins/verifies for this email block verification too.
             if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)) {
                 response.setStatusCode(ERROR_STATUS_CODE);
@@ -1350,7 +1387,6 @@ public class AppService {
                 return response;
             }
             String previousOtpTime = otpData.getInsertedDt();
-            String otpPurpose = otpData.getPurpose();
             LocalDateTime previousTime = LocalDateTime.parse(previousOtpTime, DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss"));
             LocalDateTime currentTime = LocalDateTime.now();
             long minutesDifference = ChronoUnit.MINUTES.between(previousTime, currentTime);
