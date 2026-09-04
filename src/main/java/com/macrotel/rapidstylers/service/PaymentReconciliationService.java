@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import com.macrotel.rapidstylers.entity.AuditLogEntity;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
@@ -86,12 +87,17 @@ public class PaymentReconciliationService {
             response.setMessage(summary);
             response.setData(report);
         } catch (StripeException ex) {
-            LOG.warning("Payment reconciliation failed: " + ex.getMessage());
+            // The scheduled run fires on every context boot, so a missing/invalid
+            // Stripe key would otherwise warn once per boot — throttle to one line
+            // per window; the audit-less failure is still visible in the response.
+            ThrottledLog.warnOncePerWindow(LOG, "payment/reconcile-failed",
+                    "Payment reconciliation failed: " + ex.getMessage());
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("Reconciliation failed: " + ex.getMessage());
             response.setData(Collections.emptyMap());
         } catch (Exception ex) {
-            LOG.warning("Payment reconciliation error: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "payment/reconcile-error",
+                    "Payment reconciliation error: " + ex.getMessage());
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("Reconciliation error: " + ex.getMessage());
             response.setData(Collections.emptyMap());
