@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
-import org.springframework.data.redis.core.RedisTemplate;
+import com.macrotel.rapidstylers.config.ThrottledLog;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -10,15 +11,20 @@ import java.util.logging.Logger;
 /**
  * Atomic, short-lived claims used to prevent duplicate mutation requests.
  * Also stores completed responses for replay on duplicate requests.
+ *
+ * Values are plain strings (UUID markers, response JSON), so this uses the
+ * string-serialized template — storing them through a JSON value serializer
+ * would quote every value on the wire and break any plain-string reader
+ * (cross-serializer access is exactly what broke rate limiting before).
  */
 @Service
 public class IdempotencyService {
 
     private static final Logger LOG = Logger.getLogger(IdempotencyService.class.getName());
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
-    public IdempotencyService(RedisTemplate<String, Object> redisTemplate) {
+    public IdempotencyService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
@@ -46,7 +52,8 @@ public class IdempotencyService {
         try {
             redisTemplate.opsForValue().set(responseKey, responseJson, Duration.ofHours(1));
         } catch (Exception ex) {
-            LOG.warning("Failed to store idempotency response: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "idempotency/store",
+                    "Failed to store idempotency response: " + ex.getMessage());
         }
     }
 
@@ -63,16 +70,24 @@ public class IdempotencyService {
             Object stored = redisTemplate.opsForValue().get(responseKey);
             return stored != null ? String.valueOf(stored) : null;
         } catch (Exception ex) {
-            LOG.warning("Failed to retrieve idempotency response: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "idempotency/retrieve",
+                    "Failed to retrieve idempotency response: " + ex.getMessage());
             return null;
         }
     }
 
     public void release(Claim claim) {
         if (claim == null || !claim.acquired || claim.key == null) return;
-        Object current = redisTemplate.opsForValue().get(claim.key);
-        if (claim.marker.equals(current)) {
-            redisTemplate.delete(claim.key);
+        try {
+            String current = redisTemplate.opsForValue().get(claim.key);
+            if (claim.marker.equals(current)) {
+                redisTemplate.delete(claim.key);
+            }
+        } catch (Exception ex) {
+            // Best-effort cleanup — a claim that cannot be released only lingers
+            // until its TTL expires; never throw on the request path.
+            ThrottledLog.warnOncePerWindow(LOG, "idempotency/release",
+                    "Failed to release idempotency claim: " + ex.getMessage());
         }
     }
 

@@ -177,6 +177,58 @@ class GoogleSignInTest {
     }
 
     @Test
+    void replayingARotatedOutTokenOverHttpBurnsTheWholeFamily() throws Exception {
+        // Sign in via Google to get a real persisted refresh token.
+        UserEntity user = new UserEntity();
+        user.setFirstname("Gina");
+        user.setLastname("Customer");
+        user.setEmailAddress(email);
+        user.setPassword("$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST");
+        user.setStatus("0");
+        user.setUserId("G" + System.currentTimeMillis());
+        userRepo.save(user);
+        userId = user.getUserId();
+
+        when(googleTokenVerifier.verify(anyString())).thenReturn(verifiedClaims(email));
+        String refreshToken = postGoogle("valid-token").get("refreshToken").asText();
+        assertFalse(refreshToken.isBlank(), "sign-in must issue a refresh token");
+
+        // Legitimate rotation: old token is revoked, new one becomes live.
+        MvcResult rotateResult = mockMvc.perform(post("/rapid_stylers/auth/refresh")
+                .header("x-api-key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                .andReturn();
+        JsonNode rotated = objectMapper.readTree(rotateResult.getResponse().getContentAsString());
+        assertEquals("200", rotated.get("statusCode").asText(), "rotation must succeed: " + rotated);
+        String rotatedToken = rotated.get("refreshToken").asText();
+        assertNotEquals(refreshToken, rotatedToken, "refresh token must rotate, never be reused");
+
+        // Attacker replays the rotated-out token over the real HTTP endpoint.
+        MvcResult replayResult = mockMvc.perform(post("/rapid_stylers/auth/refresh")
+                .header("x-api-key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                .andReturn();
+        assertEquals(401, replayResult.getResponse().getStatus(), "replay of a revoked token must be rejected");
+        JsonNode replayBody = objectMapper.readTree(replayResult.getResponse().getContentAsString());
+        assertTrue(replayBody.get("message").asText().contains("Invalid or expired"),
+                "replay must not reveal that a family was burned: " + replayBody);
+
+        // Theft response: the replay must burn the whole family, so the
+        // legitimately rotated token dies with it and the session is reset.
+        assertTrue(refreshTokenRepo.findByTokenHashAndRevokedFalse(sha256Hex(rotatedToken)).isEmpty(),
+                "replay must revoke the legitimately rotated token (family burn)");
+        MvcResult afterBurnResult = mockMvc.perform(post("/rapid_stylers/auth/refresh")
+                .header("x-api-key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("refreshToken", rotatedToken))))
+                .andReturn();
+        assertEquals(401, afterBurnResult.getResponse().getStatus(),
+                "the legitimately rotated token must no longer refresh after the family burn");
+    }
+
+    @Test
     void stylerEmailIsRejectedWithCustomerOnlyMessage() throws Exception {
         StylerEntity styler = new StylerEntity();
         styler.setEmailAddress(email);

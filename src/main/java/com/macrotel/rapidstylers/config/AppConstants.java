@@ -17,9 +17,9 @@ public class AppConstants {
     // Password: 8+ chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special char
     public static final String PASSWORD_PATTERN = "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#&()-[{}]:;'?/*~$^+=<>.]).{8,30}$";
     public static final String ALGORITHM = "AES";
-    // Encryption key: prefer the ENCRYPT_KEY env var; this fallback keeps
-    // existing encrypted card_details records readable during migration.
-    // WARNING: rotate to a new key via ENCRYPT_KEY before going to production.
+    // Legacy encryption fallback key. It is PUBLIC source code, so EncryptionConfig
+    // refuses to boot on it unless the active Spring profile is "test" — real
+    // environments must set ENCRYPT_KEY (see .env.example: `openssl rand -hex 32`).
     public static final String ENCRYPT_DECRYPT_KEY_FALLBACK = "D0n!T'T&mp3r@w1Th^&()";
 
     // Professional verification workflow states (StylerEntity.verificationStatus)

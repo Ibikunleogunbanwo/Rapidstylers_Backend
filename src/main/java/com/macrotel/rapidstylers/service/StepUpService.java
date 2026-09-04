@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import com.macrotel.rapidstylers.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -67,7 +67,8 @@ public class StepUpService {
         try {
             rateLimiterService.record(key, WINDOW_SECONDS);
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Step-up failure could not be recorded: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "stepup/record-failure",
+                    "Step-up failure could not be recorded: " + ex.getMessage());
         }
     }
 }

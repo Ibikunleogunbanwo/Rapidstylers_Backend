@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -215,6 +216,55 @@ class EncryptionConfigTest {
         // Cross-decrypt must fail — key A can't decrypt key B's output
         assertThrows(Exception.class, () -> configA.decrypt(encryptedB));
         assertThrows(Exception.class, () -> configB.decrypt(encryptedA));
+    }
+
+    // ── Boot-time fallback guard ──────────────────────────────────────
+
+    @Test
+    void bootRefusesPublicFallbackKeyOutsideTestProfile() {
+        EncryptionConfig prodLike = new EncryptionConfig();
+        ReflectionTestUtils.setField(prodLike, "envKey", "");
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("prod");
+        ReflectionTestUtils.setField(prodLike, "environment", env);
+
+        assertThrows(IllegalStateException.class, prodLike::init,
+                "A real environment with no ENCRYPT_KEY must refuse the public fallback key");
+    }
+
+    @Test
+    void bootRefusesFallbackKeyWhenNoProfilesActive() {
+        EncryptionConfig defaultEnv = new EncryptionConfig();
+        ReflectionTestUtils.setField(defaultEnv, "envKey", "");
+        ReflectionTestUtils.setField(defaultEnv, "environment", new MockEnvironment());
+
+        assertThrows(IllegalStateException.class, defaultEnv::init,
+                "No active test profile must also refuse the fallback key");
+    }
+
+    @Test
+    void bootAllowsFallbackKeyUnderTestProfile() throws Exception {
+        EncryptionConfig testLike = new EncryptionConfig();
+        ReflectionTestUtils.setField(testLike, "envKey", "");
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("test");
+        ReflectionTestUtils.setField(testLike, "environment", env);
+
+        assertDoesNotThrow(testLike::init);
+        String plain = "A1234B";
+        assertEquals(plain, testLike.decrypt(testLike.encrypt(plain)));
+    }
+
+    @Test
+    void bootSucceedsWithoutFallbackWhenKeyConfiguredInAnyProfile() throws Exception {
+        EncryptionConfig configured = new EncryptionConfig();
+        ReflectionTestUtils.setField(configured, "envKey", "my-custom-production-key-2024");
+        MockEnvironment env = new MockEnvironment();
+        env.setActiveProfiles("prod");
+        ReflectionTestUtils.setField(configured, "environment", env);
+
+        assertDoesNotThrow(configured::init,
+                "A configured key must boot fine even under the prod profile");
     }
 
     @Test

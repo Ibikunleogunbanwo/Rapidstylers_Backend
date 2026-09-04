@@ -15,4 +15,11 @@ public interface RefreshTokenRepo extends JpaRepository<RefreshTokenEntity, Long
     List<RefreshTokenEntity> findByFamilyId(String familyId);
     @Transactional
     void deleteByAccountIdAndRole(String accountId, String role);
+
+    /** Live (unrevoked) rows across every account — used by housekeeping to cap per-account sessions. */
+    List<RefreshTokenEntity> findByRevokedFalse();
+
+    /** Expired rows (revoked or not) can never validate again; housekeeping deletes them. */
+    @Transactional
+    long deleteByExpiresAtBefore(java.time.LocalDateTime cutoff);
 }

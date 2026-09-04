@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -262,13 +263,16 @@ public class ReadCacheService {
     }
 
     /**
-     * One-line, per-occurrence warning so ongoing degradation is visible without
-     * digging into request logs. Keyed by cache name; never throttled away after
-     * the first hit (the counters in /admin/cache_stats expose the aggregate).
+     * One-line warning per operation per window so ongoing degradation stays
+     * visible without flooding the log on every degraded call. The counters in
+     * /admin/cache_stats still count every occurrence — only the log line is
+     * throttled, keyed by operation (read/write/evict) since every namespace
+     * degrades together when Redis is down.
      */
     private void logDegradation(String cacheName, Exception ex, String operation) {
         totalDegradations.incrementAndGet();
-        LOG.warning("Redis read cache degraded [cache=" + cacheName + " operation=" + operation
-                + "] falling back to direct load: " + ex.getMessage());
+        ThrottledLog.warnOncePerWindow(LOG, "read-cache/" + operation,
+                "Redis read cache degraded [cache=" + cacheName + " operation=" + operation
+                        + "] falling back to direct load: " + ex.getMessage());
     }
 }

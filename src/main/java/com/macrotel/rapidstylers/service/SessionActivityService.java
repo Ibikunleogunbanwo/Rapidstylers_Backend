@@ -1,11 +1,11 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -20,6 +20,10 @@ import java.util.logging.Logger;
  * Fail-open: a Redis miss or error is treated as "not idle" rather than a mass
  * lockout, so an outage or cache flush never logs every user out. A real request
  * re-seeds the timestamp on the next authenticated call.
+ *
+ * Values are plain numeric strings, so this uses the string-serialized template
+ * — a JSON value serializer would quote them on the wire and break parsing for
+ * any plain-string reader (the rate-limiter class of bug).
  */
 @Service
 public class SessionActivityService {
@@ -33,7 +37,7 @@ public class SessionActivityService {
     // race the key's natural eviction right at the boundary.
     private static final long ACTIVITY_BUFFER_MINUTES = 10;
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${app.session.idle.customer-minutes:60}")
     private long customerIdleMinutes;
@@ -55,7 +59,7 @@ public class SessionActivityService {
     @Value("${app.session.absolute.admin-hours:8}")
     private long adminAbsoluteHours;
 
-    public SessionActivityService(RedisTemplate<String, Object> redisTemplate) {
+    public SessionActivityService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
@@ -83,7 +87,8 @@ public class SessionActivityService {
             redisTemplate.opsForValue().set(
                     activityKey(accountId), String.valueOf(System.currentTimeMillis()), ttl);
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session activity touch failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/touch",
+                    "Session activity touch failed for " + accountId + ": " + ex.getMessage());
         }
     }
 
@@ -94,18 +99,19 @@ public class SessionActivityService {
      */
     public boolean isIdle(String accountId, String role) {
         try {
-            Object raw = redisTemplate.opsForValue().get(activityKey(accountId));
-            if (raw == null) {
+            String value = redisTemplate.opsForValue().get(activityKey(accountId));
+            if (value == null) {
                 return false; // no record yet / Redis was flushed — give the benefit of the doubt
             }
-            String value = String.valueOf(raw).trim();
+            value = value.trim();
             if (value.isEmpty()) {
                 return false;
             }
             long lastActivity = Long.parseLong(value);
             return (System.currentTimeMillis() - lastActivity) >= idleMsFor(role);
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session activity read failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/read",
+                    "Session activity read failed for " + accountId + ": " + ex.getMessage());
             return false;
         }
     }
@@ -124,7 +130,8 @@ public class SessionActivityService {
             redisTemplate.opsForValue().set(
                     startKey(accountId), String.valueOf(System.currentTimeMillis()), ttl);
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session start write failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/start-write",
+                    "Session start write failed for " + accountId + ": " + ex.getMessage());
         }
     }
 
@@ -139,14 +146,15 @@ public class SessionActivityService {
             return false;
         }
         try {
-            Object raw = redisTemplate.opsForValue().get(startKey(accountId));
+            String raw = redisTemplate.opsForValue().get(startKey(accountId));
             if (raw == null) {
                 return false;
             }
-            long startedAt = Long.parseLong(String.valueOf(raw).trim());
+            long startedAt = Long.parseLong(raw.trim());
             return (System.currentTimeMillis() - startedAt) >= hours * 3600_000L;
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session start read failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/start-read",
+                    "Session start read failed for " + accountId + ": " + ex.getMessage());
             return false;
         }
     }
@@ -156,12 +164,14 @@ public class SessionActivityService {
         try {
             redisTemplate.delete(activityKey(accountId));
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session activity clear failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/activity-clear",
+                    "Session activity clear failed for " + accountId + ": " + ex.getMessage());
         }
         try {
             redisTemplate.delete(startKey(accountId));
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session start clear failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/start-clear",
+                    "Session start clear failed for " + accountId + ": " + ex.getMessage());
         }
     }
 

@@ -66,7 +66,7 @@ public class AdminAccountController {
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(admins);
-        return ResponseEntity.ok(response);
+        return ApiResponses.respond(response);
     }
 
     private ResponseEntity<BaseResponse> stepUpRequired() {
@@ -105,14 +105,14 @@ public class AdminAccountController {
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("An admin with this email already exists.");
             response.setData(new Object[0]);
-            return ResponseEntity.ok(response);
+            return ApiResponses.respond(response);
         }
         String weakMessage = weakPasswordMessage(data.getPassword());
         if (weakMessage != null) {
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage(weakMessage);
             response.setData(new Object[0]);
-            return ResponseEntity.ok(response);
+            return ApiResponses.respond(response);
         }
         ResponseEntity<BaseResponse> stepUp = requireStepUp();
         if (stepUp != null) return stepUp;
@@ -125,7 +125,7 @@ public class AdminAccountController {
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));
-        return ResponseEntity.ok(response);
+        return ApiResponses.respond(response);
     }
 
     @PostMapping("/{id}/password")
@@ -137,7 +137,7 @@ public class AdminAccountController {
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage(weakMessage);
             response.setData(new Object[0]);
-            return ResponseEntity.ok(response);
+            return ApiResponses.respond(response);
         }
         ResponseEntity<BaseResponse> stepUp = requireStepUp();
         if (stepUp != null) return stepUp;
@@ -146,14 +146,14 @@ public class AdminAccountController {
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("Admin account not found.");
             response.setData(new Object[0]);
-            return ResponseEntity.ok(response);
+            return ApiResponses.respond(response);
         }
         account.setPasswordHash(passwordEncoder.encode(data.getPassword()));
         adminAccountRepo.save(account);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));
-        return ResponseEntity.ok(response);
+        return ApiResponses.respond(response);
     }
 
     @PostMapping("/{id}/disable")
@@ -175,14 +175,14 @@ public class AdminAccountController {
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("Admin account not found.");
             response.setData(new Object[0]);
-            return ResponseEntity.ok(response);
+            return ApiResponses.respond(response);
         }
         account.setEnabled(enabled);
         adminAccountRepo.save(account);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));
-        return ResponseEntity.ok(response);
+        return ApiResponses.respond(response);
     }
 
     /**

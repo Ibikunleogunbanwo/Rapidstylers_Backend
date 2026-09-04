@@ -69,7 +69,7 @@ public class AdminAuthController {
             response.setMessage("Too many failed attempts. Please try again later.");
             response.setData(new Object[0]);
             recordLoginFailure(emailAddress, ip, "LOCKED_OUT");
-            return ResponseEntity.ok(response);
+            return ApiResponses.respond(response);
         }
         Optional<AdminAccountEntity> existing = adminAccountRepo.findByEmailIgnoreCase(emailAddress);
         boolean valid = existing.isPresent()
@@ -82,7 +82,7 @@ public class AdminAuthController {
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("Invalid admin credentials");
             response.setData(new Object[0]);
-            return ResponseEntity.ok(response);
+            return ApiResponses.respond(response);
         }
         try {
             Map<String, Object> data = new LinkedHashMap<>();
@@ -103,7 +103,7 @@ public class AdminAuthController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(new BaseResponse(true));
         }
-        return ResponseEntity.ok(response);
+        return ApiResponses.respond(response);
     }
 
     private void recordLoginFailure(String emailAddress, String ip, String reason) {
