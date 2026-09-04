@@ -94,6 +94,12 @@ class AppServiceConcurrencyTest {
             return dto;
         });
 
+        // /user_sign_in now issues a refresh token on success, so the harness
+        // must wire the service (leaving it null would NPE into the catch block).
+        RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
+        when(refreshTokenService.issue(anyString(), anyString()))
+                .thenAnswer(invocation -> "RT_" + THREAD_MARKER.get());
+
         // Package-private fields — the test lives in the same package.
         appService.userRepo = userRepo;
         appService.rateLimiterService = rateLimiterService;
@@ -101,6 +107,7 @@ class AppServiceConcurrencyTest {
         appService.jwtUtil = jwtUtil;
         appService.dtoService = dtoService;
         appService.appUtils = appUtils;
+        appService.refreshTokenService = refreshTokenService;
     }
 
     @Test
