@@ -26,6 +26,12 @@ import java.util.List;
  * caught now and any that appear later are handled without a code change. Fresh
  * databases already create InnoDB tables (Hibernate's dialect default), so on
  * those this is a no-op. Never fails startup.
+ *
+ * <p>Logging is deliberately quiet: a fresh CI/test database boot converts the
+ * whole legacy set in one burst, so the per-table detail is DEBUG and the only
+ * INFO line is a single summary with the converted count (the ops-relevant
+ * signal). Repeated contexts on the same schema convert nothing and stay
+ * silent.
  */
 @Component
 public class InnoDbReconciler implements ApplicationRunner {
@@ -71,7 +77,7 @@ public class InnoDbReconciler implements ApplicationRunner {
             return;
         }
         jdbcTemplate.execute("ALTER TABLE `" + table + "` ENGINE=InnoDB");
-        log.info("Converted table {} from {} to InnoDB so transactional rollback, "
+        log.debug("Converted table {} from {} to InnoDB so transactional rollback, "
                 + "row locks and unique constraints work correctly.", table, engine);
     }
 }
