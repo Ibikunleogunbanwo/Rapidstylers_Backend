@@ -1045,9 +1045,13 @@ public class ApplicationController {
             response.setMessage("Refresh token is required");
             return ResponseEntity.badRequest().body(response);
         }
-        // Validate the old token first
+        // Validate the old token first. A known-but-revoked token (rotated out or
+        // logged out) must never be presented again — replaying one is the classic
+        // stolen-session signal, so burn its entire family before rejecting. Unknown
+        // or merely-expired tokens just get the plain rejection below.
         var tokenEntity = refreshTokenService.validate(refreshTokenValue);
         if (tokenEntity == null) {
+            refreshTokenService.burnFamilyForReplayedToken(refreshTokenValue);
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("Invalid or expired refresh token");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);

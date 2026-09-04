@@ -69,6 +69,14 @@ class RefreshTokenServiceTest {
             store.removeIf(t -> accountId.equals(t.getAccountId()) && role.equals(t.getRole()));
             return null;
         }).when(repo).deleteByAccountIdAndRole(anyString(), anyString());
+        when(repo.findByRevokedFalse()).thenAnswer(inv ->
+                store.stream().filter(t -> !t.isRevoked()).toList());
+        doAnswer(inv -> {
+            LocalDateTime cutoff = inv.getArgument(0);
+            long removed = store.stream().filter(t -> t.getExpiresAt().isBefore(cutoff)).count();
+            store.removeIf(t -> t.getExpiresAt().isBefore(cutoff));
+            return removed;
+        }).when(repo).deleteByExpiresAtBefore(any(LocalDateTime.class));
 
         service = new RefreshTokenService(repo);
         ReflectionTestUtils.setField(service, "refreshTtlDays", 7L);
@@ -135,6 +143,43 @@ class RefreshTokenServiceTest {
     }
 
     @Test
+    void replayedRevokedTokenBurnsTheWholeFamily() {
+        String first = service.issue("ACCOUNT-1", "CUSTOMER");
+        String second = service.rotate(first); // `first` now revoked, `second` active
+        assertNotNull(second);
+
+        // The refresh endpoint calls this after validate() rejects a revoked token.
+        boolean burned = service.burnFamilyForReplayedToken(first);
+
+        assertTrue(burned, "replay of a known revoked token must report a family burn");
+        assertTrue(store.stream().allMatch(RefreshTokenEntity::isRevoked),
+                "replayed revoked token must revoke the entire family (theft response)");
+        assertNull(service.validate(second), "the legitimately rotated token must die with the family");
+    }
+
+    @Test
+    void burnFamilyForReplayedTokenIgnoresUnknownTokens() {
+        service.issue("ACCOUNT-1", "CUSTOMER");
+
+        boolean burned = service.burnFamilyForReplayedToken("never-issued-token");
+
+        assertFalse(burned, "an unknown token is a plain rejection, not theft evidence");
+        assertTrue(store.stream().noneMatch(RefreshTokenEntity::isRevoked),
+                "an unknown token must not revoke anything");
+    }
+
+    @Test
+    void burnFamilyForReplayedTokenDoesNotBurnAMerelyExpiredToken() {
+        String raw = service.issue("ACCOUNT-1", "CUSTOMER");
+        store.get(0).setExpiresAt(LocalDateTime.now().minusMinutes(1)); // expired, never revoked
+
+        boolean burned = service.burnFamilyForReplayedToken(raw);
+
+        assertFalse(burned, "an expired-but-never-revoked token is a stale session, not a replay");
+        assertFalse(store.get(0).isRevoked(), "the expired token must not be marked revoked");
+    }
+
+    @Test
     void revokeKillsTheTokenSoItNoLongerValidates() {
         String raw = service.issue("ACCOUNT-1", "CUSTOMER");
 
@@ -159,6 +204,74 @@ class RefreshTokenServiceTest {
         service.revokeAllForAccount("ACCOUNT-1", "CUSTOMER");
 
         assertTrue(store.isEmpty(), "logout must clear every refresh token for the account");
+    }
+
+    @Test
+    void housekeepDeletesExpiredTokens() {
+        service.issue("ACCOUNT-1", "CUSTOMER");
+        service.issue("ACCOUNT-2", "STYLER");
+        LocalDateTime past = LocalDateTime.now().minusDays(8); // past the 7-day TTL
+        store.forEach(t -> t.setExpiresAt(past));
+
+        long[] result = service.housekeep(10);
+
+        assertEquals(2L, result[0], "every expired row (revoked or not) must be deleted");
+        assertEquals(0L, result[1]);
+        assertTrue(store.isEmpty(), "expired tokens must be purged from the table");
+    }
+
+    @Test
+    void housekeepRevokesLiveTokensBeyondTheCapKeepingTheNewest() {
+        String oldest = service.issue("ACCOUNT-1", "CUSTOMER");
+        String middle = service.issue("ACCOUNT-1", "CUSTOMER");
+        String newest = service.issue("ACCOUNT-1", "CUSTOMER");
+
+        long[] result = service.housekeep(1); // keep only the single newest live token
+
+        assertEquals(0L, result[0]);
+        assertEquals(2L, result[1], "two surplus live tokens must be revoked");
+        assertTrue(row(oldest).isRevoked(), "oldest live token must be revoked");
+        assertTrue(row(middle).isRevoked(), "second-oldest live token must be revoked");
+        assertFalse(row(newest).isRevoked(), "the newest live token must be kept");
+        assertNull(service.validate(oldest), "revoked surplus must stop refreshing");
+        assertNotNull(service.validate(newest), "the kept token must stay usable");
+    }
+
+    @Test
+    void housekeepCapsEachAccountIndependently() {
+        service.issue("ACCOUNT-A", "CUSTOMER");
+        service.issue("ACCOUNT-A", "CUSTOMER");
+        service.issue("ACCOUNT-B", "STYLER");
+        service.issue("ACCOUNT-B", "STYLER");
+        service.issue("ACCOUNT-B", "STYLER");
+        service.issue("ACCOUNT-B", "STYLER");
+
+        long[] result = service.housekeep(2);
+
+        assertEquals(2L, result[1], "A loses nothing (2 live <= 2), B loses 2 of its 4 live");
+        assertEquals(2L, store.stream()
+                .filter(t -> t.getAccountId().equals("ACCOUNT-A") && !t.isRevoked()).count());
+        assertEquals(2L, store.stream()
+                .filter(t -> t.getAccountId().equals("ACCOUNT-B") && !t.isRevoked()).count());
+    }
+
+    @Test
+    void housekeepUnderTheCapIsANoOpAndSparesRevokedEvidence() {
+        String first = service.issue("ACCOUNT-1", "CUSTOMER");
+        String second = service.rotate(first); // `first` revoked but unexpired — replay evidence
+
+        long[] result = service.housekeep(10);
+
+        assertEquals(0L, result[0]);
+        assertEquals(0L, result[1], "under the cap nothing may be revoked");
+        assertEquals(2, store.size(), "revoked-but-unexpired evidence rows must not be deleted");
+        assertTrue(row(first).isRevoked());
+        assertNotNull(service.validate(second), "live rotated token must survive an under-cap run");
+    }
+
+    private RefreshTokenEntity row(String raw) {
+        String rawHash = hash(raw);
+        return store.stream().filter(t -> rawHash.equals(t.getTokenHash())).findFirst().orElseThrow();
     }
 
     private String hash(String raw) {
