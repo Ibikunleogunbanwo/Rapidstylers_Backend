@@ -48,6 +48,7 @@ class RateLimiterServiceRedisIntegrationTest {
     private static LettuceConnectionFactory connectionFactory;
     private static StringRedisTemplate redisTemplate;
     private static RateLimiterService rateLimiter;
+    private static boolean connected;
 
     @BeforeAll
     static void connectToLiveRedis() {
@@ -69,19 +70,27 @@ class RateLimiterServiceRedisIntegrationTest {
         redisTemplate.afterPropertiesSet();
 
         boolean reachable = ping(redisTemplate);
+        // No destroy() on the skip path: @AfterAll runs even after a @BeforeAll
+        // abort, so cleanup below must be the single place that tears the factory
+        // down (a second destroy() throws IllegalStateException, which is exactly
+        // what turned a clean skip into a failure on CI, where Redis is absent).
         if (!reachable) {
-            connectionFactory.destroy();
             assumeTrue(false, "Live Redis not reachable at " + host + ":" + port + " — skipping Redis integration test");
         }
+        connected = true;
         rateLimiter = new RateLimiterService(redisTemplate);
     }
 
     @AfterAll
     static void cleanUp() {
-        if (redisTemplate != null) {
-            Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
+        if (connected) {
+            try {
+                Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
+                if (keys != null && !keys.isEmpty()) {
+                    redisTemplate.delete(keys);
+                }
+            } catch (Exception ignored) {
+                // Redis became unreachable mid-run; nothing left to clean.
             }
         }
         if (connectionFactory != null) {

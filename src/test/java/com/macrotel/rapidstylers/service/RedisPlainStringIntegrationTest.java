@@ -57,6 +57,7 @@ class RedisPlainStringIntegrationTest {
 
     private static LettuceConnectionFactory connectionFactory;
     private static StringRedisTemplate redisTemplate;
+    private static boolean connected;
     private static final List<String> trackedKeys = new ArrayList<>();
 
     // Services under test, wired with the string-serialized template like production.
@@ -83,10 +84,14 @@ class RedisPlainStringIntegrationTest {
         redisTemplate.afterPropertiesSet();
 
         boolean reachable = ping(redisTemplate);
+        // No destroy() on the skip path: @AfterAll runs even after a @BeforeAll
+        // abort, so cleanup below must be the single place that tears the factory
+        // down (a second destroy() throws IllegalStateException, which is exactly
+        // what turned a clean skip into a failure on CI, where Redis is absent).
         if (!reachable) {
-            connectionFactory.destroy();
             assumeTrue(false, "Live Redis not reachable at " + host + ":" + port + " — skipping plain-string integration test");
         }
+        connected = true;
 
         idempotency = new IdempotencyService(redisTemplate);
         sessionActivity = new SessionActivityService(redisTemplate);
@@ -100,7 +105,7 @@ class RedisPlainStringIntegrationTest {
 
     @AfterAll
     static void cleanUp() {
-        if (redisTemplate != null) {
+        if (connected) {
             // Remove the geo test member if still present, then drop every tracked key.
             try {
                 redisTemplate.opsForZSet().remove("stylers:geo", GEO_MEMBER);
