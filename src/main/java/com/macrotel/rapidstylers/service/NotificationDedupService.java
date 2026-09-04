@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -59,11 +60,13 @@ public class NotificationDedupService {
             return Boolean.TRUE.equals(claimed);
         } catch (Exception ex) {
             // Fail-open is deliberate (never lose an email), but it must be observable:
-            // every outage is counted and logged so ops can detect duplicate-mail
-            // risk instead of only noticing after customers receive doubles.
+            // every outage is counted; the log line is throttled to once per window
+            // (the counter keeps rising so ops can detect duplicate-mail risk instead
+            // of only noticing after customers receive doubles).
             totalDegradations.incrementAndGet();
-            LOG.warning("Notification dedup unavailable — processing anyway (degradations="
-                    + totalDegradations.get() + "): " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "dedup/claim",
+                    "Notification dedup unavailable — processing anyway (degradations="
+                            + totalDegradations.get() + "): " + ex.getMessage());
             return true;
         }
     }
@@ -77,7 +80,8 @@ public class NotificationDedupService {
             redisTemplate.delete(KEY_PREFIX + eventId);
         } catch (Exception ex) {
             totalDegradations.incrementAndGet();
-            LOG.warning("Notification dedup release failed: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "dedup/release",
+                    "Notification dedup release failed: " + ex.getMessage());
         }
     }
 

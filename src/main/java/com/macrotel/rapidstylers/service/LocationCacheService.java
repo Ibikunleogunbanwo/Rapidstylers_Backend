@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.data.geo.*;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.GeoOperations;
@@ -56,8 +57,9 @@ public class LocationCacheService {
             LOG.info("Indexed styler " + stylerId + " at [" + latitude + ", " + longitude + "]");
         } catch (Exception ex) {
             totalFailures.incrementAndGet();
-            LOG.warning("Failed to index styler " + stylerId + " (failures="
-                    + totalFailures.get() + "): " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "geo/index",
+                    "Failed to index styler " + stylerId + " (failures="
+                            + totalFailures.get() + "): " + ex.getMessage());
         }
     }
 
@@ -69,8 +71,9 @@ public class LocationCacheService {
             redisTemplate.opsForZSet().remove(GEO_KEY, stylerId);
         } catch (Exception ex) {
             totalFailures.incrementAndGet();
-            LOG.warning("Failed to remove styler " + stylerId + " from geo index (failures="
-                    + totalFailures.get() + "): " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "geo/remove",
+                    "Failed to remove styler " + stylerId + " from geo index (failures="
+                            + totalFailures.get() + "): " + ex.getMessage());
         }
     }
 
@@ -108,7 +111,8 @@ public class LocationCacheService {
 
         } catch (Exception ex) {
             totalFailures.incrementAndGet();
-            LOG.warning("Radius search error (failures=" + totalFailures.get() + "): " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "geo/radius",
+                    "Radius search error (failures=" + totalFailures.get() + "): " + ex.getMessage());
             return Collections.emptyMap();
         }
     }
@@ -134,7 +138,8 @@ public class LocationCacheService {
             redisTemplate.delete(GEO_KEY);
         } catch (Exception ex) {
             totalFailures.incrementAndGet();
-            LOG.warning("Failed to clear stylist geo index (failures=" + totalFailures.get() + "): " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "geo/clear",
+                    "Failed to clear stylist geo index (failures=" + totalFailures.get() + "): " + ex.getMessage());
         }
     }
 

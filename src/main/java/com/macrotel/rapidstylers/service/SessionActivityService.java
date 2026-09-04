@@ -1,11 +1,11 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -87,7 +87,8 @@ public class SessionActivityService {
             redisTemplate.opsForValue().set(
                     activityKey(accountId), String.valueOf(System.currentTimeMillis()), ttl);
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session activity touch failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/touch",
+                    "Session activity touch failed for " + accountId + ": " + ex.getMessage());
         }
     }
 
@@ -109,7 +110,8 @@ public class SessionActivityService {
             long lastActivity = Long.parseLong(value);
             return (System.currentTimeMillis() - lastActivity) >= idleMsFor(role);
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session activity read failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/read",
+                    "Session activity read failed for " + accountId + ": " + ex.getMessage());
             return false;
         }
     }
@@ -128,7 +130,8 @@ public class SessionActivityService {
             redisTemplate.opsForValue().set(
                     startKey(accountId), String.valueOf(System.currentTimeMillis()), ttl);
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session start write failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/start-write",
+                    "Session start write failed for " + accountId + ": " + ex.getMessage());
         }
     }
 
@@ -150,7 +153,8 @@ public class SessionActivityService {
             long startedAt = Long.parseLong(raw.trim());
             return (System.currentTimeMillis() - startedAt) >= hours * 3600_000L;
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session start read failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/start-read",
+                    "Session start read failed for " + accountId + ": " + ex.getMessage());
             return false;
         }
     }
@@ -160,12 +164,14 @@ public class SessionActivityService {
         try {
             redisTemplate.delete(activityKey(accountId));
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session activity clear failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/activity-clear",
+                    "Session activity clear failed for " + accountId + ": " + ex.getMessage());
         }
         try {
             redisTemplate.delete(startKey(accountId));
         } catch (Exception ex) {
-            LOG.log(Level.WARNING, "Session start clear failed for " + accountId + ": " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "session/start-clear",
+                    "Session start clear failed for " + accountId + ": " + ex.getMessage());
         }
     }
 
