@@ -1004,9 +1004,12 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    /** Decrypts a value encrypted with AES/GCM on the backend. The frontend calls this
-     *  instead of holding the decryption key itself. */
+    /** Admin-only: decrypts a value encrypted with AES/GCM under the app key. Locked
+     *  down because any authenticated role could otherwise use it as a decryption
+     *  oracle for arbitrary ciphertext (card user-ids are stored plaintext now, so no
+     *  customer/styler flow needs it). */
     @PostMapping("/decrypt")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> decrypt(@RequestBody Map<String, String> body, HttpServletRequest request){
         String accountId = currentAccountId(request);
         if(accountId == null) return unauthorized();
