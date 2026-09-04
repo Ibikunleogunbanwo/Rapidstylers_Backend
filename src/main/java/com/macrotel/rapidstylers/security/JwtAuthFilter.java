@@ -75,7 +75,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/cancel_appointment", "CUSTOMER");
         allow("/rapid_stylers/retry_appointment_payment", "CUSTOMER");
         allow("/rapid_stylers/card_setup_intent", "CUSTOMER");
-        allow("/rapid_stylers/decrypt", "CUSTOMER", "STYLER", "ADMIN");
+        // Decryption oracle — any role could otherwise decrypt arbitrary ciphertext
+        // under the app key. Card user-ids are stored plaintext now, so only ADMIN
+        // (support/diagnosis) legitimately needs it.
+        allow("/rapid_stylers/decrypt", "ADMIN");
 
         allow("/rapid_stylers/styler_appointments", "STYLER");
         allow("/rapid_stylers/styler_availability", "STYLER");

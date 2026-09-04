@@ -1,6 +1,9 @@
 package com.macrotel.rapidstylers.config;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
@@ -22,13 +25,18 @@ import static com.macrotel.rapidstylers.config.AppConstants.ENCRYPT_DECRYPT_KEY_
  *
  * <p>The encryption key is resolved in order:
  * <ol>
- *   <li>Environment variable {@code ENCRYPT_KEY} (recommended for production)</li>
- *   <li>Fallback to the legacy hardcoded key (keeps existing records readable)</li>
+ *   <li>{@code app.encrypt.key} property (highest precedence, set by tests)</li>
+ *   <li>{@code ENCRYPT_KEY} environment variable / .env entry (recommended for
+ *       dev and production)</li>
+ *   <li>{@link AppConstants#ENCRYPT_DECRYPT_KEY_FALLBACK} — the legacy hardcoded
+ *       key. Because it is public source code, using it outside tests would make
+ *       every ciphertext decryptable by anyone with the repo, so a boot-time
+ *       guard refuses to start on it unless the {@code test} profile is active.
  * </ol>
  *
  * <p>AES/GCM provides authenticated encryption with a random 12-byte IV per
  * ciphertext, which is prepended to the output. Old AES/ECB records are
- * transparently re-encrypted on the next read via {@link #encryptWithLegacyFallback}.
+ * transparently migrated on the next read via the legacy helpers below.
  */
 @Component
 public class EncryptionConfig {
@@ -42,8 +50,22 @@ public class EncryptionConfig {
     private SecretKeySpec legacyKey;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    @Value("${app.encrypt.key:}")
+    /**
+     * Property {@code app.encrypt.key}, falling back to the {@code ENCRYPT_KEY}
+     * env var/.env entry. Main config never sets {@code app.encrypt.key}, so this
+     * wires the value exported from .env; tests pin {@code app.encrypt.key=} (empty)
+     * to use the deterministic fallback key regardless of the local .env.
+     */
+    @Value("${app.encrypt.key:${ENCRYPT_KEY:}}")
     private String envKey;
+
+    /**
+     * Spring Environment when this bean is created by a context; null when the
+     * class is constructed directly (unit tests), in which case the boot-time
+     * fallback guard is skipped.
+     */
+    @Autowired(required = false)
+    private Environment environment;
 
     @PostConstruct
     void init() {
@@ -55,13 +77,35 @@ public class EncryptionConfig {
     }
 
     private byte[] resolveKeyMaterial() {
-        String keySource = (envKey != null && !envKey.trim().isEmpty())
-                ? envKey : ENCRYPT_DECRYPT_KEY_FALLBACK;
+        boolean configured = envKey != null && !envKey.trim().isEmpty();
+        if (!configured) {
+            assertFallbackAllowed();
+        }
+        String keySource = configured ? envKey : ENCRYPT_DECRYPT_KEY_FALLBACK;
         try {
             return MessageDigest.getInstance("SHA-256")
                     .digest(keySource.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new RuntimeException("Failed to derive encryption key", e);
+        }
+    }
+
+    /**
+     * Fail-closed guard: the fallback key is a public constant, so running on it
+     * outside the {@code test} profile means anyone with the repo can decrypt the
+     * app's ciphertext. Refuse to boot instead of silently degrading. (Direct
+     * constructions with no Spring Environment — e.g. unit tests — skip the guard.)
+     */
+    private void assertFallbackAllowed() {
+        if (environment == null) {
+            return;
+        }
+        if (!environment.acceptsProfiles(Profiles.of("test"))) {
+            throw new IllegalStateException(
+                    "Encryption is using the public hardcoded fallback key (ENCRYPT_DECRYPT_KEY_FALLBACK) "
+                    + "because no app.encrypt.key / ENCRYPT_KEY is configured. Refusing to start outside the "
+                    + "test profile. Set ENCRYPT_KEY (e.g. `openssl rand -hex 32`) in .env or the container "
+                    + "environment and restart.");
         }
     }
 

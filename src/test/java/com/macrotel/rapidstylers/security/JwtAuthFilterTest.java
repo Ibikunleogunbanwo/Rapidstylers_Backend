@@ -171,6 +171,65 @@ class JwtAuthFilterTest {
     }
 
     @Test
+    void decryptEndpointAllowsAdminRole() throws ServletException, IOException {
+        // /decrypt was previously open to CUSTOMER/STYLER/ADMIN — a decryption
+        // oracle. Locked to ADMIN: lock the allowlist entry in place so a revert
+        // of the role restriction fails this test.
+        Claims claims = Jwts.claims().setSubject("ADMIN1");
+        claims.put("role", "ADMIN");
+        when(jwtUtil.parseToken("admin-token")).thenReturn(claims);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
+        request.addHeader("Authorization", "Bearer admin-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(200, response.getStatus());
+        assertEquals("ADMIN1", request.getAttribute("accountId"));
+    }
+
+    @Test
+    void decryptEndpointRejectsCustomerRole() throws ServletException, IOException {
+        Claims claims = Jwts.claims().setSubject("CUST1");
+        claims.put("role", "CUSTOMER");
+        when(jwtUtil.parseToken("customer-token")).thenReturn(claims);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
+        request.addHeader("Authorization", "Bearer customer-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(401, response.getStatus());
+    }
+
+    @Test
+    void decryptEndpointRejectsStylerRole() throws ServletException, IOException {
+        Claims claims = Jwts.claims().setSubject("STYLER1");
+        claims.put("role", "STYLER");
+        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
+        request.addHeader("Authorization", "Bearer styler-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(401, response.getStatus());
+    }
+
+    @Test
+    void decryptEndpointRejectsAnonymous() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(401, response.getStatus());
+    }
+
+    @Test
     void cacheStatsListedForAdminRole() throws ServletException, IOException {
         // Mirrors the recovery_campaigns guard: the endpoint is @PreAuthorize(ADMIN)
         // and only succeeds when the filter lists the path and populates the context.
