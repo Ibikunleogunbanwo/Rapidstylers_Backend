@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -51,7 +52,8 @@ public class IdempotencyService {
         try {
             redisTemplate.opsForValue().set(responseKey, responseJson, Duration.ofHours(1));
         } catch (Exception ex) {
-            LOG.warning("Failed to store idempotency response: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "idempotency/store",
+                    "Failed to store idempotency response: " + ex.getMessage());
         }
     }
 
@@ -68,7 +70,8 @@ public class IdempotencyService {
             Object stored = redisTemplate.opsForValue().get(responseKey);
             return stored != null ? String.valueOf(stored) : null;
         } catch (Exception ex) {
-            LOG.warning("Failed to retrieve idempotency response: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "idempotency/retrieve",
+                    "Failed to retrieve idempotency response: " + ex.getMessage());
             return null;
         }
     }
@@ -83,7 +86,8 @@ public class IdempotencyService {
         } catch (Exception ex) {
             // Best-effort cleanup — a claim that cannot be released only lingers
             // until its TTL expires; never throw on the request path.
-            LOG.warning("Failed to release idempotency claim: " + ex.getMessage());
+            ThrottledLog.warnOncePerWindow(LOG, "idempotency/release",
+                    "Failed to release idempotency claim: " + ex.getMessage());
         }
     }
 
