@@ -793,13 +793,6 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try{
             String emailAddress = otpData.getEmailAddress();
-            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(emailAddress);
-            if(isEmailExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Email Address, Kindly create an account");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
             // Same global budget as signup OTPs: lockouts and caps apply here too.
             String ip = rateLimiterService.clientIp();
             if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
@@ -815,6 +808,16 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            // Enumeration-safe: an unknown email gets the identical generic success
+            // response as a registered one — no OTP is issued and no mail is sent,
+            // so valid and invalid addresses are indistinguishable.
+            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(emailAddress);
+            if(isEmailExist.isEmpty()){
+                response.setStatusCode(SUCCESS_STATUS_CODE);
+                response.setMessage("Password Reset Initiated, Check Mail for OTP Code");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             rateLimiterService.record("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS);
             UserEntity userEntity = isEmailExist.get();
             String firstname = userEntity.getFirstname();
@@ -822,7 +825,7 @@ public class AppService {
             OTPEntity otpEntity = new OTPEntity();
 
             otpEntity.setEmailAddress(emailAddress);
-            otpEntity.setCode(otpCode);
+            otpEntity.setCode(appUtils.hashOtp(otpCode));
             otpEntity.setPurpose("FORGET PASSWORD");
             otpRepo.save(otpEntity);
 

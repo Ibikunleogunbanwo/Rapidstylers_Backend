@@ -49,6 +49,7 @@ class OtpSecurityTest {
 
     private static final Pattern OTP_IN_EMAIL = Pattern.compile("OTP Code: <strong>(\\d{6})</strong>");
     private static final String GENERIC_SENT = "A one-time password (OTP) code has been sent to your email. Please verify it.";
+    private static final String RESET_SENT = "Password Reset Initiated, Check Mail for OTP Code";
 
     private AppService appService;
     private UserRepo userRepo;
@@ -254,6 +255,50 @@ class OtpSecurityTest {
         assertEquals(GENERIC_SENT, response.getMessage());
         verify(otpRepo, never()).save(any());
         verify(emailConfig, never()).sendSimpleMail(anyString(), anyString(), anyString());
+    }
+
+    // ── Password-reset OTP: enumeration-safe + hashed + verifiable ────
+
+    @Test
+    void resetOtpForUnknownEmailDoesNotEnumerate() {
+        // userRepo mock returns empty by default in setUp.
+        BaseResponse response = appService.resetPasswordMessage(otpData("ghost@example.com"));
+
+        assertEquals("200", response.getStatusCode(), "unknown email must look like success");
+        assertEquals(RESET_SENT, response.getMessage(), "response must be identical to a registered email");
+        verify(otpRepo, never()).save(any());
+        verify(emailConfig, never()).sendSimpleMail(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void resetOtpForKnownEmailIsStoredAsHashNotPlaintext() {
+        when(userRepo.findByEmailAddress("real@example.com"))
+                .thenReturn(Optional.of(mock(UserEntity.class)));
+
+        BaseResponse response = appService.resetPasswordMessage(otpData("real@example.com"));
+
+        assertEquals("200", response.getStatusCode());
+        OTPEntity saved = captureSavedOtp();
+        assertEquals("FORGET PASSWORD", saved.getPurpose());
+        String emailedCode = codeFromLastEmail();
+        assertNotEquals(emailedCode, saved.getCode(), "reset OTP must not be stored in plaintext");
+        assertTrue(saved.getCode().startsWith("$2"), "reset OTP must be stored as a BCrypt hash");
+        assertTrue(new AppUtils().otpMatches(emailedCode, saved.getCode()),
+                "stored hash must verify against the code sent by email");
+    }
+
+    @Test
+    void hashedPasswordResetOtpStillVerifiesWithEmailBinding() {
+        // The exact failure mode: if a reset OTP were stored plaintext, verification
+        // (which now compares against a BCrypt hash) would reject every reset code.
+        when(otpRepo.findLatestUnusedByEmail("real@example.com"))
+                .thenReturn(Optional.of(otpEntity("real@example.com", "FORGET PASSWORD", "123456")));
+
+        BaseResponse response = appService.verifyUserOTP("real@example.com", "123456");
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals("Email Address Verify Successful", response.getMessage());
+        verify(otpRepo).save(argThat(otp -> otp.getIsUsed() != null && otp.getIsUsed().equals("0")));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
