@@ -244,15 +244,8 @@ public class AppService {
             otpEntity.setCode(appUtils.hashOtp(otpCode));
             otpRepo.save(otpEntity);
 
-            //Send Mail to user
-            String emailSubject = "Rapid Stylers! Email Confirmation";
-            String emailBody = "Dear " + appUtils.extractUsername( otpData.getEmailAddress()) + ",<br><br>"
-                    + "Welcome to Rapid Stylers! Your account has been created successfully."
-                    + "<br>To verify your email, please use the following OTP code:<br><br>"
-                    + "OTP Code: <strong>" + otpCode  + "</strong><br><br>"
-                    + "Please enter this OTP code to complete your account registration process.<br><br>"
-                    + "Thank you,<br>The Rapid Stylers Team";
-            emailConfig.sendSimpleMail(otpData.getEmailAddress(),emailSubject,emailBody);
+            //Send Mail to user (shared, purpose-neutral OTP email — see sendOtpEmail)
+            sendOtpEmail(email, appUtils.extractUsername(email), otpCode);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
@@ -829,15 +822,10 @@ public class AppService {
             otpEntity.setPurpose("FORGET PASSWORD");
             otpRepo.save(otpEntity);
 
-            //Email Message
-            String emailSubject = "RapidStylers Password Reset Request";
-            String emailBody = "Dear " + firstname + ",<br><br>"
-                    + "We received a request to reset your RapidStylers account password."
-                    + "<br>To proceed with the password reset, please use the following:<br><br>"
-                    + "OTP Code: <strong>" + otpCode  + "</strong><br><br>"
-                    + "Enter this OTP code to complete the password reset process. If you didn't make this request, you can safely ignore this email."
-                    + "<br><br>Thank you,<br>The Rapid Stylers Team";
-            emailConfig.sendSimpleMail(emailAddress,emailSubject,emailBody);
+            //Email Message (shared, purpose-neutral OTP email — see sendOtpEmail)
+            sendOtpEmail(emailAddress,
+                    firstname == null || firstname.isBlank() ? appUtils.extractUsername(emailAddress) : firstname,
+                    otpCode);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Password Reset Initiated, Check Mail for OTP Code");
             response.setData(EMPTY_DATA);
@@ -847,6 +835,24 @@ public class AppService {
         }
         return response;
     }
+    /**
+     * Sends the ONE shared OTP email used by every flow (customer sign-up,
+     * styler sign-up, password reset). Same subject and identical markup every
+     * time, with no flow-specific wording, so a message cannot fingerprint
+     * which endpoint produced it and mail content / mail-server behavior
+     * cannot be used to tell registration probes apart.
+     */
+    private void sendOtpEmail(String emailAddress, String recipientName, String otpCode) {
+        String emailSubject = "RapidStylers Verification Code";
+        String emailBody = "Dear " + recipientName + ",<br><br>"
+                + "Your RapidStylers verification code is:<br><br>"
+                + "OTP Code: <strong>" + otpCode + "</strong><br><br>"
+                + "This code expires 10 minutes after it was sent. "
+                + "If you did not request it, you can safely ignore this email.<br><br>"
+                + "Thank you,<br>The Rapid Stylers Team";
+        emailConfig.sendSimpleMail(emailAddress, emailSubject, emailBody);
+    }
+
     public BaseResponse resetPassword(ForgotPasswordData forgotPasswordData){
         BaseResponse response = new BaseResponse(true);
         try{
@@ -882,10 +888,12 @@ public class AppService {
             userPrevData.setPassword(encryptPassword);
             userRepo.save(userPrevData);
 
-            // Invalidate the OTP so it cannot be reused
-            OTPEntity usedOtp = verifiedOtp.get();
-            usedOtp.setIsUsed("0");
-            otpRepo.save(usedOtp);
+            // Invalidate the OTP so it cannot authorize another reset. Re-saving
+            // it with is_used='0' is NOT enough: '0' is exactly the state that
+            // verifyOtpSuccessForPurpose matches, so on a live DB the same verified
+            // code could reset the password repeatedly until the row was purged.
+            // Delete the consumed row instead.
+            otpRepo.delete(verifiedOtp.get());
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Password Change Successful");
@@ -1318,15 +1326,8 @@ public class AppService {
             otpEntity.setCode(appUtils.hashOtp(otpCode));
             otpRepo.save(otpEntity);
 
-            // Send email
-            String emailSubject = "RapidStylers! Stylist Email Verification";
-            String emailBody = "Dear Stylist,<br><br>"
-                    + "Thank you for registering with RapidStylers!"
-                    + "<br>To verify your email, please use the following OTP code:<br><br>"
-                    + "OTP Code: <strong>" + otpCode  + "</strong><br><br>"
-                    + "Please enter this OTP code to complete your registration.<br><br>"
-                    + "Thank you,<br>The Rapid Stylers Team";
-            emailConfig.sendSimpleMail(otpData.getEmailAddress(), emailSubject, emailBody);
+            // Send email (shared, purpose-neutral OTP email — see sendOtpEmail)
+            sendOtpEmail(emailAddress, appUtils.extractUsername(emailAddress), otpCode);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");

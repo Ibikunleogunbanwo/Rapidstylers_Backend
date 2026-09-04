@@ -127,11 +127,12 @@ class PasswordResetOtpVerificationTest {
 
         appService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
 
-        // The OTP should be saved with isUsed="0" to prevent reuse
-        // (Note: isUsed="0" in this schema means "consumed/verified")
-        verify(otpRepo).save(argThat(otp ->
+        // The consumed OTP row is DELETED after a successful reset. Re-saving it
+        // with is_used="0" would not prevent reuse: "0" is exactly the state
+        // verifyOtpSuccessForPurpose matches, so on a live DB the same verified
+        // code could authorize repeated resets until the row was purged.
+        verify(otpRepo).delete(argThat(otp ->
                 otp.getId() != null && otp.getId() == 42L
-                        && "0".equals(otp.getIsUsed())
         ));
     }
 
