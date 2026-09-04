@@ -602,6 +602,11 @@ public class AppService {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setToken(jwtUtil.generateToken(userEntity.getUserId(), "CUSTOMER"));
+            // Issue + persist a rotating refresh token, exactly like /sign_in and Google
+            // sign-in, so email/password customers get silent renewal and the server-side
+            // idle/absolute session caps apply to them. issue() also anchors the session
+            // start (markLogin), which the refresh endpoint's policy checks rely on.
+            response.setRefreshToken(refreshTokenService.issue(userEntity.getUserId(), "CUSTOMER"));
             response.setData(dtoService.userAccountDTO(userEntity));
             recordLoginSuccess("CUSTOMER", userEntity.getUserId(), emailAddress, ip);
         }
