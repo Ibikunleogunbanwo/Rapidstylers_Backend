@@ -1,10 +1,12 @@
 package com.macrotel.rapidstylers.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.SignInData;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.security.JwtUtil;
+import com.macrotel.rapidstylers.security.TurnstileVerifier;
 import com.macrotel.rapidstylers.service.RateLimiterService;
 import com.macrotel.rapidstylers.service.RefreshTokenService;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +24,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AdminSignInTest {
@@ -30,6 +34,7 @@ class AdminSignInTest {
     private AdminAccountRepo adminAccountRepo;
     private PasswordEncoder passwordEncoder;
     private JwtUtil jwtUtil;
+    private RateLimiterService rateLimiterService;
 
     private static final String ADMIN_EMAIL = "admin@rapidstylers.com";
     private static final String ADMIN_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"; // bcrypt("secret")
@@ -40,7 +45,7 @@ class AdminSignInTest {
         adminAccountRepo = mock(AdminAccountRepo.class);
         passwordEncoder = mock(PasswordEncoder.class);
         jwtUtil = mock(JwtUtil.class);
-        RateLimiterService rateLimiterService = mock(RateLimiterService.class);
+        rateLimiterService = mock(RateLimiterService.class);
 
         when(rateLimiterService.clientIp()).thenReturn("127.0.0.1");
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
@@ -53,6 +58,10 @@ class AdminSignInTest {
         ReflectionTestUtils.setField(controller, "jwtUtil", jwtUtil);
         ReflectionTestUtils.setField(controller, "rateLimiterService", rateLimiterService);
         ReflectionTestUtils.setField(controller, "refreshTokenService", refreshTokenService);
+        // Bot protection disabled (no secret), matching a deployment that has not
+        // configured Turnstile yet. The enabled case is covered below.
+        ReflectionTestUtils.setField(controller, "turnstileVerifier", new TurnstileVerifier(
+                "", "http://127.0.0.1:1/siteverify", new ObjectMapper()));
     }
 
     private AdminAccountEntity account(boolean enabled) {
@@ -101,6 +110,25 @@ class AdminSignInTest {
         ResponseEntity<BaseResponse> res = controller.adminSignIn(credentials(ADMIN_EMAIL, "secret"));
         assertEquals("400", res.getBody().getStatusCode());
         assertNull(res.getBody().getToken());
+    }
+
+    /**
+     * With bot protection configured, a failed challenge stops the attempt before
+     * the password check — and, importantly, before the failed-attempt counters,
+     * so a bot cannot lock out a real admin by guessing and failing.
+     */
+    @Test
+    void failedChallengeRejectedBeforeThePasswordCheck() {
+        ReflectionTestUtils.setField(controller, "turnstileVerifier", new TurnstileVerifier(
+                "secret-key", "http://127.0.0.1:1/siteverify", new ObjectMapper()));
+
+        ResponseEntity<BaseResponse> res = controller.adminSignIn(credentials(ADMIN_EMAIL, "secret"));
+
+        assertEquals("400", res.getBody().getStatusCode());
+        assertNull(res.getBody().getToken());
+        // Never reached the credential store or the lockout counters.
+        verify(adminAccountRepo, never()).findByEmailIgnoreCase(anyString());
+        verify(rateLimiterService, never()).record(anyString(), anyInt());
     }
 
     @Test

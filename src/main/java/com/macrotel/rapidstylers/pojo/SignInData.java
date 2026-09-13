@@ -12,4 +12,10 @@ public class SignInData {
     private String emailAddress;
     @NotEmpty(message = "Password cannot be empty")
     private String password;
+    /**
+     * Cloudflare Turnstile challenge response. Optional on the wire so a client
+     * built before bot protection existed still deserialises; the controller
+     * rejects the request when the challenge is configured and this is absent.
+     */
+    private String captchaToken;
 }
