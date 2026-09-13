@@ -32,7 +32,9 @@
 #             real use — the worst kind, because the deploy looks successful.
 #             Currently empty: JWT_SECRET was the only member, and it now has a
 #             start-up guard in JwtUtil, so it moved to boot.
-#   advisory  only matters the first time the admin account is seeded
+#   advisory  only matters the first time the admin account is seeded, or is an
+#             optional control that is silently OFF when unset (TURNSTILE_SECRET_KEY
+#             — bot protection is simply not applied, and nothing else would say so)
 #
 # bootstrap-vps.sh complements this: it guarantees the .env *exists*; this
 # guarantees the values inside it are usable.
@@ -50,8 +52,10 @@ BOOT_VARS="DB_PASSWORD APP_API_KEY RESEND_API_KEY ENCRYPT_KEY JWT_SECRET"
 # purpose — the loop below skips it, because an empty word list would otherwise
 # be checked as a variable named "".
 SILENT_VARS=""
-# Only matters on first boot, when the admin row is seeded.
-ADVISORY_VARS="ADMIN_PASSWORD"
+# Only matters on first boot, when the admin row is seeded. TURNSTILE_SECRET_KEY
+# sits here too: leaving it out must never block a deploy (the app deliberately
+# boots without bot protection), but it must not be forgotten either.
+ADVISORY_VARS="ADMIN_PASSWORD TURNSTILE_SECRET_KEY"
 
 # Values that ship in public source. Using them is not a missing value, so the
 # app will happily start — which is exactly why they are checked here.
@@ -153,6 +157,11 @@ encrypt_value="$(value_of ENCRYPT_KEY)"
 if [[ "$encrypt_value" == "$ENCRYPT_PUBLIC_FALLBACK" ]]; then
     echo "::warning::ENCRYPT_KEY is the public fallback constant from AppConstants. The app accepts"
     echo "::warning::it, but anything encrypted under it is readable by anyone with the repo."
+fi
+if [[ -z "$(value_of TURNSTILE_SECRET_KEY)" ]]; then
+    echo "::warning::TURNSTILE_SECRET_KEY is not set, so the sign-in endpoints have NO bot protection."
+    echo "::warning::The app boots and sign-in works — that is why it is easy to miss. Add the key"
+    echo "::warning::(and REACT_APP_TURNSTILE_SITE_KEY on the frontend) to enable the challenge."
 fi
 if [[ "$(value_of ADMIN_PASSWORD)" == "$ADMIN_PLACEHOLDER" ]]; then
     echo "::warning::ADMIN_PASSWORD is still the .env.example placeholder; the bootstrap admin"

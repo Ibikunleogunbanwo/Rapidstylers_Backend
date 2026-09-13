@@ -116,6 +116,14 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
       # Portfolios may only live under these Cloudinary folder prefixes.
       CLOUDINARY_ALLOWED_FOLDER_PREFIXES: ${CLOUDINARY_ALLOWED_FOLDER_PREFIXES:-profile,id,store,portfolio}
+      # Signed upload constraints — Cloudinary enforces these because they are
+      # part of the signature, so a client cannot widen them.
+      CLOUDINARY_ALLOWED_FORMATS: ${CLOUDINARY_ALLOWED_FORMATS:-jpg,jpeg,png,webp,gif}
+      CLOUDINARY_MAX_FILE_SIZE_BYTES: ${CLOUDINARY_MAX_FILE_SIZE_BYTES:-5242880}
+      # Cloudflare Turnstile bot protection on the sign-in endpoints. Empty
+      # disables the challenge (the app still boots); setting it turns it on.
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_VERIFY_URL: ${TURNSTILE_VERIFY_URL:-https://challenges.cloudflare.com/turnstile/v0/siteverify}
       # Local upload directory, used only when Cloudinary is not configured.
       FILE_UPLOAD_DIR: ${FILE_UPLOAD_DIR:-uploads/rapidstyler}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
