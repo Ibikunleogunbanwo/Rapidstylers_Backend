@@ -22,6 +22,12 @@ public class AppConstants {
     // environments must set ENCRYPT_KEY (see .env.example: `openssl rand -hex 32`).
     public static final String ENCRYPT_DECRYPT_KEY_FALLBACK = "D0n!T'T&mp3r@w1Th^&()";
 
+    // The value shipped in .env.example for JWT_SECRET. It is PUBLIC source code,
+    // so JwtUtil refuses to boot on it — anyone with the repo could otherwise mint
+    // admin tokens. Not merely a weak secret: a published one.
+    // Keep in sync with JWT_PLACEHOLDER in scripts/check-required-env.sh.
+    public static final String JWT_SECRET_PLACEHOLDER = "run_openssl_rand_-hex_64";
+
     // Professional verification workflow states (StylerEntity.verificationStatus)
     public static final String VERIFICATION_PENDING = "PENDING";
     public static final String VERIFICATION_APPROVED = "APPROVED";
