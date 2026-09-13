@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Observability split (kept deliberately — see docs/simplification-plan.md §3):
+      1. JSON_CONSOLE  — the log record (structured JSON on stdout; feeds docker logs
+                         and the deploy checklist greps). Always on.
+      2. BETTERSTACK   — optional log transport to Better Stack over HTTP. Off unless
+                         LOG_TOKEN is set; shipping failures only warn.
+      3. Sentry (spring-boot-starter, no config here) — error tracking, off unless
+                         SENTRY_DSN is set.
+    There is exactly one shipping path and one error tracker; do not add a second.
+-->
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 

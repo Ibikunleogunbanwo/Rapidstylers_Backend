@@ -1,0 +1,43 @@
+---
+config:
+  theme: neutral
+  flowchart:
+    nodeSpacing: 40
+    rankSpacing: 55
+    curve: basis
+---
+flowchart TB
+    %% ─── Off-line: ingestion ─────────────────────────────────────────────
+    subgraph OFFLINE["1 · Off-line ingestion (build embeddings)"]
+        direction LR
+        sources["Sources<br/>(docs · DB records · tickets)"] --> chunk["Chunker<br/>~500 tokens, overlap"]
+        chunk --> embedBatch["Embedding model<br/>batches"]
+        embedBatch --> vstore[("Vector store<br/>pgvector / Pinecone")]
+    end
+
+    %% ─── On-line: serving ────────────────────────────────────────────────
+    subgraph SERVING["2 · On-line serving (per request)"]
+        direction TB
+        user(("User")) --> gw["API gateway<br/>auth · rate limit"]
+        gw --> guardIn["Input guard<br/>PII · prompt-injection checks"]
+        guardIn --> embedQ["Embedding model<br/>same model as ingestion"]
+        embedQ --> retrieve["Vector search<br/>top-k = 5"]
+        vstore -.-> retrieve
+        retrieve --> buildCtx["Prompt builder<br/>context + query + system prompt"]
+        buildCtx --> llm["LLM call<br/>streaming"]
+        llm --> guardOut["Output guard<br/>refusals · citation check"]
+        guardOut --> stream["Streamed response"]
+        stream --> user
+        retrieve -.-> fallback["Cache<br/>hot queries"] -.-> buildCtx
+    end
+
+    %% ─── Cross-cutting loops ─────────────────────────────────────────────
+    llm -.->|latency · tokens · cost| TELEMETRY
+    guardOut -.->|refusals · flagged| TELEMETRY
+    user -.->|👍 / 👎| TELEMETRY
+    subgraph TELEMETRY["3 · Cross-cutting"]
+        direction LR
+        obs["Observability<br/>traces · token cost"]
+        evals["Evals<br/>golden set · regression gate"]
+    end
+    TELEMETRY -.->|tune prompts<br/>and chunking| OFFLINE

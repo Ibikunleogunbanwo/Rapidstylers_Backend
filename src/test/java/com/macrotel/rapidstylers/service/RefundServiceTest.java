@@ -62,6 +62,20 @@ class RefundServiceTest {
         appService.auditLogRepo = mock(AuditLogRepo.class);
         appService.emailConfig = mock(EmailConfig.class);
         org.springframework.test.util.ReflectionTestUtils.setField(appService, "stylerCancelWindowHours", 24L);
+        // Refund logic lives in PaymentOpsService — share the same mocks
+        // and the same AuditService sink (see docs/simplification-plan.md).
+        AuditService sharedAudit = new AuditService();
+        sharedAudit.auditLogRepo = mock(AuditLogRepo.class);
+        sharedAudit.emailConfig = mock(EmailConfig.class);
+        PaymentOpsService paymentOps = new PaymentOpsService();
+        paymentOps.bookAppointmentRepo = bookAppointmentRepo;
+        paymentOps.refundRepo = refundRepo;
+        paymentOps.stripeService = stripeService;
+        paymentOps.outboxEventService = outboxEventService;
+        paymentOps.payoutReversalService = payoutReversalService;
+        paymentOps.auditService = sharedAudit;
+        appService.auditService = sharedAudit;
+        appService.paymentOpsService = paymentOps;
     }
 
     private BookAppointmentEntity capturedAppointment() {

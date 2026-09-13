@@ -34,7 +34,7 @@ RapidStylers is built around trust and convenience:
 | Abuse prevention | Moved rate limiting to Redis and added login attempt audit records. |
 | API security | Tightened CORS, fixed preflight handling, protected sensitive role endpoints, and restricted Cloudinary signed upload folders with rate limits. |
 | Deployment readiness | Added environment driven configuration for the Cloudflare, Vercel, and VPS deployment shape. |
-| Booking race guard | Startup reconcilers now guarantee the slot-lock unique index (`uk_booking_slot_styler_date_start`) and convert **every legacy MyISAM table to InnoDB** (all 27: the 7 transaction-critical ones plus accounts, OTP, login attempts, audit, notifications, reviews, and the rest) so the pessimistic stylist lock, unique-constraint enforcement, and `@Transactional` rollback actually work across booking, refunds, outbox writes, refresh revocation, account creation, and every other write path. The reconciler discovers non-InnoDB tables dynamically, so any future legacy table is converted automatically. Verified by a genuine two-live-customer race test (exactly one booking wins). |
+| Schema authority + booking race guard | **Flyway owns the schema** (`V13` full 28-table baseline, `ddl-auto=validate`); the slot-lock unique index (`uk_booking_slot_styler_date_start`) is defined inline in that migration and every table is InnoDB, so the pessimistic stylist lock, unique-constraint enforcement, and `@Transactional` rollback hold across booking, refunds, outbox writes, refresh revocation, account creation, and every other write path. The three boot-time reconcilers that used to patch this are deleted — on an existing database `V13` is a no-op, on a fresh one it builds the schema before Hibernate validates it. Verified by a genuine two-live-customer race test (exactly one booking wins) on a fresh database. Any future schema change ships as the next numbered migration. |
 | Refresh-token theft detection | `rotate()` now burns the whole token family when a rotated-out/revoked token is replayed, so a stolen refresh session forces re-authentication instead of leaving the legitimate session running. |
 | Consumer retry/DLQ coverage | Added exhausted-retry routing test: after `maxRetries`, a failing notification event lands on the DLQ with an `error-message` header instead of looping the retry topic. |
 | Cache stampede hardening | Fixed a single-flight defect where a slow (but successful) cache loader could run twice after the 5s wait — callers now keep waiting for the in-flight result instead of re-running the loader, so DB load never doubles on slow paths. |
@@ -263,7 +263,7 @@ Run the full backend suite:
 Latest verification (full suite, JDK 21 against local MySQL):
 
 ```text
-Backend tests: 195 passed
+Backend tests: 369 passed
 ```
 
 Covered areas include booking workflow rules, concurrency/slot protection, notification event handling, outbox publishing, saved stylists, rate limiting, login attempts, CORS/preflight behavior, JWT role protection, and Cloudinary signature guards.

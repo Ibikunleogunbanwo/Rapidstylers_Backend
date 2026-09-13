@@ -3,8 +3,6 @@ package com.macrotel.rapidstylers.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.config.InnoDbReconciler;
-import com.macrotel.rapidstylers.config.SlotLockUniqueReconciler;
 import com.macrotel.rapidstylers.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.entity.ServiceEntity;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
@@ -90,8 +88,6 @@ class ConcurrentTwoCustomerBookingTest {
     @Autowired LocationCacheService locationCacheService;
     @Autowired IdentificationRepo identificationRepo;
     @Autowired ServiceRepo serviceRepo;
-    @Autowired SlotLockUniqueReconciler slotLockReconciler;
-    @Autowired InnoDbReconciler innoDbReconciler;
 
     @Value("${app.api.key}") String apiKey;
     @Value("${app.admin.email}") String adminEmail;
@@ -178,13 +174,9 @@ class ConcurrentTwoCustomerBookingTest {
 
     @Test
     void twoLiveCustomersRaceTheSameSlot_onlyOneWins() throws Exception {
-        // ApplicationRunners do not execute inside @SpringBootTest, so invoke the
-        // reconcilers directly. InnoDbReconciler converts the legacy MyISAM booking
-        // tables so @Transactional rollback and the pessimistic stylist lock actually
-        // work; SlotLockUniqueReconciler guarantees the unique race-guard index on
-        // booking_slot_locks (creating it where ddl-auto never added it).
-        innoDbReconciler.run(null);
-        slotLockReconciler.run(null);
+        // Schema guarantees now come from Flyway V13 (full schema baseline), which
+        // creates booking_slot_locks with the unique race-guard index inline and
+        // InnoDB storage everywhere — no boot-time reconcilers are involved.
 
         // ---- Two live customers -------------------------------------------------
         String[] custA = registerCustomer(custEmailA);

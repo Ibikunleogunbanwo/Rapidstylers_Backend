@@ -1,0 +1,13 @@
+flowchart LR
+    subgraph Triggers
+        D[push / PR to dev] --> T
+        M[push to main] --> T
+    end
+    T[Backend tests<br/>MySQL 8 fresh · no Redis/Kafka] --> G[gitleaks secret scan<br/>full history]
+    G --> DEP
+    T --> DEP
+    DEP[Deploy to VPS<br/>if ref = main] --> R1[rsync tested commit<br/>excl .env/.git/target/.github]
+    R1 --> R2[docker compose up -d --build app]
+    R2 --> R3[wait: /actuator/health ≤ 5 min]
+    R3 --> OK[deploy done]
+    DB[dependabot · weekly<br/>maven deps + actions] -.-> PRs[PRs to dev/main]

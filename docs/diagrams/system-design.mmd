@@ -1,0 +1,10 @@
+flowchart LR
+    browser["React SPA<br/>(Vercel)"] --> cf["Cloudflare<br/>DNS · TLS · proxy"]
+    cf --> nginx["nginx<br/>(VPS host)"]
+    nginx --> api["Spring Boot API<br/>:9095"]
+    api --> mysql[("MySQL 8<br/>source of truth")]
+    api --> redis[("Redis 7<br/>limits · cache · geo · sessions")]
+    api --> kafka["Kafka<br/>domain events"]
+    kafka --> worker["Notification consumer<br/>(same JVM today)"]
+    worker --> email["Resend email"]
+    api --> saas["Stripe · Cloudinary · Google"]

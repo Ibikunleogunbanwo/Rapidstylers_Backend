@@ -41,3 +41,6 @@ src/main/resources/application.properties
 uploads/
 .DS_Store
 .freebuff/
+
+### Local test / server output ###
+*.log
