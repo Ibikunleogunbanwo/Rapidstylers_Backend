@@ -167,7 +167,7 @@ The guard was verified not to fire on production's real configuration before bei
 
 | # | Action | Why |
 |---|---|---|
-| 6 | **Add the `ENCRYPT_KEY` repository secret.** Production key fingerprint: `b500d34481fc767a` | Until it exists, the key still lives only in the VPS `.env` and cannot be recovered after a re-provision |
+| 6 | **Add the `ENCRYPT_KEY` repository secret.** Production key fingerprint: `b500d34481fc767a` <!-- gitleaks:allow — this is a SHA-256 fingerprint of the key, not the key; recorded so the value can be verified when the secret is set --> | Until it exists, the key still lives only in the VPS `.env` and cannot be recovered after a re-provision |
 | 7 | Boot-check the new image before swapping the live container | The deploy replaces first and asks afterwards. A throwaway `docker run --rm` that must reach a listening port would have kept production up entirely |
 | 8 | Add a CI job that boots the app under the `prod` profile | Nothing exercises a non-`test` start, which is exactly why 9 days of green CI meant nothing here — and a prod-profile boot would now also exercise both start-up guards |
 | 9 | ~~Resolve the compose forwarding gap~~ **Done** — 15 app-consumed variables were being silently ignored; all are now forwarded as `${VAR:-<the app's own default>}`, and two tests fail the build if a variable the app reads is neither forwarded nor declared container-fixed | `docker-compose.prod.yml`, `EnvForwardingContractTest` |

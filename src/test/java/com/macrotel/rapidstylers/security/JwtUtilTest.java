@@ -22,13 +22,17 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class JwtUtilTest {
 
-    /** 64 hex chars — what `openssl rand -hex 64` yields. */
-    private static final String STRONG_SECRET =
-            "5f4dcc3b5aa765d61d8327deb882cf997e9f3a4b1c2d3e4f5061728394a5b6c7";
+    // Built rather than written out as literals. A 64-character hex string in a
+    // test file is indistinguishable from a leaked credential to a secret scanner,
+    // and gitleaks flagged exactly that the first time this file ran. Only the
+    // length matters here — that is the whole of what HS256 enforces.
+
+    /** Comfortably longer than HS256's minimum, like `openssl rand -hex 64` gives. */
+    private static final String COMFORTABLY_LONG = "test".repeat(16);
     /** Exactly 256 bits, the HS256 minimum. */
-    private static final String MINIMUM_SECRET = "0123456789abcdef0123456789abcdef";
+    private static final String EXACTLY_MINIMUM = "test".repeat(8);
     /** One byte under the minimum. */
-    private static final String ONE_BYTE_SHORT = "0123456789abcdef0123456789abcde";
+    private static final String ONE_BYTE_SHORT = "test".repeat(7) + "abc";
 
     private JwtUtil guarded(String secret) {
         JwtUtil util = new JwtUtil();
@@ -52,7 +56,7 @@ class JwtUtilTest {
 
     @Test
     void tokenRoundTripCarriesSubjectAndRole() {
-        JwtUtil util = guarded(STRONG_SECRET);
+        JwtUtil util = guarded(COMFORTABLY_LONG);
 
         Claims claims = util.parseToken(util.generateToken("acct-1", "ADMIN"));
 
@@ -63,21 +67,21 @@ class JwtUtilTest {
 
     @Test
     void parseRejectsTokenSignedWithADifferentKey() {
-        String foreignToken = guarded(STRONG_SECRET).generateToken("acct-1", "ADMIN");
+        String foreignToken = guarded(COMFORTABLY_LONG).generateToken("acct-1", "ADMIN");
 
-        assertNull(guarded("a-completely-different-signing-secret-value-here").parseToken(foreignToken),
+        assertNull(guarded("different".repeat(8)).parseToken(foreignToken),
                 "A token signed with another key must not verify");
     }
 
     @Test
     void parseReturnsNullForMalformedToken() {
-        assertNull(guarded(STRONG_SECRET).parseToken("not.a.jwt"));
+        assertNull(guarded(COMFORTABLY_LONG).parseToken("not.a.jwt"));
     }
 
     @Test
     void parseReturnsNullForExpiredToken() {
         JwtUtil expired = new JwtUtil();
-        ReflectionTestUtils.setField(expired, "secret", STRONG_SECRET);
+        ReflectionTestUtils.setField(expired, "secret", COMFORTABLY_LONG);
         ReflectionTestUtils.setField(expired, "ttlMinutes", -1L);
         expired.init();
 
@@ -131,14 +135,14 @@ class JwtUtilTest {
 
     @Test
     void acceptsSecretExactlyAtTheMinimum() {
-        JwtUtil util = assertDoesNotThrow(() -> guarded(MINIMUM_SECRET));
+        JwtUtil util = assertDoesNotThrow(() -> guarded(EXACTLY_MINIMUM));
 
         assertEquals("acct-1", util.parseToken(util.generateToken("acct-1", "STYLER")).getSubject());
     }
 
     @Test
     void acceptsAStrongSecret() {
-        assertDoesNotThrow(() -> guarded(STRONG_SECRET));
+        assertDoesNotThrow(() -> guarded(COMFORTABLY_LONG));
     }
 
     // ── The guard: wired to the Spring lifecycle ──────────────────────
@@ -179,7 +183,7 @@ class JwtUtilTest {
     void springContextStartsWithARealSigningKey() {
         new ApplicationContextRunner()
                 .withUserConfiguration(JwtUtil.class)
-                .withPropertyValues("app.jwt.secret=" + STRONG_SECRET)
+                .withPropertyValues("app.jwt.secret=" + COMFORTABLY_LONG)
                 .run(context -> {
                     assertNull(context.getStartupFailure(), "A real key must boot normally");
                     assertNotNull(context.getBean(JwtUtil.class));
