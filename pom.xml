@@ -65,7 +65,7 @@
 		<dependency>
 			<groupId>com.stripe</groupId>
 			<artifactId>stripe-java</artifactId>
-			<version>33.2.0</version>
+			<version>33.4.2</version>
 		</dependency>
 
 		<!-- JWT (role-based auth) -->
