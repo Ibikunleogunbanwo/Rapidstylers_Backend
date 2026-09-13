@@ -117,6 +117,28 @@ jobs:
           echo "API did not become healthy in time"
           exit 1
 
+      # The container boot log is the only place the cause of a crash-loop
+      # appears, and nobody may be at a keyboard during an outage. Dumping it
+      # here means a failed deploy explains itself in the run's own output.
+      - name: Dump VPS state when the API will not come up
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'rapiddeploy' }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} '
+            cd /opt/rapidstylers/backend || exit 0
+            echo "===== compose ps -a ====="
+            docker compose -f docker-compose.prod.yml ps -a 2>&1 || true
+            echo "===== app logs (tail 250) ====="
+            docker compose -f docker-compose.prod.yml logs --tail=250 app 2>&1 || true
+            echo "===== flyway_schema_history ====="
+            set -a; . ./.env 2>/dev/null; set +a
+            docker compose -f docker-compose.prod.yml exec -T -e MYSQL_PWD="$DB_PASSWORD" \
+              mysql mysql -uroot rapid_stylers \
+              -e "SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank;" 2>&1 || true
+          ' || true
+
       - name: Clean up key
         if: always()
         run: rm -f /tmp/deploy_key
