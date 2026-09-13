@@ -97,15 +97,27 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      # Deliberately NOT taken from .env: inside the compose network the database
+      # host is the service name, and .env.example ships `localhost` for local runs.
+      # Honouring that value here would point the container at itself.
       DB_URL: jdbc:mysql://mysql:3306/rapid_stylers
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       APP_API_KEY: ${APP_API_KEY}
+      # Browser origins allowed to call the API (comma-separated, exact match).
+      # Defaults to the app's own list; set it to restrict or extend.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:9090,https://rapidstylers.ca,https://www.rapidstylers.ca}
+      # Timezone for booking and slot calculations.
+      APP_TIME_ZONE: ${APP_TIME_ZONE:-America/Edmonton}
       RESEND_API_KEY: ${RESEND_API_KEY}
       RESEND_FROM: ${RESEND_FROM}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      # Portfolios may only live under these Cloudinary folder prefixes.
+      CLOUDINARY_ALLOWED_FOLDER_PREFIXES: ${CLOUDINARY_ALLOWED_FOLDER_PREFIXES:-profile,id,store,portfolio}
+      # Local upload directory, used only when Cloudinary is not configured.
+      FILE_UPLOAD_DIR: ${FILE_UPLOAD_DIR:-uploads/rapidstyler}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
@@ -132,22 +144,48 @@ services:
       LOG_ENDPOINT: ${LOG_ENDPOINT:-https://in.logs.betterstack.com}
       # Error monitoring — optional; unset keeps Sentry dormant.
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Sentry environment label. Set APP_ENV=production in the VPS .env, otherwise
+      # production errors are filed under "local" and are hard to separate.
+      APP_ENV: ${APP_ENV:-local}
+      # Fraction of requests traced by Sentry (0.0 = errors only).
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
+      # Also container-network literals, not .env values — see DB_URL above.
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       # prod redis runs without a password; set REDIS_PASSWORD in the VPS .env
       # only if you later enable `redis-server --requirepass <pw>`.
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # Startup cache warm-up, and the cap on how many stylers are primed.
+      CACHE_WARM_ENABLED: ${CACHE_WARM_ENABLED:-true}
+      CACHE_WARM_MAX_STYLERS: ${CACHE_WARM_MAX_STYLERS:-25}
       KAFKA_BOOTSTRAP_SERVERS: kafka:19094
       KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-PLAINTEXT}
       KAFKA_TOPIC_DOMAIN_EVENTS: ${KAFKA_TOPIC_DOMAIN_EVENTS:-rapidstylers.domain-events}
       KAFKA_TOPIC_DOMAIN_EVENTS_RETRY: ${KAFKA_TOPIC_DOMAIN_EVENTS_RETRY:-rapidstylers.domain-events.retry}
       KAFKA_TOPIC_DOMAIN_EVENTS_DLQ: ${KAFKA_TOPIC_DOMAIN_EVENTS_DLQ:-rapidstylers.domain-events.dlq}
       KAFKA_OUTBOX_PUBLISHER_ENABLED: ${KAFKA_OUTBOX_PUBLISHER_ENABLED:-true}
+      # Outbox relay pacing: how often the poller runs, how long a publish may take,
+      # how long to wait before retrying, and how many attempts before parking the
+      # row for manual attention.
+      KAFKA_OUTBOX_PUBLISHER_DELAY_MS: ${KAFKA_OUTBOX_PUBLISHER_DELAY_MS:-5000}
+      KAFKA_OUTBOX_PUBLISH_TIMEOUT_SECONDS: ${KAFKA_OUTBOX_PUBLISH_TIMEOUT_SECONDS:-10}
+      KAFKA_OUTBOX_RETRY_DELAY_SECONDS: ${KAFKA_OUTBOX_RETRY_DELAY_SECONDS:-30}
+      KAFKA_OUTBOX_MAX_ATTEMPTS: ${KAFKA_OUTBOX_MAX_ATTEMPTS:-3}
       KAFKA_NOTIFICATIONS_CONSUMER_ENABLED: ${KAFKA_NOTIFICATIONS_CONSUMER_ENABLED:-true}
+      # Consumer group for notification delivery. CHANGING THIS IS NOT SAFE in
+      # passing: a new group makes Kafka start from its own offsets, so events are
+      # replayed or skipped and recipients can be notified twice for anything older
+      # than NOTIFICATION_DEDUP_TTL_HOURS. The deploy pre-flight warns when the value
+      # in .env differs from this default.
+      KAFKA_NOTIFICATIONS_GROUP_ID: ${KAFKA_NOTIFICATIONS_GROUP_ID:-rapidstylers-notification-service}
       # Consumer idempotency: how long a delivered notification event is remembered (hours).
       NOTIFICATION_DEDUP_TTL_HOURS: ${NOTIFICATION_DEDUP_TTL_HOURS:-24}
       # Stylists may cancel a completed booking within this window (hours since completion).
       STYLER_CANCEL_WINDOW_HOURS: ${STYLER_CANCEL_WINDOW_HOURS:-24}
+      # How long a booking authorization may be held before capture (hours), and how
+      # far ahead a booking may be authorized (days).
+      BOOKING_PAYMENT_AUTHORIZATION_LEAD_HOURS: ${BOOKING_PAYMENT_AUTHORIZATION_LEAD_HOURS:-48}
+      BOOKING_PAYMENT_AUTHORIZATION_WINDOW_DAYS: ${BOOKING_PAYMENT_AUTHORIZATION_WINDOW_DAYS:-7}
       # Payout recovery: retry interval (ms) and attempt budget for transfer reversals.
       PAYOUT_REVERSAL_RETRY_INTERVAL_MS: ${PAYOUT_REVERSAL_RETRY_INTERVAL_MS:-1800000}
       PAYOUT_REVERSAL_MAX_ATTEMPTS: ${PAYOUT_REVERSAL_MAX_ATTEMPTS:-5}

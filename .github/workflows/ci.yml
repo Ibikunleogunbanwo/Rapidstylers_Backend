@@ -80,6 +80,57 @@ jobs:
           install -m 600 /dev/null /tmp/deploy_key
           echo "$SSH_KEY" > /tmp/deploy_key
 
+      # The production ENCRYPT_KEY otherwise exists only in the VPS .env, which
+      # the rsync below never overwrites (--exclude .env). A wiped disk or a
+      # re-provisioned server would therefore lose it — and an empty ENCRYPT_KEY
+      # is exactly how this API was taken down once. The script restores a
+      # missing key from the repository secret but refuses to overwrite a
+      # differing one, because that would silently rotate the key with no
+      # migration. The value travels in a 0600 file rather than on the command
+      # line, so it never shows up in the process list of a shared host.
+      - name: Reconcile ENCRYPT_KEY from the repository secret
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'rapiddeploy' }}
+          ENCRYPT_KEY_SECRET: ${{ secrets.ENCRYPT_KEY }}
+        run: |
+          umask 077
+          if [ -z "$ENCRYPT_KEY_SECRET" ]; then
+            echo "::notice::Repository secret ENCRYPT_KEY is not set — skipping reconciliation."
+            echo "::warning::The key stays only on the VPS, so it cannot be recovered after a re-provision. Add the secret to fix that."
+            exit 0
+          fi
+          KEY_FILE="$(mktemp)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s' "$ENCRYPT_KEY_SECRET" > "$KEY_FILE"
+          scp -q -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key \
+            "$KEY_FILE" ${VPS_USER}@${VPS_HOST}:/tmp/rapidstylers-encrypt-key
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} \
+            'ENCRYPT_KEY_SECRET_FILE=/tmp/rapidstylers-encrypt-key bash -s; rc=$?; rm -f /tmp/rapidstylers-encrypt-key; exit $rc' \
+            < scripts/reconcile-encrypt-key.sh
+
+      # Fail in seconds when the VPS is missing configuration the app cannot start
+      # without. Before this, a blank value surfaced only as a ~6 minute health-gate
+      # timeout with the cause buried in the container's logs — how a missing
+      # ENCRYPT_KEY took the API down. Runs before the rsync, so a failed check
+      # leaves the VPS completely untouched.
+      #
+      # A correct .env is necessary but not sufficient: compose forwards only the
+      # variables its `environment:` block names, so a required value missing from
+      # there never reaches the container and the app still crash-loops. The compose
+      # file from *this* commit is copied over and checked too, rather than the
+      # (possibly older) one already on the box.
+      - name: Pre-flight required configuration on the VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'rapiddeploy' }}
+        run: |
+          scp -q -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key \
+            docker-compose.prod.yml ${VPS_USER}@${VPS_HOST}:/tmp/rapidstylers-compose.yml
+          # '' leaves argument 1 empty, so the script keeps its own default .env path.
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} \
+            'bash -s -- "" /tmp/rapidstylers-compose.yml' < scripts/check-required-env.sh
+
       - name: Rsync tested commit to VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -141,4 +192,13 @@ jobs:
 
       - name: Clean up key
         if: always()
-        run: rm -f /tmp/deploy_key
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'rapiddeploy' }}
+        run: |
+          # The compose copy is not secret (it is in the repo), but it should not
+          # outlive the run. Removed before the key that authenticates it, and
+          # `|| true` because cleanup must never be what fails a job.
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} \
+            'rm -f /tmp/rapidstylers-compose.yml' || true
+          rm -f /tmp/deploy_key
