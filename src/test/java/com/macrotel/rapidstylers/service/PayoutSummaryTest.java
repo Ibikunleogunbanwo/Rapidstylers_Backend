@@ -37,6 +37,14 @@ class PayoutSummaryTest {
         appService.bookAppointmentRepo = appointmentRepo;
         appService.stripeService = stripeService;
         ReflectionTestUtils.setField(appService, "stripeCommissionPercent", 10.0);
+        // Payout summary logic lives in PaymentOpsService — share the same mocks.
+        PaymentOpsService paymentOps = new PaymentOpsService();
+        paymentOps.stylerRepo = stylerRepo;
+        paymentOps.bookAppointmentRepo = appointmentRepo;
+        paymentOps.stripeService = stripeService;
+        paymentOps.auditService = appService.auditService;
+        ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);
+        appService.paymentOpsService = paymentOps;
     }
 
     @Test

@@ -19,17 +19,21 @@ import static org.mockito.Mockito.when;
 
 class ConnectWebhookTest {
 
-    private AppService appService;
+    // Connect onboarding webhook handling now lives in PaymentOpsService (carved
+    // out of AppService — see docs/simplification-plan.md).
+    private PaymentOpsService paymentOps;
     private StylerRepo stylerRepo;
     private EmailConfig emailConfig;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        paymentOps = new PaymentOpsService();
         stylerRepo = mock(StylerRepo.class);
         emailConfig = mock(EmailConfig.class);
-        appService.stylerRepo = stylerRepo;
-        appService.emailConfig = emailConfig;
+        paymentOps.stylerRepo = stylerRepo;
+        paymentOps.emailConfig = emailConfig;
+        // audit() is a no-op on a bare AuditService (null repo guard).
+        paymentOps.auditService = new AuditService();
     }
 
     @Test
@@ -42,7 +46,7 @@ class ConnectWebhookTest {
         account.setDetailsSubmitted(true);
         account.setPayoutsEnabled(true);
 
-        appService.handleAccountUpdated(account);
+        paymentOps.handleAccountUpdated(account);
 
         verify(stylerRepo).save(styler);
         org.junit.jupiter.api.Assertions.assertEquals("COMPLETE", styler.getConnectOnboardingStatus());
@@ -62,7 +66,7 @@ class ConnectWebhookTest {
         account.setPayoutsEnabled(false);
         account.setRequirements(requirements);
 
-        appService.handleAccountUpdated(account);
+        paymentOps.handleAccountUpdated(account);
 
         org.junit.jupiter.api.Assertions.assertEquals("REJECTED", styler.getConnectOnboardingStatus());
         org.junit.jupiter.api.Assertions.assertEquals("rejected.other", styler.getConnectDisabledReason());
@@ -80,7 +84,7 @@ class ConnectWebhookTest {
         account.setDetailsSubmitted(true);
         account.setPayoutsEnabled(true);
 
-        appService.handleAccountUpdated(account);
+        paymentOps.handleAccountUpdated(account);
 
         org.junit.jupiter.api.Assertions.assertEquals("COMPLETE", styler.getConnectOnboardingStatus());
         org.junit.jupiter.api.Assertions.assertNull(styler.getConnectDisabledReason());
@@ -96,7 +100,7 @@ class ConnectWebhookTest {
         account.setDetailsSubmitted(true);
         account.setPayoutsEnabled(true);
 
-        appService.handleAccountUpdated(account);
+        paymentOps.handleAccountUpdated(account);
 
         verify(stylerRepo).save(any(StylerEntity.class));
         verify(emailConfig, never()).sendSimpleMail(eq("styler@example.com"), contains("Payouts are ready"), contains("connected"));

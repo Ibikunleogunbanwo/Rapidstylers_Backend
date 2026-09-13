@@ -1,0 +1,31 @@
+flowchart TB
+    User["User browser"] --> FE["React SPA — Vercel<br/>(rapidstylers.ca / www)"]
+    User --> CF["Cloudflare — DNS · TLS · proxy<br/>api record PROXIED · SSL mode Full (strict)"]
+    CF -->|https| NGX["nginx — VPS host<br/>TLS origin cert · real client IP<br/>api.rapidstylers.ca"]
+    NGX -->|proxy_pass| APP["app — Spring Boot jar<br/>loopback :9095 · healthcheck /actuator/health"]
+    Stripe["Stripe webhooks"] --> CF
+    APP -.->|outbound only| SaaS["Resend · Stripe API · Cloudinary · Google"]
+
+    subgraph Docker["Docker network — private, nothing published"]
+        APP --> MYSQL[("mysql:8.0 — source of truth<br/>volume: mysql-data")]
+        APP --> REDIS[("redis:7 — limits · cache · geo · sessions<br/>volume: redis-data")]
+        APP --> KAFKA["kafka:4.1.2 — 3 topics · retention 72h/5GB<br/>volume: kafka-data"]
+        KINIT["kafka-init — creates topics, runs once"] -.-> KAFKA
+    end
+
+    subgraph Host["Host services — outside Docker (deploy/ + bootstrap script)"]
+        NGX
+        UFW["ufw — allow only 22 / 80 / 443"]
+        DEPUSER["rapiddeploy — ssh + docker group"]
+        ENV[".env — host-only secrets<br/>never rsync'd or committed"]
+    end
+
+    subgraph GitHub["GitHub Actions (docs/ci-cd.md)"]
+        CI["tests + gitleaks — on push/PR to dev and main"] --> DEPJOB["deploy job — main only<br/>rsync → compose up -d --build app → health wait"]
+    end
+
+    DEPJOB -.->|ssh + rsync| DEPUSER
+    ENV -.->|env vars| APP
+
+    classDef edge fill:#e8f0fe,stroke:#4285f4;
+    class NGX,CF,FE edge;

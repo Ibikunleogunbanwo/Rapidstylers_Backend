@@ -38,7 +38,18 @@ class DisputeWebhookTest {
         appService.auditLogRepo = mock(AuditLogRepo.class);
         appService.emailConfig = emailConfig;
         appService.outboxEventService = mock(OutboxEventService.class);
-        org.springframework.test.util.ReflectionTestUtils.setField(appService, "adminAlertEmail", "ops@example.com");
+        // Webhook handling lives in PaymentOpsService — share the same mocks;
+        // the ops-alert address now sits on AuditService (moved from AppService).
+        AuditService sharedAudit = new AuditService();
+        sharedAudit.auditLogRepo = mock(AuditLogRepo.class);
+        sharedAudit.emailConfig = emailConfig;
+        org.springframework.test.util.ReflectionTestUtils.setField(sharedAudit, "adminAlertEmail", "ops@example.com");
+        PaymentOpsService paymentOps = new PaymentOpsService();
+        paymentOps.bookAppointmentRepo = bookAppointmentRepo;
+        paymentOps.stripeService = stripeService;
+        paymentOps.auditService = sharedAudit;
+        appService.auditService = sharedAudit;
+        appService.paymentOpsService = paymentOps;
     }
 
     private Event disputeEvent(String type, String status) {

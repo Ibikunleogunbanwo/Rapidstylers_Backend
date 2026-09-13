@@ -97,6 +97,15 @@ class BookingWorkflowTest {
         ReflectionTestUtils.setField(appService, "stripeCommissionPercent", 10.0);
         ReflectionTestUtils.setField(appService, "paymentAuthorizationWindowDays", 7L);
         ReflectionTestUtils.setField(appService, "paymentAuthorizationLeadHours", 48L);
+        // Payment ops (commission, receipts, refunds) live in PaymentOpsService —
+        // share the same mocks and rate default (see docs/simplification-plan.md).
+        PaymentOpsService paymentOps = new PaymentOpsService();
+        paymentOps.bookAppointmentRepo = appointmentRepo;
+        paymentOps.stylerRepo = stylerRepo;
+        paymentOps.stripeService = stripeService;
+        paymentOps.auditService = appService.auditService;
+        ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);
+        appService.paymentOpsService = paymentOps;
     }
 
     @Test
