@@ -374,6 +374,12 @@ public class ApplicationController {
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
+    @GetMapping("/search_by_city")
+    public ResponseEntity <BaseResponse> searchByCity(@RequestParam("city") String city){
+        BaseResponse baseResponse = appService.searchStylerByCity(city);
+        HttpStatus status = ApiResponses.httpStatus(baseResponse);
+        return new ResponseEntity<>(baseResponse,status);
+    }
     @PostMapping("/search_nearby")
     public ResponseEntity <BaseResponse> searchNearby(@RequestBody SearchNearbyData data){
         BaseResponse baseResponse = appService.searchNearby(data.getLng(), data.getLat(), data.getRadius(), data.getServiceTypeId(), data.getCity(), data.getRequestedDate(), data.getRequestedTime(), data.getDurationMinutes(), data.isOpenNow(), data.getPage(), data.getPageSize());

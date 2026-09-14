@@ -1777,6 +1777,79 @@ public class AppService {
         return response;
     }
 
+    /**
+     * City search for the results page. When the city has no professionals, the
+     * search widens to the city's province so the page never shows an empty
+     * grid it could have filled; the "widened" data flag lets the frontend say
+     * so honestly instead of quietly relabelling the results.
+     */
+    public BaseResponse searchStylerByCity(String city){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            // Trim defensively so padded values (" Calgary ") still match and
+            // whitespace-only payloads return an empty list, not every styler.
+            city = city == null ? "" : city.trim();
+            final String cityKey = city;
+            List<Object> cityResult = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_SEARCH_CITY + cityKey,
+                    ReadCacheService.SEARCH_LIST_TTL, ReadCacheService.SEARCH_LIST_JITTER,
+                    () -> {
+                        List<StylerEntity> cityStylers = cityKey.isEmpty()
+                                ? new ArrayList<>()
+                                : stylerRepo.findByCityIgnoreCase(cityKey);
+                        List<Object> built = new ArrayList<>();
+                        for(StylerEntity stylerEntity : cityStylers){
+                            if(isApprovedStyler(stylerEntity)){
+                                built.add(cachedStylerAccountDTO(stylerEntity));
+                            }
+                        }
+                        Collections.reverse(built);
+                        return built;
+                    });
+            if(cityResult == null || cityResult.isEmpty()){
+                // Widen: same query but for the city's province, when known.
+                String province = cityKey.isEmpty() ? null : stylerRepo.findByCityIgnoreCase(cityKey).stream()
+                        .map(StylerEntity::getProvince)
+                        .filter(p -> p != null && !p.isBlank())
+                        .findFirst()
+                        .orElse(null);
+                if(province != null){
+                    List<Object> widened = readCacheService.getOrLoad(
+                            ReadCacheService.KEY_SEARCH_PROVINCE + province,
+                            ReadCacheService.SEARCH_LIST_TTL, ReadCacheService.SEARCH_LIST_JITTER,
+                            () -> {
+                                List<StylerEntity> provinceStylers = stylerRepo.findByProvinceIgnoreCase(province);
+                                List<Object> built = new ArrayList<>();
+                                for(StylerEntity stylerEntity : provinceStylers){
+                                    if(isApprovedStyler(stylerEntity)){
+                                        built.add(cachedStylerAccountDTO(stylerEntity));
+                                    }
+                                }
+                                Collections.reverse(built);
+                                return built;
+                            });
+                    // Same envelope shape as the paginated nearby search: a map
+                    // with "items", so clients unwrap one of two known shapes.
+                    Map<String, Object> payload = new LinkedHashMap<>();
+                    payload.put("items", widened);
+                    payload.put("widened", true);
+                    payload.put("widenedProvince", province);
+                    response.setStatusCode(SUCCESS_STATUS_CODE);
+                    response.setMessage(SUCCESS_MESSAGE);
+                    response.setData(payload);
+                    return response;
+                }
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(cityResult == null ? EMPTY_DATA : cityResult);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
     public BaseResponse createSubService(SubServiceData subServiceData){
         BaseResponse response = new BaseResponse(true);
         try{
