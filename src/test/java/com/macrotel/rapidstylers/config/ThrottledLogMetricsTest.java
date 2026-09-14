@@ -61,12 +61,20 @@ class ThrottledLogMetricsTest {
         assertDoesNotThrow(() -> gauge("throttledlog.pendingSuppressed"));
     }
 
+    /**
+     * A window far longer than any test pause, so a call is guaranteed to
+     * suppress. A 5 ms window here once failed CI: a GC pause between calls
+     * expired it, the "suppressed" call emitted instead, and the aggregate
+     * grew by 1 instead of 2.
+     */
+    private static final long LONG_WINDOW_MS = 60_000L;
+
     @Test
     void perKeyCounterCountsSuppressedAndStaysMonotonicAcrossWindows() throws InterruptedException {
         String key = uniqueKey();
-        ThrottledLog.warnOncePerWindow(logger, key, "boom", 5L);
-        ThrottledLog.warnOncePerWindow(logger, key, "boom", 5L);
-        ThrottledLog.warnOncePerWindow(logger, key, "boom", 5L);
+        ThrottledLog.warnOncePerWindow(logger, key, "boom", LONG_WINDOW_MS);
+        ThrottledLog.warnOncePerWindow(logger, key, "boom", LONG_WINDOW_MS);
+        ThrottledLog.warnOncePerWindow(logger, key, "boom", LONG_WINDOW_MS);
 
         // 1 emitted + 2 suppressed inside the first window.
         assertEquals(2.0, byKeyGauge("throttledlog.byKey.suppressedTotal", key));
@@ -87,10 +95,10 @@ class ThrottledLogMetricsTest {
     void perKeyGaugesAreIndependentPerKey() {
         String quietKey = uniqueKey();
         String noisyKey = uniqueKey();
-        ThrottledLog.warnOncePerWindow(logger, quietKey, "boom", 5L); // 1 emitted, nothing suppressed
-        ThrottledLog.warnOncePerWindow(logger, noisyKey, "boom", 5L);
-        ThrottledLog.warnOncePerWindow(logger, noisyKey, "boom", 5L); // suppressed
-        ThrottledLog.warnOncePerWindow(logger, noisyKey, "boom", 5L); // suppressed
+        ThrottledLog.warnOncePerWindow(logger, quietKey, "boom", LONG_WINDOW_MS); // 1 emitted, nothing suppressed
+        ThrottledLog.warnOncePerWindow(logger, noisyKey, "boom", LONG_WINDOW_MS);
+        ThrottledLog.warnOncePerWindow(logger, noisyKey, "boom", LONG_WINDOW_MS); // suppressed
+        ThrottledLog.warnOncePerWindow(logger, noisyKey, "boom", LONG_WINDOW_MS); // suppressed
 
         assertEquals(0.0, byKeyGauge("throttledlog.byKey.suppressedTotal", quietKey));
         assertEquals(2.0, byKeyGauge("throttledlog.byKey.suppressedTotal", noisyKey));
@@ -100,12 +108,12 @@ class ThrottledLogMetricsTest {
     @Test
     void aggregateSuppressedTotalGrowsWithSuppressedOccurrences() {
         String key = uniqueKey();
-        ThrottledLog.warnOncePerWindow(logger, key, "boom", 5L);
+        ThrottledLog.warnOncePerWindow(logger, key, "boom", LONG_WINDOW_MS);
         double emittedBefore = gauge("throttledlog.emittedTotal");
         double suppressedBefore = gauge("throttledlog.suppressedTotal");
 
-        ThrottledLog.warnOncePerWindow(logger, key, "boom", 5L); // suppressed
-        ThrottledLog.warnOncePerWindow(logger, key, "boom", 5L); // suppressed
+        ThrottledLog.warnOncePerWindow(logger, key, "boom", LONG_WINDOW_MS); // suppressed
+        ThrottledLog.warnOncePerWindow(logger, key, "boom", LONG_WINDOW_MS); // suppressed
 
         assertTrue(gauge("throttledlog.suppressedTotal") >= suppressedBefore + 2.0,
                 "aggregate suppressed total must reflect the suppressed occurrences");
