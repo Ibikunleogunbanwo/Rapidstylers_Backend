@@ -131,6 +131,16 @@ public class DemoContentInitializer implements CommandLineRunner {
                     createdServices += seedCatalogue(demo, serviceType);
                     createdSlots += seedAvailability(demo);
                 }
+                // Stylists seeded by the earlier one-per-type version predate the
+                // catalogue feature and would show "No services available yet"
+                // forever. Backfill them — DEMO-prefixed rows only, so a real
+                // professional's profile is never touched by this seeder.
+                for (StylerEntity legacy : approved) {
+                    if (legacy.getStylerId() != null && legacy.getStylerId().startsWith("DEMO")) {
+                        createdServices += seedCatalogue(legacy, serviceType);
+                        createdSlots += seedAvailability(legacy);
+                    }
+                }
             }
             if (createdStylists > 0) {
                 log.info("Seeded {} demo stylist(s), {} service(s) and {} availability slot(s) to keep every service type at {} approved professionals",

@@ -170,6 +170,31 @@ class DemoContentInitializerTest {
     }
 
     @Test
+    void legacyDemoStylistsGetTheCatalogueBackfilledButRealOnesDoNot() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(1, "Nail Technician")));
+        // One legacy DEMO row and one real professional, floor already met.
+        StylerEntity legacy = approvedStyler("1");
+        legacy.setStylerId("DEMO9999");
+        StylerEntity real = approvedStyler("1");
+        real.setStylerId("DS5713");
+        when(stylers.findByServiceTypeId("1")).thenReturn(List.of(legacy, real, approvedStyler("1"), approvedStyler("1"), approvedStyler("1")));
+        SubServiceRepo subs = subsAlwaysMissing();
+        AvailabilityRepo availability = availabilityAlwaysEmpty();
+
+        init(services, stylers, subs, availability).run();
+
+        // The legacy demo row is backfilled (2 services + 2 slots)...
+        ArgumentCaptor<SubServiceEntity> savedServices = ArgumentCaptor.forClass(SubServiceEntity.class);
+        verify(subs, times(2)).save(savedServices.capture());
+        ArgumentCaptor<List<AvailabilityEntity>> savedSlots = ArgumentCaptor.forClass(List.class);
+        verify(availability, times(1)).saveAll(savedSlots.capture());
+        // ...and no styler row is created or modified for the real professional.
+        verify(stylers, never()).save(any());
+    }
+
+    @Test
     void reRunningNeverDuplicatesRows() {
         ServiceRepo services = mock(ServiceRepo.class);
         StylerRepo stylers = mock(StylerRepo.class);
