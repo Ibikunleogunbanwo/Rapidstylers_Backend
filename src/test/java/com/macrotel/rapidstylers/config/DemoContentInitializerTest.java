@@ -1,23 +1,30 @@
 package com.macrotel.rapidstylers.config;
 
+import com.macrotel.rapidstylers.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
+import com.macrotel.rapidstylers.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.repo.SubServiceRepo;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,50 +37,157 @@ class DemoContentInitializerTest {
         return s;
     }
 
-    private DemoContentInitializer init(ServiceRepo services, StylerRepo stylers) {
-        DemoContentInitializer init = new DemoContentInitializer(services, stylers);
-        ReflectionTestUtils.setField(init, "demoSeed", "true");
-        return init;
+    private StylerEntity approvedStyler(String typeId) {
+        StylerEntity s = new StylerEntity();
+        s.setVerificationStatus("APPROVED");
+        s.setServiceTypeId(typeId);
+        return s;
+    }
+
+    private DemoContentInitializer init(ServiceRepo services, StylerRepo stylers,
+                                        SubServiceRepo subs, AvailabilityRepo availability) {
+        stylersEchoingSave(stylers);
+        DemoContentInitializer initializer = new DemoContentInitializer(services, stylers, subs, availability);
+        ReflectionTestUtils.setField(initializer, "demoSeed", "true");
+        return initializer;
+    }
+
+    private SubServiceRepo subsAlwaysMissing() {
+        SubServiceRepo subs = mock(SubServiceRepo.class);
+        when(subs.isServiceExist(anyString(), anyString())).thenReturn(Optional.empty());
+        return subs;
+    }
+
+    /** A repo mock whose save returns its argument, like a real JPA repository. */
+    private StylerRepo stylersEchoingSave(StylerRepo stylers) {
+        when(stylers.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        return stylers;
+    }
+
+    private AvailabilityRepo availabilityAlwaysEmpty() {
+        AvailabilityRepo availability = mock(AvailabilityRepo.class);
+        when(availability.findByStylerId(anyString())).thenReturn(List.of());
+        return availability;
     }
 
     @Test
     void doesNothingWhenGateIsOff() {
         ServiceRepo services = mock(ServiceRepo.class);
         StylerRepo stylers = mock(StylerRepo.class);
-        DemoContentInitializer init = new DemoContentInitializer(services, stylers);
+        DemoContentInitializer initializer = new DemoContentInitializer(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty());
         // default (unset) gate
-        ReflectionTestUtils.setField(init, "demoSeed", "false");
+        ReflectionTestUtils.setField(initializer, "demoSeed", "false");
 
-        init.run();
+        initializer.run();
 
         verify(services, never()).findAll();
         verify(stylers, never()).save(any());
     }
 
     @Test
-    void seedsOneStylerPerEmptyServiceType() {
+    void topsEveryServiceTypeUpToTheShowroomFloor() {
         ServiceRepo services = mock(ServiceRepo.class);
         StylerRepo stylers = mock(StylerRepo.class);
         when(services.findAll()).thenReturn(List.of(
                 serviceType(1, "Nail Technician"),
                 serviceType(2, "Eyelash Technician"),
                 serviceType(3, "Barber")));
-        // Only service type 2 already has an approved stylist.
-        StylerEntity existing = new StylerEntity();
-        existing.setVerificationStatus("APPROVED");
-        existing.setServiceTypeId("2");
+        // Type 2 already has the full floor: nothing should be added there.
+        List<StylerEntity> covered = List.of(
+                approvedStyler("2"), approvedStyler("2"), approvedStyler("2"),
+                approvedStyler("2"), approvedStyler("2"));
         when(stylers.findByServiceTypeId("1")).thenReturn(List.of());
-        when(stylers.findByServiceTypeId("2")).thenReturn(List.of(existing));
+        when(stylers.findByServiceTypeId("2")).thenReturn(covered);
         when(stylers.findByServiceTypeId("3")).thenReturn(List.of());
+        SubServiceRepo subs = subsAlwaysMissing();
+        AvailabilityRepo availability = availabilityAlwaysEmpty();
 
-        init(services, stylers).run();
+        init(services, stylers, subs, availability).run();
 
         ArgumentCaptor<StylerEntity> saved = ArgumentCaptor.forClass(StylerEntity.class);
-        verify(stylers, org.mockito.Mockito.times(2)).save(saved.capture());
-        // exactly the two empty types, not the covered one
-        assertTrue(saved.getAllValues().stream().allMatch(s -> "APPROVED".equals(s.getVerificationStatus())));
+        // 5 for the empty nails type + 5 for the empty barber type; the covered type untouched.
+        verify(stylers, times(10)).save(saved.capture());
         List<String> typeIds = saved.getAllValues().stream().map(StylerEntity::getServiceTypeId).toList();
+        assertEquals(10, typeIds.size());
         assertTrue(typeIds.contains("1") && typeIds.contains("3") && !typeIds.contains("2"));
+        // all saved rows are approved (the visibility gate public search filters on)
+        assertTrue(saved.getAllValues().stream().allMatch(s -> "APPROVED".equals(s.getVerificationStatus())));
+    }
+
+    @Test
+    void aPartiallyFilledTypeIsOnlyToppedUp() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(1, "Nail Technician")));
+        when(stylers.findByServiceTypeId("1")).thenReturn(List.of(approvedStyler("1"), approvedStyler("1")));
+
+        init(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty()).run();
+
+        ArgumentCaptor<StylerEntity> saved = ArgumentCaptor.forClass(StylerEntity.class);
+        verify(stylers, times(3)).save(saved.capture());
+        // business names continue the count: Studio 3, 4, 5 — never a duplicate "Studio 1"
+        List<String> names = saved.getAllValues().stream().map(StylerEntity::getBusinessName).toList();
+        assertTrue(names.contains("Demo Nail Technician Studio 3"));
+        assertTrue(names.contains("Demo Nail Technician Studio 5"));
+        assertFalse(names.contains("Demo Nail Technician Studio 1"));
+    }
+
+    @Test
+    void everySeededStylerGetsPricedServicesAndWeeklyAvailability() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(1, "Nail Technician")));
+        when(stylers.findByServiceTypeId("1")).thenReturn(List.of());
+        SubServiceRepo subs = subsAlwaysMissing();
+        AvailabilityRepo availability = availabilityAlwaysEmpty();
+
+        init(services, stylers, subs, availability).run();
+
+        // 5 stylists x 2 services each (manicure + pedicure)
+        ArgumentCaptor<SubServiceEntity> savedServices = ArgumentCaptor.forClass(SubServiceEntity.class);
+        verify(subs, times(10)).save(savedServices.capture());
+        assertTrue(savedServices.getAllValues().stream().allMatch(s -> s.getPrice() != null && s.getDurationMinutes() != null));
+        assertEquals("Manicure", savedServices.getAllValues().get(0).getName());
+        assertEquals("Pedicure", savedServices.getAllValues().get(1).getName());
+        // 5 stylists x 2 weekly windows each (saved as one two-slot batch per stylist)
+        ArgumentCaptor<List<AvailabilityEntity>> savedSlots = ArgumentCaptor.forClass(List.class);
+        verify(availability, times(5)).saveAll(savedSlots.capture());
+        assertTrue(savedSlots.getAllValues().stream().allMatch(slots -> slots.size() == 2));
+    }
+
+    @Test
+    void theCatalogueMatchesTheStylistField() {
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        StylerEntity barber = initializer.demoStylerFor(serviceType(3, "Barber"));
+        StylerEntity nails = initializer.demoStylerFor(serviceType(1, "Nail Technician"));
+        StylerEntity unknown = initializer.demoStylerFor(serviceType(9, "Threading Specialist"));
+
+        // Catalogues are per-field: a barber never lists a pedicure.
+        assertTrue(barber.getBusinessName().contains("Barber"));
+        assertTrue(nails.getBusinessName().contains("Nail"));
+        // Unknown types still get a sensible (hair) catalogue, not nothing.
+        assertTrue(unknown.getDescription() != null && !unknown.getDescription().isEmpty());
+    }
+
+    @Test
+    void reRunningNeverDuplicatesRows() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(1, "Nail Technician")));
+        // A restart sees the floor already met: nothing new is created.
+        when(stylers.findByServiceTypeId("1")).thenReturn(List.of(
+                approvedStyler("1"), approvedStyler("1"), approvedStyler("1"),
+                approvedStyler("1"), approvedStyler("1")));
+        SubServiceRepo subs = mock(SubServiceRepo.class);
+        when(subs.isServiceExist(anyString(), anyString())).thenReturn(Optional.of(new SubServiceEntity()));
+        AvailabilityRepo availability = mock(AvailabilityRepo.class);
+        when(availability.findByStylerId(anyString())).thenReturn(List.of(new AvailabilityEntity()));
+
+        init(services, stylers, subs, availability).run();
+
+        verify(stylers, never()).save(any());
+        verify(subs, never()).save(any());
+        verify(availability, never()).save(any());
     }
 
     @Test
@@ -83,10 +197,10 @@ class DemoContentInitializerTest {
         when(services.findAll()).thenReturn(List.of(serviceType(4, "Hairstylist")));
         when(stylers.findByServiceTypeId("4")).thenReturn(List.of());
 
-        init(services, stylers).run();
+        init(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty()).run();
 
         ArgumentCaptor<StylerEntity> saved = ArgumentCaptor.forClass(StylerEntity.class);
-        verify(stylers).save(saved.capture());
+        verify(stylers, times(5)).save(saved.capture());
         StylerEntity demo = saved.getValue();
 
         // visible to public search, which filters on approved + bookable
@@ -120,14 +234,15 @@ class DemoContentInitializerTest {
         when(services.findAll()).thenThrow(new RuntimeException("db down"));
 
         // must not throw
-        init(services, stylers).run();
+        init(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty()).run();
 
         verify(stylers, never()).save(any());
     }
 
     @Test
     void idsAreUniqueAcrossCalls() {
-        DemoContentInitializer initializer = new DemoContentInitializer(mock(ServiceRepo.class), mock(StylerRepo.class));
+        DemoContentInitializer initializer = new DemoContentInitializer(
+                mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
         StylerEntity a = initializer.demoStylerFor(serviceType(1, "Nail Technician"));
         StylerEntity b = initializer.demoStylerFor(serviceType(1, "Nail Technician"));
         assertNotEquals(a.getStylerId(), b.getStylerId());
