@@ -24,10 +24,13 @@ import java.util.List;
  * default is off. Seeded rows are inert by construction:
  *  - email under demo-stylist+.rapidstylers.ca, password an unmatchable
  *    bcrypt hash (no login path);
- *  - verificationStatus APPROVED and isOnline "0" (the app's "Online" flag),
- *    which is exactly what public search filters on;
- *  - no Stripe Connect account, so the frontend cards honestly show their
- *    "Booking unavailable" state rather than pretending bookability;
+ *  - verificationStatus APPROVED, isOnline "0" (the app's "Online" flag) and
+ *    Connect onboarding COMPLETE: they mimic fully finished profiles, which is
+ *    what public search now shows (approved + bookable) — a customer is never
+ *    shown a professional they cannot actually book;
+ *  - no Stripe Connect ACCOUNT id, so nothing payment-real exists behind the
+ *    COMPLETE marker — booking attempts would fail at payment setup, which is
+ *    acceptable for inert demo rows on empty environments;
  *  - no phone/address, so nothing contacts a real person.
  *
  * Idempotent: a service type with an approved stylist — seeded or real — is
@@ -105,6 +108,10 @@ public class DemoContentInitializer implements CommandLineRunner {
         demo.setIsOnline("0"); // the app's "Online" flag (0 = online)
         demo.setStylerId(mintDemoStylerId());
         demo.setVerificationStatus("APPROVED");
+        // Completed-profile mimicry: public search shows only bookable
+        // professionals (approved + Connect COMPLETE when payments are live),
+        // so a seeded row must carry both or it would never be visible.
+        demo.setConnectOnboardingStatus("COMPLETE");
         demo.setIncludedTravelKm(15.0);
         demo.setBaseTravelFee("0.00");
         return demo;

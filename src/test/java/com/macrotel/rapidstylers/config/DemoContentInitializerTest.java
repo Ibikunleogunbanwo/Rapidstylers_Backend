@@ -89,8 +89,9 @@ class DemoContentInitializerTest {
         verify(stylers).save(saved.capture());
         StylerEntity demo = saved.getValue();
 
-        // visible to public search
+        // visible to public search, which filters on approved + bookable
         assertEquals("APPROVED", demo.getVerificationStatus());
+        assertEquals("COMPLETE", demo.getConnectOnboardingStatus());
         assertEquals("0", demo.getIsOnline());
         assertEquals("4", demo.getServiceTypeId());
         // inert: unmatchable password, no contact surface

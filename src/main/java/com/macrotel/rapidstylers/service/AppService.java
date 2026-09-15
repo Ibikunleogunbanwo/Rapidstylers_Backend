@@ -1613,6 +1613,31 @@ public class AppService {
         return VERIFICATION_APPROVED.equals(styler.getVerificationStatus());
     }
 
+    /**
+     * True when Stripe payments are live. Null-safe so unit tests that build
+     * AppService without its collaborators treat payments as off (dev mode).
+     */
+    private boolean isStripePaymentsLive(){
+        return stripeService != null && stripeService.isConfigured();
+    }
+
+    /**
+     * True when a styler may appear to CUSTOMERS: approved and — when payments
+     * are live — Connect onboarding complete, i.e. a profile a customer can
+     * actually book end to end. Every customer-facing surface (category tabs,
+     * name/province/city/nearby search, the public profile page and the saved
+     * list) filters on this rather than approval alone: showing an approved
+     * stylist whom booking then rejects is a service failure, not a detail.
+     * Admin surfaces (verification queue, approval counts) keep approval-only
+     * semantics via {@link #isApprovedStyler}.
+     */
+    private boolean isBookableStyler(StylerEntity styler){
+        if(!isApprovedStyler(styler)){
+            return false;
+        }
+        return !isStripePaymentsLive() || "COMPLETE".equals(styler.getConnectOnboardingStatus());
+    }
+
     private String stylerServiceName(String serviceTypeId){
         if(serviceTypeId == null || serviceTypeId.isEmpty()) return "";
         try{
@@ -1732,7 +1757,7 @@ public class AppService {
             List<StylerEntity> getStylerByName = stylerRepo.searchStyler(businessName);
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerByName){
-                if(isApprovedStyler(stylerEntity)){
+                if(isBookableStyler(stylerEntity)){
                     result.add(cachedStylerAccountDTO(stylerEntity));
                 }
             }
@@ -1760,7 +1785,7 @@ public class AppService {
                         List<StylerEntity> getStylerByProvince = stylerRepo.findByProvinceIgnoreCase(provinceKey);
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : getStylerByProvince){
-                            if(isApprovedStyler(stylerEntity)){
+                            if(isBookableStyler(stylerEntity)){
                                 built.add(cachedStylerAccountDTO(stylerEntity));
                             }
                         }
@@ -1799,7 +1824,7 @@ public class AppService {
                                 : stylerRepo.findByCityIgnoreCase(cityKey);
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : cityStylers){
-                            if(isApprovedStyler(stylerEntity)){
+                            if(isBookableStyler(stylerEntity)){
                                 built.add(cachedStylerAccountDTO(stylerEntity));
                             }
                         }
@@ -1821,7 +1846,7 @@ public class AppService {
                                 List<StylerEntity> provinceStylers = stylerRepo.findByProvinceIgnoreCase(province);
                                 List<Object> built = new ArrayList<>();
                                 for(StylerEntity stylerEntity : provinceStylers){
-                                    if(isApprovedStyler(stylerEntity)){
+                                    if(isBookableStyler(stylerEntity)){
                                         built.add(cachedStylerAccountDTO(stylerEntity));
                                     }
                                 }
@@ -3001,7 +3026,7 @@ public class AppService {
                 return response;
             }
             // Only approved professionals are publicly visible
-            if(!isApprovedStyler(isStylerExist.get())){
+            if(!isBookableStyler(isStylerExist.get())){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("This professional is not yet available");
                 response.setData(EMPTY_DATA);
@@ -3058,7 +3083,7 @@ public class AppService {
                 return errorResponse(response, "Invalid User Id");
             }
             Optional<StylerEntity> styler = stylerRepo.findByStylerId(stylerId);
-            if(styler.isEmpty() || !isApprovedStyler(styler.get())){
+            if(styler.isEmpty() || !isBookableStyler(styler.get())){
                 return errorResponse(response, "This professional is not available");
             }
             if(savedStylistRepo.findByUserIdAndStylerId(userId, stylerId).isEmpty()){
@@ -3097,7 +3122,7 @@ public class AppService {
             List<Object> result = new ArrayList<>();
             for(SavedStylistEntity saved : savedStylistRepo.findByUserIdOrderByCreatedAtDesc(userId)){
                 stylerRepo.findByStylerId(saved.getStylerId())
-                        .filter(this::isApprovedStyler)
+                        .filter(this::isBookableStyler)
                         .ifPresent(styler -> result.add(dtoService.stylerAccountDTO(styler)));
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -3452,7 +3477,7 @@ public class AppService {
                         List<StylerEntity> getStylerData = stylerRepo.findByServiceTypeId(serviceId);
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : getStylerData){
-                            if(isApprovedStyler(stylerEntity)){
+                            if(isBookableStyler(stylerEntity)){
                                 built.add(cachedStylerAccountDTO(stylerEntity));
                             }
                         }
@@ -4911,7 +4936,7 @@ public class AppService {
                 if(!(item instanceof StylerAccountDTO)) continue;
                 StylerAccountDTO dto = (StylerAccountDTO) item;
                 Optional<StylerEntity> styler = stylerRepo.findByStylerId(dto.getStylerId());
-                if(styler.isEmpty() || !isApprovedStyler(styler.get())) continue;
+                if(styler.isEmpty() || !isBookableStyler(styler.get())) continue;
                 if(requested != null && requestedStart != null && (!isDateNotException(dto.getStylerId(), requested.toString())
                         || !timeWithinAvailability(dto.getStylerId(), requested.toString(), requestedStart.toString(), duration)
                         || !isWindowFree(dto.getStylerId(), requested.toString(), requestedStart.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)), duration))) continue;
@@ -4965,7 +4990,7 @@ public class AppService {
                     cityStylers = stylerRepo.findByCityIgnoreCase(city);
                 }
                 for(StylerEntity styler : cityStylers){
-                    if(!isApprovedStyler(styler)) continue;
+                    if(!isBookableStyler(styler)) continue;
                     if(!seenIds.contains(styler.getStylerId())){
                         // Compute Haversine distance for DB results
                         double dist = haversine(latitude, longitude, styler.getLatitude(), styler.getLongitude());
@@ -5002,7 +5027,7 @@ public class AppService {
                 double distKm = entry.getValue();
                 StylerEntity styler = stylersById.get(stylerId);
                 if(styler == null) continue;
-                if(!isApprovedStyler(styler)) continue;
+                if(!isBookableStyler(styler)) continue;
                 if(serviceTypeId != null && !serviceTypeId.isEmpty()){
                     if(!serviceTypeId.equals(styler.getServiceTypeId())) continue;
                 }
