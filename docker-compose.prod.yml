@@ -128,6 +128,10 @@ services:
       FILE_UPLOAD_DIR: ${FILE_UPLOAD_DIR:-uploads/rapidstyler}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # Demo seed: APP_DEMO_SEED=true makes boot create one approved demo
+      # stylist per service type so public search is never all-empty on a
+      # fresh/wiped database. Default off; real stylists are never touched.
+      APP_DEMO_SEED: ${APP_DEMO_SEED:-false}
       JWT_SECRET: ${JWT_SECRET}
       JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-15}
       ENCRYPT_KEY: ${ENCRYPT_KEY:-}
