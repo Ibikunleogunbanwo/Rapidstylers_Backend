@@ -7,8 +7,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.logging.Logger;
 
 /**
@@ -37,13 +35,19 @@ public class GoogleTimezoneService {
             return null;
         }
         try {
+            // Digits, a sign and a dot need no escaping, and the comma must stay
+            // raw: this string is a URI template that RestTemplate encodes itself,
+            // so pre-encoding with URLEncoder turned the comma into %252C and
+            // Google answered INVALID_REQUEST ("Invalid 'location' parameter") for
+            // every single lookup — a bare lat/lng pair passes validation.
             String location = latitude + "," + longitude;
             // Timestamp only affects the zone's UTC offset (DST); the zone id
             // itself is the same year-round, so "now" is always fine.
             long timestamp = System.currentTimeMillis() / 1000;
             String url = "https://maps.googleapis.com/maps/api/timezone/json?location="
-                    + URLEncoder.encode(location, StandardCharsets.UTF_8)
-                    + "&timestamp=" + timestamp + "&key=" + googleApiKey;
+                    + location
+                    + "&timestamp=" + timestamp
+                    + "&key=" + googleApiKey;
 
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
