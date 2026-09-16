@@ -100,6 +100,17 @@ public class VendorZoneBackfill implements CommandLineRunner {
                 log.info("Vendor time zone backfill: {} row(s) with coordinates needed a lookup, {} corrected, "
                                 + "{} left unchanged but now marked exact, {} unresolved and retried next boot",
                         candidates, corrected, candidates - corrected - unresolved, unresolved);
+                if (unresolved > 0) {
+                    // The usual cause is a Google-side answer, not a code fault:
+                    // the Time Zone API must be enabled on the key's project
+                    // (the lookup log above carries Google's own words). The rows
+                    // keep their province answer meanwhile and are picked up on
+                    // the next boot, so nothing needs re-running by hand.
+                    log.warn("{} vendor(s) could not be resolved and keep their province-derived zone; "
+                                    + "they stay retryable and self-heal on the next start once the "
+                                    + "lookup succeeds",
+                            unresolved);
+                }
             } else if (alreadyExact > 0) {
                 log.info("Vendor time zone backfill: all {} vendor(s) with coordinates already carry a Google-exact zone",
                         alreadyExact);

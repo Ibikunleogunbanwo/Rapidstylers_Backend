@@ -54,7 +54,17 @@ public class GoogleTimezoneService {
 
             String status = root.path("status").asText();
             if (!"OK".equals(status)) {
-                LOG.warning("Time Zone API returned status: " + status);
+                // Google's error bodies carry the operator-actionable reason
+                // ("This API is not activated on your API project."), which the
+                // bare status word does not — log both so a denied lookup says
+                // what to fix instead of sending the reader to the docs.
+                // Google answers the classic shape (error_message) for some
+                // errors and the newer camelCase shape (errorMessage) for others;
+                // read both so the reason never goes missing.
+                String reason = root.path("error_message").asText(null);
+                if (reason == null || reason.isBlank()) reason = root.path("errorMessage").asText(null);
+                LOG.warning("Time Zone API returned status: " + status
+                        + (reason == null || reason.isBlank() ? "" : " | " + reason));
                 return null;
             }
             String zoneId = root.path("timeZoneId").asText(null);

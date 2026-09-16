@@ -90,6 +90,22 @@ class GoogleTimezoneServiceTest {
     }
 
     @Test
+    void theDisabledApiAnswerProductionActuallyReturnsYieldsNull() throws Exception {
+        // The exact body that came back in production: a valid request, a project
+        // without the Time Zone API enabled. It must degrade to the province map
+        // (null), never throw and never store a guess. Two spellings of the reason
+        // field have been seen from this API, so both are accepted.
+        for (String body : new String[]{
+                "{\"errorMessage\": \"This API is not activated on your API project.\", \"status\": \"REQUEST_DENIED\"}",
+                "{\"error_message\": \"This API is not activated on your API project.\", \"status\": \"REQUEST_DENIED\"}"}) {
+            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+                    .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
+
+            assertNull(call(51.0447, -114.0719));
+        }
+    }
+
+    @Test
     void emptyZoneIdYieldsNull() throws Exception {
         respond("OK", null);
         assertNull(call(51.0447, -114.0719));
