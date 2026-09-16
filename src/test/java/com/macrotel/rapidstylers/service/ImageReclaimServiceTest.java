@@ -85,7 +85,7 @@ class ImageReclaimServiceTest {
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 
         when(blogPostRepo.countByImageUrl(ORPHAN_URL)).thenReturn(0L);
-        when(serviceRepo.countByImageUrl(ORPHAN_URL)).thenReturn(1L);
+        when(serviceRepo.countByServiceImageUrl(ORPHAN_URL)).thenReturn(1L);
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 
         verify(cloudinaryService, never()).destroy(anyString());

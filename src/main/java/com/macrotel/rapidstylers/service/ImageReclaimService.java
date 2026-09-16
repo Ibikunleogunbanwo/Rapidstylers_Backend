@@ -65,7 +65,7 @@ public class ImageReclaimService {
                 + stylerRepo.countByIdentificationImageUrl(trimmed)
                 + stylerPortfolioRepo.countByImageUrl(trimmed)
                 + blogPostRepo.countByImageUrl(trimmed)
-                + serviceRepo.countByImageUrl(trimmed);
+                + serviceRepo.countByServiceImageUrl(trimmed);
     }
 
     /**
