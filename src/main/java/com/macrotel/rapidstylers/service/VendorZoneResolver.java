@@ -24,6 +24,16 @@ public final class VendorZoneResolver {
     /** Default when a vendor has no usable province: the app's home zone. */
     public static final ZoneId DEFAULT_ZONE = ZoneId.of("America/Edmonton");
 
+    /**
+     * How a stored zone was derived. A zone resolved from the vendor's geocoded
+     * address is exact for the real place; one that came from the province map is
+     * a fallback that a later lookup can improve. Stored alongside the zone
+     * because the two are often the same string (an Alberta address resolves to
+     * 'America/Edmonton' either way), so the value alone cannot say which it is.
+     */
+    public static final String SOURCE_GOOGLE = "google";
+    public static final String SOURCE_PROVINCE = "province";
+
     private static final Map<String, ZoneId> BY_PROVINCE = Map.ofEntries(
             // Province names exactly as the signup flow and address autocomplete write them.
             Map.entry("alberta", ZoneId.of("America/Edmonton")),
@@ -76,6 +86,11 @@ public final class VendorZoneResolver {
             Map.entry("nevada", ZoneId.of("America/Los_Angeles")),
             Map.entry("nv", ZoneId.of("America/Los_Angeles"))
     );
+
+    /** True when the stored zone is already exact for the vendor's address. */
+    public static boolean isGoogleDerived(String timeZoneSource) {
+        return SOURCE_GOOGLE.equalsIgnoreCase(timeZoneSource == null ? "" : timeZoneSource.trim());
+    }
 
     /**
      * Vendor zone for a province label. Case-insensitive, trims whitespace,

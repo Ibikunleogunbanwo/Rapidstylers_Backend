@@ -30,6 +30,11 @@ public class StylerEntity implements Serializable {
     // IANA zone the vendor's weekly hours live in (e.g. "America/Edmonton"),
     // derived from the signup geocode lat/lng. NULL = use the app default.
     private String timeZone;
+    // How timeZone was derived: VendorZoneResolver.SOURCE_GOOGLE when the
+    // geocoded address was resolved, SOURCE_PROVINCE when only the province map
+    // could answer, NULL when unknown (rows written before provenance existed).
+    // The startup backfill re-derives the non-Google rows once.
+    private String timeZoneSource;
     private String businessAddress;
     // Structured Canadian address (new registrations)
     private String streetAddress;

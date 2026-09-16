@@ -11,6 +11,7 @@ import com.macrotel.rapidstylers.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.ReviewRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -27,6 +28,7 @@ import static com.macrotel.rapidstylers.config.AppConstants.DEFAULT_SERVICE_DURA
  *   - 4 blog articles
  */
 @Component
+@Order(1)
 public class DataInitializer implements CommandLineRunner {
 
     @Autowired

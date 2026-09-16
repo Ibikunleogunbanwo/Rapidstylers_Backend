@@ -1515,8 +1515,13 @@ public class AppService {
             if(stylerEntity.getLatitude() != null && stylerEntity.getLongitude() != null){
                 String derived = googleTimezoneService.timeZoneId(stylerEntity.getLatitude(), stylerEntity.getLongitude());
                 stylerEntity.setTimeZone(derived != null ? derived : VendorZoneResolver.zoneForProvince(stylerEntity.getProvince()).getId());
+                // Record which answer this was: an exact lookup, or a province
+                // guess worth retrying. The startup backfill reads this marker.
+                stylerEntity.setTimeZoneSource(derived != null
+                        ? VendorZoneResolver.SOURCE_GOOGLE : VendorZoneResolver.SOURCE_PROVINCE);
             } else if (stylerEntity.getTimeZone() == null || stylerEntity.getTimeZone().isBlank()) {
                 stylerEntity.setTimeZone(VendorZoneResolver.zoneForProvince(stylerEntity.getProvince()).getId());
+                stylerEntity.setTimeZoneSource(VendorZoneResolver.SOURCE_PROVINCE);
             }
 
             stylerRepo.save(stylerEntity);
@@ -2454,12 +2459,41 @@ public class AppService {
             }
             int bookingDuration = booking.getDurationMinutes() == null
                     ? DEFAULT_SERVICE_DURATION_MINUTES : booking.getDurationMinutes();
-            LocalTime end = start.plusMinutes(bookingDuration);
-            if(proposed.isBefore(end) && proposed.plusMinutes(requestedDurationMinutes).isAfter(start)){
+            // Minute-of-day arithmetic, not LocalTime.plusMinutes: LocalTime wraps
+            // at midnight, so a 23:30 booking "ended" at 00:30 and looked like it
+            // finished before a 09:00 proposal instead of running into the night.
+            int bookedStart = minuteOfDay(start);
+            int bookedEnd = bookedStart + bookingDuration;
+            int proposedStart = minuteOfDay(proposed);
+            int proposedEnd = proposedStart + requestedDurationMinutes;
+            if(proposedStart < bookedEnd && proposedEnd > bookedStart){
                 return false;
             }
         }
         return true;
+    }
+
+    /** Minutes from midnight. LocalTime's own plusMinutes wraps at midnight; this never does. */
+    private static int minuteOfDay(LocalTime time){
+        return time.getHour() * 60 + time.getMinute();
+    }
+
+    /**
+     * True when a service of {@code durationMinutes} starting at
+     * {@code startMinutes} fits entirely inside a weekly window.
+     *
+     * Weekly windows are same-day shifts, so a window whose end is not after its
+     * start is malformed rather than an overnight one, and a start whose duration
+     * would cross midnight is out of hours. The old check used
+     * LocalTime.plusMinutes, which wraps: 23:50 + 30 landed at 00:20, "before" a
+     * 17:00 close, so a vendor who closed at 17:00 read open every night after
+     * 23:30. Minute-of-day arithmetic cannot wrap, so that false positive is gone.
+     */
+    private static boolean windowFits(LocalTime windowStart, LocalTime windowEnd, int startMinutes, int durationMinutes){
+        int open = minuteOfDay(windowStart);
+        int close = minuteOfDay(windowEnd);
+        if(close <= open) return false;
+        return startMinutes >= open && startMinutes + durationMinutes <= close;
     }
 
     /** True when the complete requested service fits inside weekly hours. */
@@ -2476,8 +2510,7 @@ public class AppService {
                 if(targetDay.equals(row.getDayOfWeek())){
                     LocalTime start = parseAvailabilityTime(row.getStartTime());
                     LocalTime end = parseAvailabilityTime(row.getEndTime());
-                    if(!start.isBefore(end)) return false;
-                    if(!requested.isBefore(start) && requested.plusMinutes(requestedDurationMinutes).compareTo(end) <= 0){
+                    if(windowFits(start, end, minuteOfDay(requested), requestedDurationMinutes)){
                         return true;
                     }
                 }
@@ -5075,11 +5108,12 @@ public class AppService {
         List<AvailabilityEntity> rows = availabilityRepo.findByStylerId(stylerId);
         if(rows == null || rows.isEmpty()) return false;
         int weekday = date.getDayOfWeek().getValue() % 7;
+        int nowMinutes = minuteOfDay(time);
         return rows.stream().filter(row -> Integer.toString(weekday).equals(row.getDayOfWeek())).anyMatch(row -> {
             try {
                 LocalTime start = parseAvailabilityTime(row.getStartTime());
                 LocalTime end = parseAvailabilityTime(row.getEndTime());
-                return !time.isBefore(start) && !time.plusMinutes(durationMinutes).isAfter(end)
+                return windowFits(start, end, nowMinutes, durationMinutes)
                         && isWindowFree(stylerId, date.toString(), time.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)), durationMinutes);
             } catch(Exception ex){ return false; }
         });
