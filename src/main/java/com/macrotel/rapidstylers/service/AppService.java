@@ -1494,6 +1494,17 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            // A street address is what makes the profile bookable at all: the
+            // default delivery is a visit, and the bookability gate keeps an
+            // address-less professional out of search and off their own
+            // profile, while approvals refuse them outright. Reject at signup
+            // so nobody completes onboarding into an invisible account.
+            if(!isPresentText(stylerData.getStreetAddress()) && !isPresentText(stylerData.getBusinessAddress())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Business address is required. Clients travel to it when they book a visit, so it has to be the place they come to.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             StylerEntity stylerEntity = new StylerEntity(stylerData);
 
             // Geocode address → lat/lng if not already provided
@@ -1641,20 +1652,43 @@ public class AppService {
     }
 
     /**
-     * True when a styler may appear to CUSTOMERS: approved and — when payments
-     * are live — Connect onboarding complete, i.e. a profile a customer can
-     * actually book end to end. Every customer-facing surface (category tabs,
-     * name/province/city/nearby search, the public profile page and the saved
-     * list) filters on this rather than approval alone: showing an approved
-     * stylist whom booking then rejects is a service failure, not a detail.
-     * Admin surfaces (verification queue, approval counts) keep approval-only
-     * semantics via {@link #isApprovedStyler}.
+     * True when a styler may appear to CUSTOMERS: approved, reachable at a
+     * street address, and — when payments are live — Connect onboarding
+     * complete, i.e. a profile a customer can actually book end to end. Every
+     * customer-facing surface (category tabs, name/province/city/nearby search,
+     * the public profile page and the saved list) filters on this rather than
+     * approval alone: showing an approved stylist whom booking then rejects is a
+     * service failure, not a detail. Admin surfaces (verification queue,
+     * approval counts) keep approval-only semantics via
+     * {@link #isApprovedStyler}, and approval itself is refused without an
+     * address so the queue can never produce a listed-but-unbookable profile.
      */
     private boolean isBookableStyler(StylerEntity styler){
         if(!isApprovedStyler(styler)){
             return false;
         }
+        // Visiting the stylist is the default way a booking is delivered, so a
+        // profile with nowhere to go cannot be booked. Without this a customer
+        // could pay for an appointment and be handed no destination.
+        if(!hasStreetAddress(styler)){
+            return false;
+        }
         return !isStripePaymentsLive() || "COMPLETE".equals(styler.getConnectOnboardingStatus());
+    }
+
+    /**
+     * Whether a professional's profile says where a customer actually goes.
+     * Either address field counts: signup writes the Google-formatted address
+     * into {@code businessAddress}, and the structured registration also keeps
+     * {@code streetAddress}.
+     */
+    static boolean hasStreetAddress(StylerEntity styler){
+        if(styler == null) return false;
+        return isPresentText(styler.getBusinessAddress()) || isPresentText(styler.getStreetAddress());
+    }
+
+    private static boolean isPresentText(String value){
+        return value != null && !value.trim().isEmpty();
     }
 
     private String stylerServiceName(String serviceTypeId){
@@ -1685,6 +1719,10 @@ public class AppService {
                 entry.put("serviceTypeName", stylerServiceName(styler.getServiceTypeId()));
                 entry.put("city", styler.getCity());
                 entry.put("province", styler.getProvince());
+                // Approval is refused without a street address, so the reviewer
+                // has to be able to see whether there is one.
+                entry.put("businessAddress", styler.getBusinessAddress());
+                entry.put("addressOnFile", hasStreetAddress(styler));
                 entry.put("identificationId", styler.getIdentificationId());
                 entry.put("identificationImageUrl", styler.getIdentificationImageUrl());
                 entry.put("profileImageUrl", styler.getProfileImageUrl());
@@ -1730,6 +1768,16 @@ public class AppService {
             }
             String pastTense = action.equals(VERIFICATION_APPROVED) ? "approved" : action.equals(VERIFICATION_REJECTED) ? "rejected" : "suspended";
             StylerEntity styler = stylerOpt.get();
+            // Approving a professional with no street address would publish
+            // nothing: the bookability gate keeps them out of search and off
+            // their own profile. Better to refuse and say what is missing than
+            // to complete an approval that silently does not list them.
+            if(VERIFICATION_APPROVED.equals(action) && !hasStreetAddress(styler)){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This professional has no business address on file, so approving them would leave them unlisted and unbookable. Ask them to add their address first.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             String previousStatus = styler.getVerificationStatus();
             styler.setVerificationStatus(action);
             stylerRepo.save(styler);
@@ -1755,7 +1803,10 @@ public class AppService {
             List<StylerEntity> getAllStylers = stylerRepo.findAll();
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getAllStylers){
-                if(isApprovedStyler(stylerEntity)){
+                // A public list is a customer-facing surface, so it uses the
+                // same gate as search: approval alone would advertise a profile
+                // that cannot be booked.
+                if(isBookableStyler(stylerEntity)){
                     result.add(cachedStylerAccountDTO(stylerEntity));
                 }
             }
@@ -2233,8 +2284,16 @@ public class AppService {
                     }
                 } catch (Exception ignored){}
             }
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
+            // The appointment's times live on the stylist's clock, so the email
+            // names the zone rather than leaving a cross-province reader to
+            // guess whose 2:00 PM this is.
+            String zoneSuffix = VendorZoneResolver.timeSuffixForStyler(
+                    stylerOpt.map(StylerEntity::getTimeZone).orElse(null),
+                    stylerOpt.map(StylerEntity::getProvince).orElse(null));
             String when = (appointment.getAppointmentDate() == null ? "" : appointment.getAppointmentDate())
-                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank() ? "" : " at " + appointment.getArrivalTime());
+                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank()
+                            ? "" : " at " + appointment.getArrivalTime() + zoneSuffix);
             String price = appointment.getPrice() == null ? "" : appointment.getPrice();
             String servicePrice = appointment.getServicePrice() == null ? price : appointment.getServicePrice();
             String travelFee = appointment.getTravelFee() == null ? "0.00" : appointment.getTravelFee();
@@ -2246,7 +2305,6 @@ public class AppService {
                 if(customerName.isBlank()) customerName = "there";
             }
             String stylistName = "Stylist";
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
             if(stylerOpt.isPresent()){
                 stylistName = (stylerOpt.get().getFirstname() + " " + stylerOpt.get().getLastname()).trim();
                 if(stylistName.isBlank()) stylistName = stylerOpt.get().getBusinessName();
@@ -2418,6 +2476,68 @@ public class AppService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    /**
+     * The logged-in professional's own reviews. This is deliberately not just
+     * the public list: an approved review is what clients see, and a count of
+     * what is still in moderation stops a review the stylist was told about
+     * from looking lost. The average covers approved rows only, so it matches
+     * the number the public profile shows.
+     */
+    public BaseResponse getOwnStylerReviews(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(stylerRepo.findByStylerId(stylerId).isEmpty()){
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            List<Object> approved = cachedReviews(stylerId);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("reviews", approved);
+            data.put("reviewCount", approved.size());
+            data.put("averageRating", averageReviewRating(approved));
+            data.put("pendingCount", pendingReviewCount(stylerId));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        }
+        catch (Exception ex){
+            LOG.warning("Own reviews failed: " + ex.getMessage());
+            return errorResponse(response, "Could not load reviews");
+        }
+        return response;
+    }
+
+    /**
+     * Rounded to one decimal, matching how the public profile reports a rating
+     * (see DTOService), so the stylist and their clients read the same number.
+     */
+    static Double averageReviewRating(List<Object> reviews){
+        double total = 0;
+        int scored = 0;
+        for(Object row : reviews){
+            if(!(row instanceof StylerReviewDTO dto) || dto.getRatingScore() == null) continue;
+            try{
+                total += Double.parseDouble(dto.getRatingScore().trim());
+                scored++;
+            }
+            catch (NumberFormatException ignored){
+                // A malformed score is left out rather than dragging the average down.
+            }
+        }
+        if(scored == 0) return null;
+        return Math.round((total / scored) * 10.0) / 10.0;
+    }
+
+    /** How many of this stylist's reviews are waiting on moderation. */
+    private int pendingReviewCount(String stylerId){
+        List<ReviewEntity> rows = reviewRepo.findByStylerId(stylerId);
+        if(rows == null) return 0;
+        int pending = 0;
+        for(ReviewEntity row : rows){
+            if("PENDING".equalsIgnoreCase(row.getModerationStatus())) pending++;
+        }
+        return pending;
     }
 
     /** True when no active booking overlaps the requested service duration. */
@@ -3611,6 +3731,14 @@ public class AppService {
             if(!isApprovedStyler(isStylerExist.get())){
                 return errorResponse(response, "This professional is not yet available for booking");
             }
+            // Visiting the professional is the default delivery, and a customer
+            // with no destination cannot travel. Approval already refuses an
+            // address-less profile, so this only catches legacy rows approved
+            // before that rule — but a booking must not be creatable against a
+            // profile the customer could never reach.
+            if(!hasStreetAddress(isStylerExist.get())){
+                return errorResponse(response, "This professional has no address published, so a visit cannot be booked with them yet");
+            }
             // With payments live, a stylist must have finished Connect onboarding
             // to receive payouts — the marketplace blocks booking until then.
             if(stripeService.isConfigured() && !"COMPLETE".equals(isStylerExist.get().getConnectOnboardingStatus())){
@@ -4792,6 +4920,11 @@ public class AppService {
         data.put("finished", finished);
         data.put("cancelled", cancelled);
         data.put("totalRevenue", money(grossRevenue));
+        // Listing health, so the dashboard can explain a profile that is not
+        // reachable instead of leaving the professional to guess why nobody
+        // books. `bookable` is the same gate public search uses.
+        data.put("addressOnFile", hasStreetAddress(styler));
+        data.put("bookable", isBookableStyler(styler));
         data.put("totalCommission", money(commission));
         data.put("netRevenue", money(netRevenue));
         data.put("popularServices", popularServices);

@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
 import java.time.ZoneId;
+import java.time.format.TextStyle;
 import java.util.Locale;
 import java.util.Map;
 
@@ -101,5 +102,58 @@ public final class VendorZoneResolver {
         String key = province.trim().toLowerCase(Locale.ROOT);
         if (key.isEmpty()) return DEFAULT_ZONE;
         return BY_PROVINCE.getOrDefault(key, DEFAULT_ZONE);
+    }
+
+    /**
+     * The stored zone when the row has a usable one, else the province map — or
+     * null when the row says nothing about its clock. Strict on purpose: a
+     * stored appointment's times are only known to be in the vendor's zone, so
+     * callers that print them must not substitute the app default and claim a
+     * clock the row never declared. Mirrors the frontend's strict label rule.
+     */
+    public static ZoneId zoneForStyler(String timeZone, String province) {
+        if (timeZone != null && !timeZone.isBlank()) {
+            try {
+                return ZoneId.of(timeZone.trim());
+            } catch (Exception ignored) {
+                // Unparsable stored value: fall through to the province map.
+            }
+        }
+        return province == null || province.isBlank() ? null : zoneForProvince(province);
+    }
+
+    /**
+     * The zone's name as a customer would say it — "Mountain Time", not
+     * "America/Edmonton" — for any sentence that prints a time. Falls back to
+     * the raw zone id when the JDK carries no friendly name, so a label is
+     * always produced for a zone the caller actually has.
+     */
+    public static String labelFor(ZoneId zone) {
+        if (zone == null) return "";
+        try {
+            String name = zone.getDisplayName(TextStyle.FULL, Locale.CANADA);
+            if (name != null && !name.isBlank()) return name;
+        } catch (Exception ignored) {
+            // Fall through to the id.
+        }
+        return zone.getId();
+    }
+
+    /**
+     * The label for a stored appointment's times, or "" when the stylist row
+     * declares no clock. Empty means callers print the bare time rather than
+     * guess at one.
+     */
+    public static String labelForStyler(String timeZone, String province) {
+        return labelFor(zoneForStyler(timeZone, province));
+    }
+
+    /**
+     * A trailing label for a printed time — " (Mountain Time)" — or "" when the
+     * clock is unknown, so callers can concatenate unconditionally.
+     */
+    public static String timeSuffixForStyler(String timeZone, String province) {
+        String label = labelForStyler(timeZone, province);
+        return label.isEmpty() ? "" : " (" + label + ")";
     }
 }

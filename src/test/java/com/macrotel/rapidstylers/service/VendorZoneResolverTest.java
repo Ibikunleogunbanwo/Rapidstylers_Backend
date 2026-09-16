@@ -218,6 +218,43 @@ class VendorZoneResolverTest {
     }
 
     @Test
+    void zoneLabelsReadAsPlainEnglish() {
+        // Any sentence that prints a time names the zone the way a customer
+        // would say it, not as an IANA id.
+        assertEquals("Mountain Time", VendorZoneResolver.labelFor(EDMONTON));
+        assertEquals("Eastern Time", VendorZoneResolver.labelFor(TORONTO));
+        assertEquals("", VendorZoneResolver.labelFor(null));
+    }
+
+    @Test
+    void stylerLabelPrefersTheStoredZoneThenTheProvinceMap() {
+        // The stored zone (from the signup geocode) knows the real place better
+        // than the province label beside it.
+        assertEquals("Eastern Time", VendorZoneResolver.labelForStyler("America/Toronto", "Alberta"));
+        // Rows without a stored zone still get their province's clock.
+        assertEquals("Eastern Time", VendorZoneResolver.labelForStyler(null, "Ontario"));
+        assertEquals("Mountain Time", VendorZoneResolver.labelForStyler("  ", "Alberta"));
+        // A stored value Java cannot parse falls back rather than blowing up.
+        assertEquals("Eastern Time", VendorZoneResolver.labelForStyler("Mars/Olympus", "Ontario"));
+    }
+
+    @Test
+    void anUnknownClockIsNeverLabelledWithTheAppDefault() {
+        // A row that names no zone and no province has an unknown clock. Calling
+        // it "Mountain Time" would state something the row never declared, so
+        // callers must print the bare time instead.
+        assertEquals("", VendorZoneResolver.labelForStyler(null, null));
+        assertEquals("", VendorZoneResolver.labelForStyler("", ""));
+        assertEquals("", VendorZoneResolver.timeSuffixForStyler(null, null));
+    }
+
+    @Test
+    void timeSuffixIsReadyToConcatenate() {
+        assertEquals(" (Mountain Time)", VendorZoneResolver.timeSuffixForStyler("America/Edmonton", null));
+        assertEquals(" (Eastern Time)", VendorZoneResolver.timeSuffixForStyler(null, "Ontario"));
+    }
+
+    @Test
     void malformedOrAbsentHoursNeverReadAsOpen() {
         stubHours("BADWINDOW1", "Ontario", slot("2", "17:00", "09:00"));
 

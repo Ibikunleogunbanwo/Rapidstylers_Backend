@@ -592,6 +592,9 @@ class BookingWorkflowTest {
         StylerEntity styler = new StylerEntity();
         styler.setStylerId("STYLER1");
         styler.setVerificationStatus("APPROVED");
+        // Booking requires a published address, so the fixture carries one and
+        // each test varies only the thing it is actually about.
+        styler.setBusinessAddress("700 2 St SW, Calgary, Alberta");
         return styler;
     }
 

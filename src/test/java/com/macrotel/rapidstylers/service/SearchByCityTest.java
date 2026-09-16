@@ -106,6 +106,9 @@ class SearchByCityTest {
         styler.setServiceTypeId("3");
         styler.setCity(city);
         styler.setProvince(province);
+        // Bookability includes a published address, so the fixture carries one;
+        // otherwise these rows would be filtered for the wrong reason.
+        styler.setBusinessAddress("700 2 St SW, " + city);
         return styler;
     }
 

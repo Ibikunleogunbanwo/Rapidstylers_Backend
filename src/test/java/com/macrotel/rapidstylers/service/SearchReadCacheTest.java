@@ -110,6 +110,8 @@ class SearchReadCacheTest {
         styler.setStylerId(id);
         styler.setVerificationStatus("APPROVED");
         styler.setServiceTypeId("3");
+        // Search filters on bookability, which a published address is part of.
+        styler.setBusinessAddress("700 2 St SW, Calgary, Alberta");
         return styler;
     }
 

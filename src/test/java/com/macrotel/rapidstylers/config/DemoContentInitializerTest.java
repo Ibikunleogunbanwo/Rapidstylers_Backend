@@ -170,7 +170,7 @@ class DemoContentInitializerTest {
     }
 
     @Test
-    void legacyDemoStylistsGetTheCatalogueBackfilledButRealOnesDoNot() {
+    void legacyDemoStylistsGetTheCatalogueAndAddressBackfilledButRealOnesDoNot() {
         ServiceRepo services = mock(ServiceRepo.class);
         StylerRepo stylers = mock(StylerRepo.class);
         when(services.findAll()).thenReturn(List.of(serviceType(1, "Nail Technician")));
@@ -190,8 +190,53 @@ class DemoContentInitializerTest {
         verify(subs, times(2)).save(savedServices.capture());
         ArgumentCaptor<List<AvailabilityEntity>> savedSlots = ArgumentCaptor.forClass(List.class);
         verify(availability, times(1)).saveAll(savedSlots.capture());
-        // ...and no styler row is created or modified for the real professional.
+        // ...and its missing address is filled in, so bookings against it can
+        // finally name a destination.
+        ArgumentCaptor<StylerEntity> savedStyler = ArgumentCaptor.forClass(StylerEntity.class);
+        verify(stylers, times(1)).save(savedStyler.capture());
+        assertEquals("DEMO9999", savedStyler.getValue().getStylerId());
+        assertEquals(
+                DemoContentInitializer.demoAddressFor("DEMO9999"),
+                savedStyler.getValue().getBusinessAddress());
+    }
+
+    @Test
+    void aRealProfessionalsAddressIsNeverRewrittenByTheSeeder() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(1, "Nail Technician")));
+        StylerEntity demoWithAddress = approvedStyler("1");
+        demoWithAddress.setStylerId("DEMO4242");
+        demoWithAddress.setBusinessAddress("Suite 300, 1 Real St SW");
+        StylerEntity real = approvedStyler("1");
+        real.setStylerId("DS5713");
+        real.setBusinessAddress("700 2 St SW");
+        when(stylers.findByServiceTypeId("1")).thenReturn(List.of(
+                demoWithAddress, real, approvedStyler("1"), approvedStyler("1"), approvedStyler("1")));
+
+        init(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty()).run();
+
+        assertEquals("Suite 300, 1 Real St SW", demoWithAddress.getBusinessAddress());
+        assertEquals("700 2 St SW", real.getBusinessAddress());
         verify(stylers, never()).save(any());
+    }
+
+    @Test
+    void everySeededStylerGetsAnAddressOnARealCalgaryBlock() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(4, "Hairstylist")));
+        when(stylers.findByServiceTypeId("4")).thenReturn(List.of());
+
+        init(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty()).run();
+
+        ArgumentCaptor<StylerEntity> saved = ArgumentCaptor.forClass(StylerEntity.class);
+        verify(stylers, times(5)).save(saved.capture());
+        for (StylerEntity demo : saved.getAllValues()) {
+            assertTrue(demo.getBusinessAddress() != null && !demo.getBusinessAddress().isEmpty());
+            // The address stays put on a restart, so a saved booking never moves.
+            assertEquals(demo.getBusinessAddress(), DemoContentInitializer.demoAddressFor(demo.getStylerId()));
+        }
     }
 
     @Test

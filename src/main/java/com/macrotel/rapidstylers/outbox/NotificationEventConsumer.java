@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.outbox;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.service.VendorZoneResolver;
 import com.macrotel.rapidstylers.service.NotificationDedupService;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.entity.SubServiceEntity;
@@ -272,32 +273,41 @@ public class NotificationEventConsumer {
         Optional<UserEntity> user = userRepo.findByUserId(event.getOrDefault("customerId", ""));
         Optional<StylerEntity> styler = stylerRepo.findByStylerId(event.getOrDefault("stylerId", ""));
 
+        // An appointment's times are written on the stylist's clock, so a
+        // customer in another province needs to be told which clock that is.
+        // Resolved from the stylist row at delivery time; "" when the row
+        // declares no zone, in which case the time prints bare rather than
+        // wearing a guessed label.
+        String zoneSuffix = VendorZoneResolver.timeSuffixForStyler(
+                styler.map(StylerEntity::getTimeZone).orElse(null),
+                styler.map(StylerEntity::getProvince).orElse(null));
+
         user.map(UserEntity::getEmailAddress)
                 .filter(email -> !email.isBlank())
                 .ifPresent(email -> emailConfig.sendSimpleMail(email, subject, bodyBuilder.build(
-                        event.get("customerHeadline"), event.get("customerDetail"), service, event)));
+                        event.get("customerHeadline"), event.get("customerDetail"), service, event, zoneSuffix)));
 
         styler.map(StylerEntity::getEmailAddress)
                 .filter(email -> !email.isBlank())
                 .ifPresent(email -> emailConfig.sendSimpleMail(email, subject, bodyBuilder.build(
-                        event.get("stylerHeadline"), event.get("stylerDetail"), service, event)));
+                        event.get("stylerHeadline"), event.get("stylerDetail"), service, event, zoneSuffix)));
     }
 
     private String bookingBody(String headline, String detail, Optional<SubServiceEntity> service,
-                               Map<String, String> event) {
+                               Map<String, String> event, String zoneSuffix) {
         String serviceName = service.map(SubServiceEntity::getName).orElse("Appointment");
         return "<p>" + value(headline, "Appointment update") + "</p>"
                 + "<p>" + value(detail, "Your booking has been updated.") + "</p>"
                 + "<p><strong>Service:</strong> " + serviceName + "</p>"
                 + "<p><strong>Date:</strong> " + value(event.get("appointmentDate"), "TBC") + "</p>"
-                + "<p><strong>Arrival time:</strong> " + displayArrivalTime(event.get("arrivalTime")) + "</p>"
+                + "<p><strong>Arrival time:</strong> " + displayArrivalTime(event.get("arrivalTime")) + zoneSuffix + "</p>"
                 + "<p><strong>Service price:</strong> $" + value(event.get("servicePrice"), "0.00") + "</p>"
                 + "<p><strong>Travel fee:</strong> $" + value(event.get("travelFee"), "0.00") + "</p>"
                 + "<p><strong>Total:</strong> $" + value(event.get("totalPrice"), "0.00") + "</p>";
     }
 
     private String refundBody(String headline, String detail, Optional<SubServiceEntity> service,
-                               Map<String, String> event) {
+                               Map<String, String> event, String zoneSuffix) {
         String serviceName = service.map(SubServiceEntity::getName).orElse("Appointment");
         return "<p>" + value(headline, "Refund notice") + "</p>"
                 + "<p>" + value(detail, "A refund has been issued to your payment method.") + "</p>"
@@ -309,14 +319,14 @@ public class NotificationEventConsumer {
     }
 
     private String paymentBody(String headline, String detail, Optional<SubServiceEntity> service,
-                               Map<String, String> event) {
+                               Map<String, String> event, String zoneSuffix) {
         String serviceName = service.map(SubServiceEntity::getName).orElse("Appointment");
         String paid = value(event.get("paymentAmount"), value(event.get("totalPrice"), "0.00"));
         return "<p>" + value(headline, "Payment received") + "</p>"
                 + "<p>" + value(detail, "Your payment has been received.") + "</p>"
                 + "<p><strong>Service:</strong> " + serviceName + "</p>"
                 + "<p><strong>Date:</strong> " + value(event.get("appointmentDate"), "TBC") + "</p>"
-                + "<p><strong>Arrival time:</strong> " + displayArrivalTime(event.get("arrivalTime")) + "</p>"
+                + "<p><strong>Arrival time:</strong> " + displayArrivalTime(event.get("arrivalTime")) + zoneSuffix + "</p>"
                 + "<p><strong>Service price:</strong> $" + value(event.get("servicePrice"), "0.00") + "</p>"
                 + "<p><strong>Travel fee:</strong> $" + value(event.get("travelFee"), "0.00") + "</p>"
                 + "<p><strong>Total paid: $" + paid + "</strong></p>";
@@ -345,7 +355,8 @@ public class NotificationEventConsumer {
 
     @FunctionalInterface
     private interface BodyBuilder {
-        String build(String headline, String detail, Optional<SubServiceEntity> service, Map<String, String> event);
+        String build(String headline, String detail, Optional<SubServiceEntity> service,
+                     Map<String, String> event, String zoneSuffix);
     }
 
     private void acknowledge(Acknowledgment acknowledgment) {

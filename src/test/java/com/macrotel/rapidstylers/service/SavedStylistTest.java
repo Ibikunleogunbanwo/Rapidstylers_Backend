@@ -92,6 +92,9 @@ class SavedStylistTest {
         StylerEntity stylist = new StylerEntity();
         stylist.setStylerId("STYLER1");
         stylist.setVerificationStatus(status);
+        // A published address is part of being listed, so the fixture has one
+        // and approval stays the only variable this test moves.
+        stylist.setBusinessAddress("700 2 St SW, Calgary, Alberta");
         return stylist;
     }
 }

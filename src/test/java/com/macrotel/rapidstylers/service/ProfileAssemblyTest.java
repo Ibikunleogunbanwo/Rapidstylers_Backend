@@ -194,6 +194,9 @@ class ProfileAssemblyTest {
         StylerEntity styler = new StylerEntity();
         styler.setStylerId(id);
         styler.setVerificationStatus("APPROVED");
+        // A publicly reachable profile needs an address, which is part of the
+        // bookability gate the profile assembly reuses.
+        styler.setBusinessAddress("700 2 St SW, Calgary, Alberta");
         return styler;
     }
 }

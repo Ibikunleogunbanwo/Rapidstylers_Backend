@@ -26,12 +26,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.logging.Logger;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 @RestController
 @RequestMapping("/rapid_stylers")
 public class ApplicationController {
+    /** Only the webhook endpoint logs here: every other method answers through AppService. */
+    private static final Logger LOG = Logger.getLogger(ApplicationController.class.getName());
+
     @Autowired
     AppService appService;
     @Autowired
@@ -954,6 +958,14 @@ public class ApplicationController {
         return ApiResponses.respond(appService.getStylerConnectStatus(stylerId));
     }
 
+    /** The logged-in stylist's own reviews (approved list plus a moderation count). */
+    @GetMapping("/styler/reviews")
+    public ResponseEntity<BaseResponse> stylerOwnReviews(HttpServletRequest request){
+        String stylerId = currentAccountId(request);
+        if(stylerId == null) return unauthorized();
+        return ApiResponses.respond(appService.getOwnStylerReviews(stylerId));
+    }
+
     /** Returns a Stripe SetupIntent clientSecret so the frontend can collect a card inside Elements. */
     @GetMapping("/card_setup_intent")
     public ResponseEntity<BaseResponse> cardSetupIntent(HttpServletRequest request){
@@ -969,6 +981,10 @@ public class ApplicationController {
     public ResponseEntity<String> stripeWebhook(@RequestBody String payload,
                                                 @RequestHeader(value = "Stripe-Signature", required = false) String signature){
         if(signature == null || signature.isEmpty()){
+            // A delivery with no signature has no event id to name, and it is the
+            // one rejection the service never sees. Logged here so the app log
+            // shows every hit on this endpoint, whoever made it.
+            LOG.warning("Stripe webhook rejected: id=unknown type=unknown reason=missing Stripe-Signature header");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Missing Stripe-Signature header");
         }
         try {

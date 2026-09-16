@@ -42,7 +42,11 @@ import java.util.List;
  *  - no Stripe Connect ACCOUNT id, so nothing payment-real exists behind the
  *    COMPLETE marker — booking attempts fail at payment setup, which is
  *    acceptable for inert demo rows on empty environments;
- *  - no phone/address, so nothing contacts a real person.
+ *  - no phone number, so nothing contacts a real person. Each row does carry a
+ *    demo street address (invented suites on real Calgary commercial blocks),
+ *    because a "visit the stylist" booking is useless without a destination and
+ *    these rows would otherwise show an empty address on the profile and the
+ *    customer's dashboard.
  *
  * Idempotent: the per-type count includes every approved stylist, seeded or
  * real, so a restart tops up only what is missing and never fights live data.
@@ -85,6 +89,31 @@ public class DemoContentInitializer implements CommandLineRunner {
         new String[]{"Natural hair styling", "90.00", "90"}
     );
 
+    /**
+     * Where the sample professionals practise. Real Calgary commercial blocks
+     * with invented suites, so a booking that says "visit the stylist" can name
+     * a place. Picked per row from the row's own id, so a restart leaves every
+     * address exactly where it was rather than shuffling them.
+     */
+    static final String[] DEMO_ADDRESSES = {
+        "Suite 210, 102 8 Ave SW",
+        "Unit 4, 1414 8 St SW",
+        "Suite 320, 1100 1 St SE",
+        "Unit 12, 3510 17 Ave SW",
+        "Suite 200, 1301 16 Ave NW",
+        "Unit 8, 404 10 St NW",
+        "Suite 410, 888 3 St SW",
+        "Unit 3, 1935 37 St SW",
+        "Suite 150, 6005 3 St SW",
+        "Unit 20, 4800 16 Ave NW",
+        "Suite 220, 222 7 St SW",
+        "Unit 14, 2116 33 Ave SW",
+        "Suite 305, 924 17 Ave SW",
+        "Unit 9, 5009 16 Ave NW",
+        "Suite 180, 110 9 Ave SW",
+        "Unit 6, 1010 1 Ave NE"
+    };
+
     /** A stylist's catalogue: the words that pick their list, in service-name order. */
     private static final String[][] CATALOGUE_KEYS = {
         {"nail"},
@@ -120,6 +149,7 @@ public class DemoContentInitializer implements CommandLineRunner {
             int createdStylists = 0;
             int createdServices = 0;
             int createdSlots = 0;
+            int filledAddresses = 0;
             for (ServiceEntity serviceType : serviceTypes) {
                 String typeId = String.valueOf(serviceType.getId());
                 List<StylerEntity> approved = stylerRepo.findByServiceTypeId(typeId).stream()
@@ -141,8 +171,14 @@ public class DemoContentInitializer implements CommandLineRunner {
                     if (legacy.getStylerId() != null && legacy.getStylerId().startsWith("DEMO")) {
                         createdServices += seedCatalogue(legacy, serviceType);
                         createdSlots += seedAvailability(legacy);
+                        // Rows seeded before addresses existed would keep showing
+                        // "no address yet" on every booking made against them.
+                        filledAddresses += seedAddress(legacy);
                     }
                 }
+            }
+            if (filledAddresses > 0) {
+                log.info("Filled in a demo street address for {} sample stylist(s) that had none", filledAddresses);
             }
             if (createdStylists > 0) {
                 log.info("Seeded {} demo stylist(s), {} service(s) and {} availability slot(s) to keep every service type at {} approved professionals",
@@ -183,7 +219,9 @@ public class DemoContentInitializer implements CommandLineRunner {
         demo.setInsertedDt(String.valueOf(LocalDate.now()));
         demo.setStatus("0");
         demo.setIsOnline("0"); // the app's "Online" flag (0 = online)
-        demo.setStylerId(mintDemoStylerId());
+        String stylerId = mintDemoStylerId();
+        demo.setStylerId(stylerId);
+        demo.setBusinessAddress(demoAddressFor(stylerId));
         demo.setVerificationStatus("APPROVED");
         // Completed-profile mimicry: public search shows only bookable
         // professionals (approved + Connect COMPLETE when payments are live),
@@ -194,7 +232,32 @@ public class DemoContentInitializer implements CommandLineRunner {
         return demo;
     }
 
-    /**Kept for the earlier test's single-argument call shape. */
+    /**
+     * The sample address for a row, chosen from its id. Deterministic on
+     * purpose: the same row keeps the same address across restarts, so a
+     * customer who saved a booking never finds it moved.
+     */
+    static String demoAddressFor(String stylerId) {
+        String key = stylerId == null ? "" : stylerId;
+        return DEMO_ADDRESSES[Math.floorMod(key.hashCode(), DEMO_ADDRESSES.length)];
+    }
+
+    /**
+     * Gives a sample row a street address when it has none. Never overwrites one
+     * that is already set, so an operator's own edit — or a real professional's
+     * address — is safe from this seeder.
+     */
+    private int seedAddress(StylerEntity styler) {
+        String existing = styler.getBusinessAddress();
+        if (existing != null && !existing.trim().isEmpty()) {
+            return 0;
+        }
+        styler.setBusinessAddress(demoAddressFor(styler.getStylerId()));
+        stylerRepo.save(styler);
+        return 1;
+    }
+
+    /** Kept for the earlier test's single-argument call shape. */
     StylerEntity demoStylerFor(ServiceEntity serviceType) {
         return demoStylerFor(serviceType, 1);
     }

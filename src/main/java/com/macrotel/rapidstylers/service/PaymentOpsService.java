@@ -196,8 +196,15 @@ public class PaymentOpsService {
                 } catch (Exception ignored) {
                 }
             }
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
+            // The receipt repeats the appointment's time, which is written on
+            // the stylist's clock, so it names that zone too.
+            String zoneSuffix = VendorZoneResolver.timeSuffixForStyler(
+                    stylerOpt.map(StylerEntity::getTimeZone).orElse(null),
+                    stylerOpt.map(StylerEntity::getProvince).orElse(null));
             String when = (appointment.getAppointmentDate() == null ? "" : appointment.getAppointmentDate())
-                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank() ? "" : " at " + appointment.getArrivalTime());
+                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank()
+                            ? "" : " at " + appointment.getArrivalTime() + zoneSuffix);
             String paid = appointment.getPaymentAmount() == null
                     ? (appointment.getPrice() == null ? "—" : appointment.getPrice()) : appointment.getPaymentAmount();
             String details = "<p>Service: " + serviceName + "<br>"
@@ -215,7 +222,6 @@ public class PaymentOpsService {
                         "<p>Dear " + (name.isBlank() ? "there" : name) + ",</p>"
                                 + "<p><strong>Payment received</strong> — thank you for your business.</p>" + details);
             }
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
             String stylerEmail = stylerOpt.map(StylerEntity::getEmailAddress).orElse(null);
             if (stylerEmail != null && !stylerEmail.isBlank()) {
                 String name = stylerOpt.map(s -> (s.getFirstname() + " " + s.getLastname()).trim()).orElse("Stylist");
@@ -233,78 +239,158 @@ public class PaymentOpsService {
      * Handles signature-verified Stripe webhook events. Capture/release are
      * normally done synchronously in the appointment transitions; this covers
      * async outcomes (e.g. delayed card actions) so payment state stays true.
+     *
+     * <p>Every delivery leaves exactly one line in the log — what arrived, and
+     * what it did. A payment that matched no booking used to vanish silently,
+     * and a handling failure answered Stripe with a 500 that appeared nowhere in
+     * the app's own logs; both are now visible without the Stripe dashboard.
      */
     public void handleStripeWebhook(String payload, String signatureHeader) {
-        Event event = stripeService.verifyWebhookEvent(payload, signatureHeader);
-        if ("payment_intent.succeeded".equals(event.getType())) {
-            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
-            bookAppointmentRepo.findByPaymentIntentId(intent.getId()).ifPresent(a -> {
-                // Capture is normally persisted synchronously; this webhook keeps
-                // state correct when Stripe completes it asynchronously.
-                boolean alreadyCaptured = "CAPTURED".equals(a.getPaymentStatus());
-                a.setPaymentStatus("CAPTURED");
-                a.setPaymentFailureCode(null);
-                bookAppointmentRepo.save(a);
-                if (!alreadyCaptured) {
-                    sendPaymentReceipt(a);
-                }
-                auditService.audit("system", "SYSTEM", "PAYMENT_CAPTURED", "APPOINTMENT", a.getAppointmentId(), "Payment captured");
-            });
-        } else if ("payment_intent.payment_failed".equals(event.getType())) {
-            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
-            bookAppointmentRepo.findByPaymentIntentId(intent.getId()).ifPresent(a -> {
-                a.setPaymentStatus("PAYMENT_FAILED");
-                a.setPaymentFailureCode("PAYMENT_FAILED");
-                bookAppointmentRepo.save(a);
-                auditService.audit("system", "SYSTEM", "PAYMENT_FAILED", "APPOINTMENT", a.getAppointmentId(), "Payment failed");
-            });
-        } else if ("account.updated".equals(event.getType())) {
-            handleAccountUpdated((Account) event.getData().getObject());
-        } else if ("payment_intent.canceled".equals(event.getType())) {
-            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
-            bookAppointmentRepo.findByPaymentIntentId(intent.getId()).ifPresent(a -> {
-                a.setPaymentStatus("RELEASED");
-                bookAppointmentRepo.save(a);
-                auditService.audit("system", "SYSTEM", "PAYMENT_RELEASED", "APPOINTMENT", a.getAppointmentId(), "Payment hold released");
-            });
-        } else if ("charge.dispute.created".equals(event.getType())) {
-            handleDispute((com.stripe.model.Dispute) event.getData().getObject(), true);
-        } else if ("charge.dispute.closed".equals(event.getType())) {
-            handleDispute((com.stripe.model.Dispute) event.getData().getObject(), false);
+        Event event;
+        try {
+            event = stripeService.verifyWebhookEvent(payload, signatureHeader);
+        } catch (IllegalArgumentException ex) {
+            // A delivery whose signature does not verify carries no trustworthy
+            // event id, so the rejection is described on its own terms. The
+            // controller still answers the same 400 it always has.
+            LOG.warning("Stripe webhook rejected: reason=" + failureReason(ex));
+            throw ex;
         }
+        try {
+            Delivery delivery = applyEvent(event);
+            LOG.info("Stripe webhook " + delivery.outcome() + ": id=" + eventId(event)
+                    + " type=" + eventType(event) + " detail=" + delivery.detail());
+        } catch (Exception ex) {
+            // Rethrow so the controller keeps its 500 contract and Stripe
+            // retries, but never without saying why.
+            LOG.severe("Stripe webhook failed: id=" + eventId(event) + " type=" + eventType(event)
+                    + " reason=" + failureReason(ex));
+            throw ex;
+        }
+    }
+
+    /**
+     * Applies one verified event and reports what it did: the outcome word plus
+     * a short detail naming the row it touched, so a log reader can tell a real
+     * update from an event that matched nothing.
+     */
+    private Delivery applyEvent(Event event) {
+        String type = event.getType();
+        if ("payment_intent.succeeded".equals(type)) {
+            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
+            Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(intent.getId());
+            if (booking.isEmpty()) return unmatchedIntent(intent.getId());
+            BookAppointmentEntity a = booking.get();
+            // Capture is normally persisted synchronously; this webhook keeps
+            // state correct when Stripe completes it asynchronously.
+            boolean alreadyCaptured = "CAPTURED".equals(a.getPaymentStatus());
+            a.setPaymentStatus("CAPTURED");
+            a.setPaymentFailureCode(null);
+            bookAppointmentRepo.save(a);
+            if (!alreadyCaptured) {
+                sendPaymentReceipt(a);
+            }
+            auditService.audit("system", "SYSTEM", "PAYMENT_CAPTURED", "APPOINTMENT", a.getAppointmentId(), "Payment captured");
+            return new Delivery("processed", "appointment=" + a.getAppointmentId()
+                    + (alreadyCaptured ? " capture=already-recorded" : " capture=recorded"));
+        }
+        if ("payment_intent.payment_failed".equals(type)) {
+            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
+            Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(intent.getId());
+            if (booking.isEmpty()) return unmatchedIntent(intent.getId());
+            BookAppointmentEntity a = booking.get();
+            a.setPaymentStatus("PAYMENT_FAILED");
+            a.setPaymentFailureCode("PAYMENT_FAILED");
+            bookAppointmentRepo.save(a);
+            auditService.audit("system", "SYSTEM", "PAYMENT_FAILED", "APPOINTMENT", a.getAppointmentId(), "Payment failed");
+            return new Delivery("processed", "appointment=" + a.getAppointmentId() + " paymentStatus=PAYMENT_FAILED");
+        }
+        if ("payment_intent.canceled".equals(type)) {
+            PaymentIntent intent = (PaymentIntent) event.getData().getObject();
+            Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(intent.getId());
+            if (booking.isEmpty()) return unmatchedIntent(intent.getId());
+            BookAppointmentEntity a = booking.get();
+            a.setPaymentStatus("RELEASED");
+            bookAppointmentRepo.save(a);
+            auditService.audit("system", "SYSTEM", "PAYMENT_RELEASED", "APPOINTMENT", a.getAppointmentId(), "Payment hold released");
+            return new Delivery("processed", "appointment=" + a.getAppointmentId() + " paymentStatus=RELEASED");
+        }
+        if ("account.updated".equals(type)) {
+            return new Delivery("processed", handleAccountUpdated((Account) event.getData().getObject()));
+        }
+        if ("charge.dispute.created".equals(type)) {
+            return new Delivery("processed", handleDispute((com.stripe.model.Dispute) event.getData().getObject(), true));
+        }
+        if ("charge.dispute.closed".equals(type)) {
+            return new Delivery("processed", handleDispute((com.stripe.model.Dispute) event.getData().getObject(), false));
+        }
+        // Subscribed-but-unhandled types are normal (Stripe sends more than this
+        // app acts on), so they are reported, not treated as failures.
+        return new Delivery("ignored", "no handler for this event type");
+    }
+
+    /** A payment event whose intent belongs to no booking: worth a line of its own. */
+    private Delivery unmatchedIntent(String paymentIntentId) {
+        return new Delivery("no-match", "no booking for payment intent " + paymentIntentId);
+    }
+
+    /** What one delivery did, for the log. */
+    private record Delivery(String outcome, String detail) {}
+
+    private static String eventId(Event event) {
+        String id = event == null ? null : event.getId();
+        return id == null || id.isBlank() ? "unknown" : id;
+    }
+
+    private static String eventType(Event event) {
+        String type = event == null ? null : event.getType();
+        return type == null || type.isBlank() ? "unknown" : type;
+    }
+
+    private static String failureReason(Exception ex) {
+        if (ex == null) return "unknown";
+        String message = ex.getMessage();
+        return message == null || message.isBlank()
+                ? ex.getClass().getSimpleName()
+                : ex.getClass().getSimpleName() + ": " + message;
     }
 
     /**
      * Records dispute lifecycle on the booking: an opened dispute flags the
      * payment and alerts ops; a closed dispute resolves it (won -> CAPTURED,
-     * lost -> DISPUTE_LOST).
+     * lost -> DISPUTE_LOST). Returns a short account of what it did.
+     *
+     * <p>Deliberately no longer swallows its own failures: a dispute that could
+     * not be applied left the payment state wrong, told Stripe 200, and left no
+     * trace, so Stripe never retried it. Exceptions now reach the caller, which
+     * logs the reason and answers 500 so the delivery is retried.
      */
-    private void handleDispute(com.stripe.model.Dispute dispute, boolean opened) {
-        try {
-            String paymentIntentId = dispute == null ? null : dispute.getPaymentIntent();
-            if (paymentIntentId == null || paymentIntentId.isBlank()) {
-                LOG.warning("Dispute webhook missing payment intent: " + (dispute == null ? "null" : dispute.getId()));
-                return;
-            }
-            bookAppointmentRepo.findByPaymentIntentId(paymentIntentId).ifPresent(a -> {
-                if (opened) {
-                    a.setPaymentStatus("DISPUTED");
-                    bookAppointmentRepo.save(a);
-                    auditService.audit("system", "SYSTEM", "PAYMENT_DISPUTE_OPENED", "APPOINTMENT", a.getAppointmentId(),
-                            "Chargeback opened (dispute " + dispute.getId() + ")");
-                    auditService.alertAdmin("Payment dispute opened for appointment " + a.getAppointmentId()
-                            + " (dispute " + dispute.getId() + ")");
-                } else {
-                    boolean lost = "lost".equalsIgnoreCase(dispute.getStatus());
-                    a.setPaymentStatus(lost ? "DISPUTE_LOST" : "CAPTURED");
-                    bookAppointmentRepo.save(a);
-                    auditService.audit("system", "SYSTEM", "PAYMENT_DISPUTE_CLOSED", "APPOINTMENT", a.getAppointmentId(),
-                            "Dispute closed (" + dispute.getStatus() + ") for dispute " + dispute.getId());
-                }
-            });
-        } catch (Exception ex) {
-            LOG.warning("Dispute handling failed: " + ex.getMessage());
+    private String handleDispute(com.stripe.model.Dispute dispute, boolean opened) {
+        String paymentIntentId = dispute == null ? null : dispute.getPaymentIntent();
+        if (paymentIntentId == null || paymentIntentId.isBlank()) {
+            return "dispute " + (dispute == null ? "unknown" : dispute.getId()) + " carries no payment intent";
         }
+        Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(paymentIntentId);
+        if (booking.isEmpty()) {
+            return "no booking for payment intent " + paymentIntentId;
+        }
+        BookAppointmentEntity a = booking.get();
+        if (opened) {
+            a.setPaymentStatus("DISPUTED");
+            bookAppointmentRepo.save(a);
+            auditService.audit("system", "SYSTEM", "PAYMENT_DISPUTE_OPENED", "APPOINTMENT", a.getAppointmentId(),
+                    "Chargeback opened (dispute " + dispute.getId() + ")");
+            auditService.alertAdmin("Payment dispute opened for appointment " + a.getAppointmentId()
+                    + " (dispute " + dispute.getId() + ")");
+            return "appointment=" + a.getAppointmentId() + " dispute=" + dispute.getId() + " opened";
+        }
+        boolean lost = "lost".equalsIgnoreCase(dispute.getStatus());
+        a.setPaymentStatus(lost ? "DISPUTE_LOST" : "CAPTURED");
+        bookAppointmentRepo.save(a);
+        auditService.audit("system", "SYSTEM", "PAYMENT_DISPUTE_CLOSED", "APPOINTMENT", a.getAppointmentId(),
+                "Dispute closed (" + dispute.getStatus() + ") for dispute " + dispute.getId());
+        return "appointment=" + a.getAppointmentId() + " dispute=" + dispute.getId()
+                + " closed as " + dispute.getStatus();
     }
 
     /**
@@ -312,7 +398,7 @@ public class PaymentOpsService {
      * onboarding status and emails them when onboarding completes or is
      * rejected (only on actual transitions, so retries never re-send).
      */
-    void handleAccountUpdated(Account account) {
+    String handleAccountUpdated(Account account) {
         String status;
         String disabledReason = null;
         if (Boolean.TRUE.equals(account.getDetailsSubmitted())) {
@@ -327,29 +413,32 @@ public class PaymentOpsService {
         } else {
             status = "PENDING";
         }
-        String finalStatus = status;
-        String finalDisabledReason = disabledReason;
-        stylerRepo.findByStripeConnectAccountId(account.getId()).ifPresent(s -> {
-            String previous = s.getConnectOnboardingStatus();
-            s.setConnectOnboardingStatus(finalStatus);
-            // Persist the rejection reason so the Payouts page can show it; clear it
-            // once the account is verified or still in progress.
-            s.setConnectDisabledReason("REJECTED".equals(finalStatus) ? finalDisabledReason : null);
-            stylerRepo.save(s);
-            auditService.audit("system", "SYSTEM", "CONNECT_ACCOUNT_UPDATED", "STYLER", s.getStylerId(), finalStatus);
-            if ("COMPLETE".equals(finalStatus) && !"COMPLETE".equals(previous)) {
-                sendConnectStatusEmail(s, "RapidStylers - Payouts are ready",
-                        "Your payout account is connected",
-                        "Your Stripe account is connected and payouts are enabled. Your share of "
-                                + "completed appointments will be paid on Stripe's regular payout schedule.");
-            } else if ("REJECTED".equals(finalStatus) && !"REJECTED".equals(previous)) {
-                String reason = finalDisabledReason == null ? "" : " (" + finalDisabledReason.replace('_', ' ') + ")";
-                sendConnectStatusEmail(s, "RapidStylers - Payout setup needs attention",
-                        "Your payout account could not be verified",
-                        "Stripe could not verify your payout account" + reason
-                                + ". Please reconnect from your dashboard or contact support.");
-            }
-        });
+        Optional<StylerEntity> styler = stylerRepo.findByStripeConnectAccountId(account.getId());
+        if (styler.isEmpty()) {
+            return "no styler is linked to Connect account " + account.getId();
+        }
+        StylerEntity s = styler.get();
+        String previous = s.getConnectOnboardingStatus();
+        s.setConnectOnboardingStatus(status);
+        // Persist the rejection reason so the Payouts page can show it; clear it
+        // once the account is verified or still in progress.
+        s.setConnectDisabledReason("REJECTED".equals(status) ? disabledReason : null);
+        stylerRepo.save(s);
+        auditService.audit("system", "SYSTEM", "CONNECT_ACCOUNT_UPDATED", "STYLER", s.getStylerId(), status);
+        if ("COMPLETE".equals(status) && !"COMPLETE".equals(previous)) {
+            sendConnectStatusEmail(s, "RapidStylers - Payouts are ready",
+                    "Your payout account is connected",
+                    "Your Stripe account is connected and payouts are enabled. Your share of "
+                            + "completed appointments will be paid on Stripe's regular payout schedule.");
+        } else if ("REJECTED".equals(status) && !"REJECTED".equals(previous)) {
+            String reason = disabledReason == null ? "" : " (" + disabledReason.replace('_', ' ') + ")";
+            sendConnectStatusEmail(s, "RapidStylers - Payout setup needs attention",
+                    "Your payout account could not be verified",
+                    "Stripe could not verify your payout account" + reason
+                            + ". Please reconnect from your dashboard or contact support.");
+        }
+        return "styler=" + s.getStylerId() + " status=" + status
+                + ("REJECTED".equals(status) && disabledReason != null ? " reason=" + disabledReason : "");
     }
 
     private void sendConnectStatusEmail(StylerEntity styler, String subject, String headline, String detail) {

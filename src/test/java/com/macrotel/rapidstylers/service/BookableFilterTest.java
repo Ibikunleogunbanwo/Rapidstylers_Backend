@@ -68,6 +68,10 @@ class BookableFilterTest {
         s.setVerificationStatus(verification);
         s.setConnectOnboardingStatus(onboarding);
         s.setProvince("Alberta");
+        // A published address is part of being bookable, so a fixture without
+        // one would be filtered for the wrong reason and the Stripe clause
+        // this test exists to pin would never be reached.
+        s.setBusinessAddress("700 2 St SW, Calgary, Alberta");
         return s;
     }
 
