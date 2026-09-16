@@ -7,4 +7,7 @@ import java.util.Optional;
 
 public interface ServiceRepo extends JpaRepository<ServiceEntity,Long> {
     Optional<ServiceEntity> findByServiceName(String serviceName);
+
+    /** How many services hold this exact image URL (used before destroying an asset). */
+    long countByImageUrl(String imageUrl);
 }

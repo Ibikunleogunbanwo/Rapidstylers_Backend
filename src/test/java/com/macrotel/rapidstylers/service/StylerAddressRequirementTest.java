@@ -22,6 +22,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collections;
@@ -78,6 +81,10 @@ class StylerAddressRequirementTest {
         geocodingService = mock(GeocodingService.class);
         stripeService = mock(StripeService.class);
 
+        // A refused signup hands its already-uploaded images back, so the service
+        // is wired here even though these tests only exercise the refusal.
+        appService.imageReclaimService = mock(ImageReclaimService.class);
+
         appService.stylerRepo = stylerRepo;
         appService.userRepo = userRepo;
         appService.otpRepo = otpRepo;
@@ -99,6 +106,12 @@ class StylerAddressRequirementTest {
         // Serve what the loader would build, so Redis never enters the picture.
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(3)).get());
+        // The public list stamps each row with the professional's weekly hours,
+        // which needs a mapper for the per-result copy and repos for the hours
+        // loader the passthrough invokes.
+        appService.objectMapper = new ObjectMapper();
+        appService.availabilityRepo = mock(AvailabilityRepo.class);
+        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     /* ── helpers ─────────────────────────────────────────────────────────── */

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,10 @@ class SearchReadCacheTest {
         appService.dtoService = dtoService;
         appService.readCacheService = readCacheService;
         appService.objectMapper = new ObjectMapper();
+        // Search rows carry the professional's weekly hours, read through the
+        // same cache; the passthrough above invokes that real loader.
+        appService.availabilityRepo = mock(AvailabilityRepo.class);
+        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     @Test

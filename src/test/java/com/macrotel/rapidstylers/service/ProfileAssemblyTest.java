@@ -128,6 +128,9 @@ class ProfileAssemblyTest {
         assertEquals(availability, data.get("availability"));
         assertEquals(exceptions, data.get("exceptions"));
         assertNotNull(data.get("bookedSlots"));
+        // This cached summary predates the finished tally, so completion cannot
+        // be proven and no stage badge is claimed. Nothing false, just absent.
+        assertEquals(List.of(), data.get("badges"));
 
         // Only the styler row is queried — every part comes from the cache.
         verify(stylerRepo).findByStylerId("S1");
@@ -188,6 +191,58 @@ class ProfileAssemblyTest {
         assertEquals(1, ((List<?>) data.get("availability")).size());
         assertEquals(1, ((List<?>) data.get("exceptions")).size());
         assertEquals(1, ((List<?>) data.get("bookedSlots")).size());
+    }
+
+    @Test
+    void badgesFollowTheRulesAndTheFactsTheCacheHolds() {
+        StylerEntity styler = approvedStyler("S1");
+        when(stylerRepo.findByStylerId("S1")).thenReturn(Optional.of(styler));
+
+        StylerAccountDTO dto = new StylerAccountDTO();
+        dto.setStylerId("S1");
+        Map<String, Object> summary = new HashMap<>();
+        when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any())).thenAnswer(inv -> {
+            String key = inv.getArgument(0);
+            if (key.startsWith(ReadCacheService.KEY_STYLER_DTO)) return dto;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_APPOINTMENTS)) return summary;
+            return Collections.emptyList();
+        });
+
+        // A strong, well reviewed record.
+        dto.setReviewCount(12L);
+        dto.setAverageRating(4.8);
+        summary.put("appointmentCount", "12");
+        summary.put("completedCount", 12L);
+        assertEquals(List.of(ProfileBadgeRules.TOP_RATED), badgesOf("S1"));
+
+        // No reviews yet, but a job has been finished here.
+        dto.setReviewCount(0L);
+        dto.setAverageRating(0.0);
+        summary.put("appointmentCount", "2");
+        summary.put("completedCount", 2L);
+        assertEquals(List.of(ProfileBadgeRules.FIRST_BOOKING), badgesOf("S1"));
+
+        // Nothing has happened yet, and the account is inside the window.
+        dto.setDateRegistered(java.time.LocalDate.now().toString());
+        summary.put("appointmentCount", "0");
+        summary.put("completedCount", 0L);
+        assertEquals(List.of(ProfileBadgeRules.NEW), badgesOf("S1"));
+
+        // NEW needs no finished tally: a zero appointment count already implies
+        // that nothing has been finished, so the claim survives without it.
+        summary.remove("completedCount");
+        assertEquals(List.of(ProfileBadgeRules.NEW), badgesOf("S1"));
+
+        // Bookings on the record but a summary written before the finished tally
+        // existed. Completion cannot be proven from it, so no stage badge is
+        // claimed: absent, rather than guessed at.
+        summary.put("appointmentCount", "2");
+        assertEquals(List.of(), badgesOf("S1"));
+    }
+
+    private List<?> badgesOf(String stylerId){
+        Map<?, ?> data = (Map<?, ?>) appService.getStylerDetails(stylerId).getData();
+        return (List<?>) data.get("badges");
     }
 
     private StylerEntity approvedStyler(String id) {

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +49,10 @@ class SearchByCityTest {
         // The read-cache passthrough invokes real loaders, so the DTO builder
         // must produce something (its internals query repos we don't stub).
         when(dtoService.stylerAccountDTO(any())).thenReturn(new StylerAccountDTO());
+        // Rows carry the professional's weekly hours now, and that loader reads a
+        // repo too: an unstubbed one would make the city search look broken.
+        appService.availabilityRepo = mock(AvailabilityRepo.class);
+        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     @Test

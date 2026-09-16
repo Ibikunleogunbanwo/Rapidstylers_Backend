@@ -3,6 +3,8 @@ package com.macrotel.rapidstylers.service;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
+import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,6 +50,10 @@ class BookableFilterTest {
         // The passthrough invokes the real loader so the filter is exercised.
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
+        // Rows ship the professional's weekly hours now, so the loader behind
+        // those hours reads a repo as well.
+        appService.availabilityRepo = mock(AvailabilityRepo.class);
+        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
         // Payments ON: the Stripe clause of the bookable filter must exercise,
         // which is the production configuration this test exists to pin.
         StripeService stripeService = mock(StripeService.class);

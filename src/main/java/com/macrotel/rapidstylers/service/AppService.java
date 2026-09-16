@@ -49,6 +49,8 @@ public class AppService {
     AppUtils appUtils = new AppUtils();
     @Autowired
     DTOService dtoService;
+    @Autowired
+    ImageReclaimService imageReclaimService;
     private static final Logger LOG = Logger.getLogger(AppService.class.getName());
     @Autowired
     OTPRepo otpRepo;
@@ -1111,11 +1113,16 @@ public class AppService {
                 return response;
             }
             ServiceEntity serviceEntity = isServiceExist.get();
+            String previousImageUrl = serviceEntity.getServiceImageUrl();
             serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
             serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
             evict(ReadCacheService.KEY_CATALOG_SERVICES);
+            // Replacing a picture leaves the old one behind unless it is handed back.
+            if(previousImageUrl != null && !previousImageUrl.equals(serviceEntity.getServiceImageUrl())){
+                imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
+            }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Service Updated Successful");
@@ -1137,8 +1144,12 @@ public class AppService {
                 return response;
             }
             ServiceEntity serviceEntity = getService.get();
+            String previousImageUrl = serviceEntity.getServiceImageUrl();
             serviceRepo.delete(serviceEntity);
             evict(ReadCacheService.KEY_CATALOG_SERVICES);
+            // The row that held this picture is gone, so unless another row still
+            // refers to it, the asset has nothing left to belong to.
+            imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Service deleted successful");
             response.setData(EMPTY_DATA);
@@ -1242,6 +1253,7 @@ public class AppService {
                 return response;
             }
             BlogPostEntity post = isPostExist.get();
+            String previousImageUrl = post.getImageUrl();
             post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
             post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
             post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
@@ -1251,6 +1263,10 @@ public class AppService {
             }
             blogPostRepo.save(post);
             evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + blogPostData.getId());
+            // A new cover leaves the previous one unused, so it goes back.
+            if(previousImageUrl != null && !previousImageUrl.equals(post.getImageUrl())){
+                imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
+            }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article updated successfully");
@@ -1271,8 +1287,12 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            blogPostRepo.delete(getPost.get());
+            BlogPostEntity deletedPost = getPost.get();
+            String coverImageUrl = deletedPost.getImageUrl();
+            blogPostRepo.delete(deletedPost);
             evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + id);
+            // The cover is only kept if some other article still uses the same URL.
+            imageReclaimService.reclaimIfUnreferenced(coverImageUrl);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article deleted successfully");
             response.setData(EMPTY_DATA);
@@ -1436,7 +1456,27 @@ public class AppService {
         return response;
     }
 
+    /**
+     * Creates a professional account, and gives the images back if it cannot.
+     *
+     * Both files were already uploaded to Cloudinary by the browser, because image
+     * bytes never pass through this server. That makes this call the first moment
+     * anything here learns their names, and therefore the only place that can
+     * discard them when the account is not created: a duplicate email, a rejected
+     * password or a missing field would otherwise leave two images in the bucket
+     * that no record will ever point at. No authorization question arises, because
+     * reclaiming only ever destroys an asset that nothing references.
+     */
     public BaseResponse createStyler(StylerData stylerData){
+        BaseResponse response = createStylerAccount(stylerData);
+        if(!SUCCESS_STATUS_CODE.equals(response.getStatusCode())){
+            imageReclaimService.reclaimIfUnreferenced(stylerData.getProfileImageUrl());
+            imageReclaimService.reclaimIfUnreferenced(stylerData.getIdentificationImageUrl());
+        }
+        return response;
+    }
+
+    private BaseResponse createStylerAccount(StylerData stylerData){
         BaseResponse response = new BaseResponse(true);
         try{
             if (!stylerData.isAgreeToTerms()) {
@@ -1807,7 +1847,7 @@ public class AppService {
                 // same gate as search: approval alone would advertise a profile
                 // that cannot be booked.
                 if(isBookableStyler(stylerEntity)){
-                    result.add(cachedStylerAccountDTO(stylerEntity));
+                    result.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                 }
             }
             Collections.reverse(result);
@@ -1828,7 +1868,7 @@ public class AppService {
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerByName){
                 if(isBookableStyler(stylerEntity)){
-                    result.add(cachedStylerAccountDTO(stylerEntity));
+                    result.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                 }
             }
             Collections.reverse(result);
@@ -1856,7 +1896,7 @@ public class AppService {
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : getStylerByProvince){
                             if(isBookableStyler(stylerEntity)){
-                                built.add(cachedStylerAccountDTO(stylerEntity));
+                                built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                             }
                         }
                         Collections.reverse(built);
@@ -1895,7 +1935,7 @@ public class AppService {
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : cityStylers){
                             if(isBookableStyler(stylerEntity)){
-                                built.add(cachedStylerAccountDTO(stylerEntity));
+                                built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                             }
                         }
                         Collections.reverse(built);
@@ -1917,7 +1957,7 @@ public class AppService {
                                 List<Object> built = new ArrayList<>();
                                 for(StylerEntity stylerEntity : provinceStylers){
                                     if(isBookableStyler(stylerEntity)){
-                                        built.add(cachedStylerAccountDTO(stylerEntity));
+                                        built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                                     }
                                 }
                                 Collections.reverse(built);
@@ -2036,7 +2076,23 @@ public class AppService {
         return response;
     }
 
+    /**
+     * Stores one portfolio photo, and hands the image back if it is refused.
+     *
+     * The browser uploaded it before asking, so a refusal here (an unknown
+     * category, the size cap, a duplicate, a database failure) is the moment to
+     * discard it. Only an image no row references can be destroyed, so a URL that
+     * already belongs to a stored photo is never taken from it.
+     */
     public BaseResponse createStylerPortfolio(StylerPortfolioData stylerPortfolioData){
+        BaseResponse response = createStylerPortfolioRow(stylerPortfolioData);
+        if(!SUCCESS_STATUS_CODE.equals(response.getStatusCode())){
+            imageReclaimService.reclaimIfUnreferenced(stylerPortfolioData.getImageUrl());
+        }
+        return response;
+    }
+
+    private BaseResponse createStylerPortfolioRow(StylerPortfolioData stylerPortfolioData){
         BaseResponse response = new BaseResponse(true);
         try{
             //Check if styler account
@@ -2200,8 +2256,12 @@ public class AppService {
                 stylerName = (stylerOpt.get().getFirstname() + " " + stylerOpt.get().getLastname()).trim();
             }
             String category = item.getCategory() == null ? "" : item.getCategory();
+            String imageUrl = item.getImageUrl();
             stylerPortfolioRepo.delete(item);
             evict(ReadCacheService.KEY_STYLER_PORTFOLIO + item.getStylerId());
+            // Moderation takes the row away, so the asset goes with it unless the
+            // same URL is still somebody else's image.
+            imageReclaimService.reclaimIfUnreferenced(imageUrl);
             // Notify the stylist their work was removed (best effort — never fail the delete on mail).
             if(stylerEmail != null && !stylerEmail.isBlank()){
                 try{
@@ -2249,8 +2309,12 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            String imageUrl = item.getImageUrl();
             stylerPortfolioRepo.delete(item);
             evict(ReadCacheService.KEY_STYLER_PORTFOLIO + stylerId);
+            // Removing a photo from a portfolio is the row going away, so the asset
+            // is only kept when another row still points at the same URL.
+            imageReclaimService.reclaimIfUnreferenced(imageUrl);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Photo removed from your portfolio");
             response.setData(EMPTY_DATA);
@@ -2953,6 +3017,71 @@ public class AppService {
                 () -> dtoService.stylerAccountDTO(styler));
     }
 
+    /**
+     * A list row carrying the professional's trading hours and the blocked dates
+     * still ahead of them, read through the same per-styler caches the profile
+     * uses. That is what lets a search result or a featured card say "Open now,
+     * closes 5:00 PM" or "Closed, opens Saturday 9:00 AM" on the professional's
+     * own clock instead of falling back to a bare presence badge.
+     *
+     * Two deliberate choices here:
+     *
+     *   - The DTO is **copied** rather than decorated in place. The instance
+     *     coming out of the read cache is shared by every surface, and writing
+     *     hours onto it would put one professional's schedule into a cache entry
+     *     other callers reuse.
+     *   - The open state itself is **not** computed here. Whether a professional
+     *     is open depends on "now", and this response is cached for minutes; a
+     *     frozen boolean could sit in a card claiming "Open now" long after
+     *     closing. The client computes it from these two lists every render, and
+     *     it is the same implementation the profile and the Open now filter use,
+     *     so the surfaces cannot disagree.
+     */
+    private StylerAccountDTO listRowWithHours(StylerAccountDTO dto, String stylerId){
+        if(dto == null || stylerId == null){
+            return dto;
+        }
+        StylerAccountDTO row = objectMapper.convertValue(dto, StylerAccountDTO.class);
+        attachHours(row, stylerId);
+        return row;
+    }
+
+    /**
+     * Stamps the trading hours onto a DTO the caller has already copied, for the
+     * endpoints that make their own copy (the nearby search stamps a distance on
+     * one). Keeping the write separate from the copy is what stops a shared
+     * cached instance ever being modified.
+     */
+    private void attachHours(StylerAccountDTO row, String stylerId){
+        if(row == null || stylerId == null){
+            return;
+        }
+        row.setAvailability(cachedAvailabilitySlots(stylerId));
+        row.setExceptions(upcomingExceptions(stylerId));
+    }
+
+    /**
+     * The blocked dates that can still affect a booking decision.
+     *
+     * A professional's exception history grows for years while only the days
+     * ahead of them matter to a card, so the rest is left out of list responses
+     * rather than shipped to every visitor in every search. A day of margin is
+     * kept because a Canadian professional's date can be one behind the server's
+     * UTC date.
+     */
+    private List<Object> upcomingExceptions(String stylerId){
+        String keepFrom = LocalDate.now().minusDays(1).toString();
+        List<Object> upcoming = new ArrayList<>();
+        for(Object slot : cachedExceptionSlots(stylerId)){
+            if(!(slot instanceof Map)) continue;
+            Object blockedDate = ((Map<?, ?>) slot).get("blockedDate");
+            if(blockedDate != null && String.valueOf(blockedDate).compareTo(keepFrom) >= 0){
+                upcoming.add(slot);
+            }
+        }
+        return upcoming;
+    }
+
     /** Sub-service list through the read cache; evicted on sub-service writes. */
     private List<Object> cachedSubServices(String stylerId){
         return readCacheService.getOrLoad(
@@ -3017,7 +3146,11 @@ public class AppService {
                 () -> exceptionSlots(stylerId));
     }
 
-    /** Appointment count + active booked slots; evicted on every booking-lifecycle write. */
+    /**
+     * Appointment count, finished count + active booked slots; evicted on every
+     * booking-lifecycle write. The finished count rides along on the rows already
+     * loaded here, so the profile's badges cost no extra query.
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Object> cachedAppointmentSummary(String stylerId){
         return readCacheService.getOrLoad(
@@ -3028,8 +3161,11 @@ public class AppService {
                     Map<String, Object> payload = new LinkedHashMap<>();
                     payload.put("appointmentCount", String.valueOf(rows == null ? 0 : rows.size()));
                     List<Object> bookedSlots = new ArrayList<>();
+                    long completedCount = 0;
                     if(rows != null){
                         for(BookAppointmentEntity appointment : rows){
+                            // Status 0 is a finished job; the profile's badges use the tally.
+                            if("0".equals(appointment.getStatus())) completedCount++;
                             // Cancelled (4) and rejected (2) appointments free the slot.
                             if("2".equals(appointment.getStatus()) || "4".equals(appointment.getStatus())) continue;
                             HashMap<String, String> slot = new HashMap<>();
@@ -3041,6 +3177,7 @@ public class AppService {
                             bookedSlots.add(slot);
                         }
                     }
+                    payload.put("completedCount", completedCount);
                     payload.put("bookedSlots", bookedSlots);
                     return payload;
                 });
@@ -3218,8 +3355,9 @@ public class AppService {
                 }
             }
             ratingPercentage = ratingCount == 0 ? 0 : (int) ((totalRating/(ratingCount * 5)) *100);
+            StylerAccountDTO stylerAccount = cachedStylerAccountDTO(stylerEntity);
             HashMap<String, Object> stylerInformationMap = new HashMap<>();
-            stylerInformationMap.put("stylerInformation", cachedStylerAccountDTO(stylerEntity));
+            stylerInformationMap.put("stylerInformation", stylerAccount);
             stylerInformationMap.put("stylerSubService" , subServiceResult);
             stylerInformationMap.put("stylerPortfolio" , stylerPortfolioResult);
             stylerInformationMap.put("stylerReviews" , stylerReviewResult);
@@ -3227,6 +3365,16 @@ public class AppService {
             // Real appointment tally + active booked slots (cached, evicted on booking writes).
             Map<String, Object> appointmentSummary = cachedAppointmentSummary(stylerId);
             stylerInformationMap.put("appointmentCount", appointmentSummary.get("appointmentCount"));
+            // What this profile has earned, decided in one place (ProfileBadgeRules).
+            // The finished tally comes from the same cached summary; if a cached
+            // entry predates it, the stage badges stay off rather than guessing.
+            stylerInformationMap.put("badges", ProfileBadgeRules.earned(
+                    stylerAccount == null ? null : stylerAccount.getReviewCount(),
+                    stylerAccount == null ? null : stylerAccount.getAverageRating(),
+                    parseCount(appointmentSummary.get("appointmentCount")),
+                    appointmentSummary.get("completedCount") instanceof Number
+                            ? ((Number) appointmentSummary.get("completedCount")).longValue() : null,
+                    stylerAccount == null ? null : stylerAccount.getDateRegistered()));
             // Weekly availability + date-based exceptions so the booking modal can
             // show real working hours and gray out blocked/taken windows.
             stylerInformationMap.put("availability", cachedAvailabilitySlots(stylerId));
@@ -3240,6 +3388,22 @@ public class AppService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    /** A count the payload may carry as text; anything unreadable is unknown, not zero. */
+    private static Long parseCount(Object value){
+        if(value == null){
+            return null;
+        }
+        if(value instanceof Number){
+            return ((Number) value).longValue();
+        }
+        try{
+            return Long.parseLong(String.valueOf(value).trim());
+        }
+        catch(NumberFormatException ex){
+            return null;
+        }
     }
 
     /** Saves an approved stylist for the authenticated customer. */
@@ -3290,7 +3454,7 @@ public class AppService {
             for(SavedStylistEntity saved : savedStylistRepo.findByUserIdOrderByCreatedAtDesc(userId)){
                 stylerRepo.findByStylerId(saved.getStylerId())
                         .filter(this::isBookableStyler)
-                        .ifPresent(styler -> result.add(dtoService.stylerAccountDTO(styler)));
+                        .ifPresent(styler -> result.add(listRowWithHours(dtoService.stylerAccountDTO(styler), styler.getStylerId())));
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
@@ -3645,7 +3809,7 @@ public class AppService {
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : getStylerData){
                             if(isBookableStyler(stylerEntity)){
-                                built.add(cachedStylerAccountDTO(stylerEntity));
+                                built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                             }
                         }
                         return built;
@@ -5223,6 +5387,9 @@ public class AppService {
                 // distance so concurrent searches never corrupt each other.
                 StylerAccountDTO dto = objectMapper.convertValue(cachedStylerAccountDTO(styler), StylerAccountDTO.class);
                 dto.setDistanceKm(Math.round(distKm * 10.0) / 10.0);
+                // Same copy carries the trading hours, so a nearby result states
+                // real opening hours rather than a bare presence badge.
+                attachHours(dto, stylerId);
                 result.add(dto);
             }
 

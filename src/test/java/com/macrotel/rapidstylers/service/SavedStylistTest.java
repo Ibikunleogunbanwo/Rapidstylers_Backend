@@ -1,9 +1,12 @@
 package com.macrotel.rapidstylers.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.SavedStylistEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
+import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
@@ -11,9 +14,11 @@ import com.macrotel.rapidstylers.pojo.BaseResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,6 +44,17 @@ class SavedStylistTest {
         appService.userRepo = userRepo;
         appService.stylerRepo = stylerRepo;
         appService.dtoService = mock(DTOService.class);
+        // A list row now carries the professional's weekly hours, which the row
+        // builder reads through the per-styler caches: the copy needs a mapper,
+        // and the passthrough cache invokes the real loaders, so the repos behind
+        // them must exist (empty means this fixture has set no hours).
+        appService.objectMapper = new ObjectMapper();
+        ReadCacheService readCacheService = mock(ReadCacheService.class);
+        appService.readCacheService = readCacheService;
+        when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
+        appService.availabilityRepo = mock(AvailabilityRepo.class);
+        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     @Test
