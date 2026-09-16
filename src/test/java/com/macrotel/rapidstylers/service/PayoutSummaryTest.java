@@ -51,6 +51,7 @@ class PayoutSummaryTest {
     void aggregatesCapturedEarningsWithCommissionSplit() {
         StylerEntity styler = new StylerEntity();
         styler.setStylerId("STYLER1");
+        styler.setTimeZone("America/Toronto");
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
 
         BookAppointmentEntity paid = appointment("APPT-1", "CAPTURED", "100.00");
@@ -81,6 +82,9 @@ class PayoutSummaryTest {
         assertEquals("90.00", rows.get(0).get("stylerShare"));
         assertEquals("10.00", rows.get(0).get("commission"));
         assertEquals("225.00", rows.get(1).get("stylerShare"));
+        // Each payout row carries the appointment's clock so the table can
+        // label its times.
+        assertEquals("America/Toronto", rows.get(0).get("timeZone"));
     }
 
     @Test

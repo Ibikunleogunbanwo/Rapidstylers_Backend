@@ -565,6 +565,9 @@ public class PaymentOpsService {
                 row.put("appointmentId", appointment.getAppointmentId());
                 row.put("date", appointment.getAppointmentDate());
                 row.put("arrivalTime", appointment.getArrivalTime());
+                // The zone the appointment's times are written in (the
+                // stylist's), so the payouts table can label them.
+                row.put("timeZone", styler.getTimeZone());
                 row.put("total", MoneyUtils.money(total));
                 row.put("commission", MoneyUtils.money(commission));
                 row.put("stylerShare", MoneyUtils.money(share));
