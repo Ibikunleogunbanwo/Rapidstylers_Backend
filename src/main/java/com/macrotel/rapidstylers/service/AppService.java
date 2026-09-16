@@ -106,6 +106,10 @@ public class AppService {
     private volatile Double cachedCommissionPercent;
     @Autowired
     GeocodingService geocodingService;
+    // Initialized inline so bare construction (unit tests) behaves as a
+    // no-op (null key → null zone); Spring replaces it with the context bean.
+    @Autowired
+    GoogleTimezoneService googleTimezoneService = new GoogleTimezoneService();
     @Autowired
     LocationCacheService locationCacheService;
     @Autowired
@@ -1503,6 +1507,16 @@ public class AppService {
                         stylerEntity.setCity((String) geo.getOrDefault("city", ""));
                     }
                 }
+            }
+
+            // Derive the vendor's time zone from their address so their weekly
+            // hours are always read on their own clock. Geocode-derived wins;
+            // fall back to the province map, then leave NULL (= app default).
+            if(stylerEntity.getLatitude() != null && stylerEntity.getLongitude() != null){
+                String derived = googleTimezoneService.timeZoneId(stylerEntity.getLatitude(), stylerEntity.getLongitude());
+                stylerEntity.setTimeZone(derived != null ? derived : VendorZoneResolver.zoneForProvince(stylerEntity.getProvince()).getId());
+            } else if (stylerEntity.getTimeZone() == null || stylerEntity.getTimeZone().isBlank()) {
+                stylerEntity.setTimeZone(VendorZoneResolver.zoneForProvince(stylerEntity.getProvince()).getId());
             }
 
             stylerRepo.save(stylerEntity);
@@ -4940,7 +4954,15 @@ public class AppService {
                 if(requested != null && requestedStart != null && (!isDateNotException(dto.getStylerId(), requested.toString())
                         || !timeWithinAvailability(dto.getStylerId(), requested.toString(), requestedStart.toString(), duration)
                         || !isWindowFree(dto.getStylerId(), requested.toString(), requestedStart.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)), duration))) continue;
-                if(openNow && !isOpenAt(dto.getStylerId(), ZonedDateTime.now(applicationZone()).toLocalDate(), ZonedDateTime.now(applicationZone()).toLocalTime(), 30)) continue;
+                // "Open now" means the vendor's own clock: their hours live in
+                // their business-address zone, so a Toronto vendor must read
+                // open while the Edmonton server clock says otherwise. The
+                // stored zone wins; the province map covers rows without one.
+                String storedZone = styler.get().getTimeZone();
+                ZoneId vendorZone = (storedZone != null && !storedZone.isBlank())
+                        ? ZoneId.of(storedZone)
+                        : VendorZoneResolver.zoneForProvince(styler.get().getProvince());
+                if(openNow && !isOpenAt(dto.getStylerId(), ZonedDateTime.now(vendorZone).toLocalDate(), ZonedDateTime.now(vendorZone).toLocalTime(), 30)) continue;
                 candidates.add(dto);
             }
             candidates.sort((left, right) -> Double.compare(searchScore(right), searchScore(left)));

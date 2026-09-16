@@ -167,6 +167,9 @@ public class DemoContentInitializer implements CommandLineRunner {
         demo.setServiceTypeId(String.valueOf(serviceType.getId()));
         demo.setCountry("Canada");
         demo.setProvince("Alberta");
+        // Demo vendors model Calgary businesses; their hours must read in the
+        // vendor's zone like real rows do.
+        demo.setTimeZone("America/Edmonton");
         demo.setCity("Calgary");
         // Downtown Calgary coordinates: with them, the seeded rows also answer
         // nearby searches, not just category tabs. Relevant only when the

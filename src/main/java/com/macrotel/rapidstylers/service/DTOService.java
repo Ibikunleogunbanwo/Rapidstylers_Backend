@@ -66,6 +66,7 @@ public class DTOService {
         stylerAccountDTO.setBusinessName(stylerEntity.getBusinessName());
         stylerAccountDTO.setBusinessAddress(stylerEntity.getBusinessAddress());
         stylerAccountDTO.setProvince(stylerEntity.getProvince());
+        stylerAccountDTO.setTimeZone(stylerEntity.getTimeZone());
         stylerAccountDTO.setStreetAddress(stylerEntity.getStreetAddress());
         stylerAccountDTO.setUnit(stylerEntity.getUnit());
         stylerAccountDTO.setCity(stylerEntity.getCity());

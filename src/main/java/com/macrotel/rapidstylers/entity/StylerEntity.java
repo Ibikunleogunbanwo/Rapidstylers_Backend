@@ -27,6 +27,9 @@ public class StylerEntity implements Serializable {
     private String serviceTypeId;
     private String country;
     private String province;
+    // IANA zone the vendor's weekly hours live in (e.g. "America/Edmonton"),
+    // derived from the signup geocode lat/lng. NULL = use the app default.
+    private String timeZone;
     private String businessAddress;
     // Structured Canadian address (new registrations)
     private String streetAddress;

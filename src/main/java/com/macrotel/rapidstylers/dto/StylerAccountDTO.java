@@ -17,6 +17,8 @@ public class StylerAccountDTO {
     private String businessName;
     private String businessAddress;
     private String province;
+    // IANA zone the vendor's weekly hours live in (null = app default).
+    private String timeZone;
     private String description;
     // Structured Canadian address
     private String streetAddress;
