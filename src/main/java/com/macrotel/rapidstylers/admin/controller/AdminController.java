@@ -55,10 +55,19 @@ public class AdminController {
 
     @GetMapping("/admin/audit_logs")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminAuditLogs(HttpServletRequest request){
+    public ResponseEntity<BaseResponse> adminAuditLogs(@RequestParam(value = "page", required = false) Integer page,
+                                                       @RequestParam(value = "size", required = false) Integer size,
+                                                       @RequestParam(value = "action", required = false) String action,
+                                                       @RequestParam(value = "actorId", required = false) String actorId,
+                                                       @RequestParam(value = "resourceId", required = false) String resourceId,
+                                                       HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(adminService.listAuditLogs());
+        // Without paging or filters: the latest 100, as before.
+        if(page == null && size == null && action == null && actorId == null && resourceId == null){
+            return ApiResponses.respond(adminService.listAuditLogs());
+        }
+        return ApiResponses.respond(adminService.searchAuditLogs(page, size, action, actorId, resourceId));
     }
 
     /** Admin-only: sends a test email through EmailConfig to verify delivery. */

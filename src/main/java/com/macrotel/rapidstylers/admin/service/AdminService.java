@@ -161,6 +161,34 @@ public class AdminService {
         return response;
     }
 
+    /**
+     * One page of the activity log, newest first, optionally narrowed to one
+     * action, actor or record. Returns {items, page, size, total, totalPages};
+     * page counts from 0 and size is capped at 200.
+     */
+    public BaseResponse searchAuditLogs(Integer page, Integer size, String action, String actorId, String resourceId){
+        BaseResponse response = new BaseResponse(true);
+        int pageNumber = page == null || page < 0 ? 0 : page;
+        int pageSize = size == null || size < 1 ? 50 : Math.min(size, 200);
+        org.springframework.data.domain.Page<com.macrotel.rapidstylers.common.entity.AuditLogEntity> found =
+                auditLogRepo.search(blankToNull(action), blankToNull(actorId), blankToNull(resourceId),
+                        org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("items", found.getContent());
+        data.put("page", pageNumber);
+        data.put("size", pageSize);
+        data.put("total", found.getTotalElements());
+        data.put("totalPages", found.getTotalPages());
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setData(data);
+        return response;
+    }
+
+    private static String blankToNull(String value){
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     /** List failed outbox events for admin review. */
     public BaseResponse listFailedOutboxEvents() {
         BaseResponse response = new BaseResponse(true);
