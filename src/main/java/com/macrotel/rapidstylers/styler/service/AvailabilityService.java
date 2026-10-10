@@ -501,6 +501,24 @@ public class AvailabilityService {
         }
     }
 
+    /**
+     * Inside the stylist's set hours at this moment, and not a day off. Unlike
+     * {@link #isOpenAt}, an appointment in progress does not count as closed:
+     * the stylist is still open for business, just busy.
+     */
+    public boolean isWithinHours(String stylerId, LocalDate date, LocalTime time){
+        if(!isDateNotException(stylerId, date.toString())) return false;
+        List<AvailabilityEntity> rows = availabilityRepo.findByStylerId(stylerId);
+        if(rows == null || rows.isEmpty()) return false;
+        int weekday = date.getDayOfWeek().getValue() % 7;
+        int nowMinutes = minuteOfDay(time);
+        return rows.stream().filter(row -> Integer.toString(weekday).equals(row.getDayOfWeek())).anyMatch(row -> {
+            try {
+                return windowFits(parseAvailabilityTime(row.getStartTime()), parseAvailabilityTime(row.getEndTime()), nowMinutes, 1);
+            } catch(Exception ex){ return false; }
+        });
+    }
+
     public boolean isOpenAt(String stylerId, LocalDate date, LocalTime time, int durationMinutes){
         if(!isDateNotException(stylerId, date.toString())) return false;
         List<AvailabilityEntity> rows = availabilityRepo.findByStylerId(stylerId);

@@ -51,6 +51,8 @@ public class SearchService {
     StylerEligibility stylerEligibility;
     @Autowired
     StylerService stylerService;
+    @Autowired(required = false)
+    StylerPresence stylerPresence;
 
     public BaseResponse listAllStylers(){
         BaseResponse response = new BaseResponse(true);
@@ -359,6 +361,7 @@ public class SearchService {
                 // distance so concurrent searches never corrupt each other.
                 StylerAccountDTO dto = objectMapper.convertValue(stylerService.cachedStylerAccountDTO(styler), StylerAccountDTO.class);
                 dto.setDistanceKm(Math.round(distKm * 10.0) / 10.0);
+                if(stylerPresence != null) stylerPresence.stamp(dto);
                 // Same copy carries the trading hours, so a nearby result states
                 // real opening hours rather than a bare presence badge.
                 stylerService.attachHours(dto, stylerId);

@@ -53,6 +53,8 @@ public class DTOService {
     RefundRepo refundRepo;
     @Autowired
     StripeService stripeService;
+    @Autowired(required = false)
+    com.macrotel.rapidstylers.styler.service.StylerPresence stylerPresence;
     public UserAccountDTO userAccountDTO(UserEntity userEntity){
         UserAccountDTO userAccountDTO = new UserAccountDTO();
         userAccountDTO.setAddress(userEntity.getAddress());
@@ -85,7 +87,10 @@ public class DTOService {
         stylerAccountDTO.setServiceTypeId(stylerEntity.getServiceTypeId());
         stylerAccountDTO.setServiceTypeName(serviceName);
         stylerAccountDTO.setAccountStatus(Objects.equals(stylerEntity.getStatus(),"0") ?"Active": "Inactive");
-        stylerAccountDTO.setVisibilityStatus(Objects.equals(stylerEntity.getIsOnline(),"0")?"Online": "Offline");
+        // Open for business by the stylist's own hours, not whether they are signed in.
+        stylerAccountDTO.setVisibilityStatus(stylerPresence != null
+                ? stylerPresence.status(stylerEntity.getStylerId(), stylerEntity.getTimeZone(), stylerEntity.getProvince())
+                : (Objects.equals(stylerEntity.getIsOnline(),"0")?"Online": "Offline"));
         stylerAccountDTO.setProfileImageUrl(stylerEntity.getProfileImageUrl());
         stylerAccountDTO.setCoverImageUrl(stylerEntity.getCoverImageUrl());
         stylerAccountDTO.setBusinessName(stylerEntity.getBusinessName());

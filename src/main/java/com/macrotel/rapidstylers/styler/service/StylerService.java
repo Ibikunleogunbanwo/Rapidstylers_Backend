@@ -110,6 +110,8 @@ public class StylerService {
     StylerEligibility stylerEligibility;
     @Autowired
     StylerSignupRetries stylerSignupRetries;
+    @Autowired(required = false)
+    StylerPresence stylerPresence;
 
     /**
      * Creates a professional account, and gives the images back if it cannot.
@@ -496,6 +498,7 @@ public class StylerService {
         }
         StylerAccountDTO row = objectMapper.convertValue(dto, StylerAccountDTO.class);
         attachHours(row, stylerId);
+        if(stylerPresence != null) stylerPresence.stamp(row);
         return row;
     }
 
@@ -683,7 +686,12 @@ public class StylerService {
                 }
             }
             ratingPercentage = ratingCount == 0 ? 0 : (int) ((totalRating/(ratingCount * 5)) *100);
+            // A copy, so the live badge never lands on the shared cached DTO.
             StylerAccountDTO stylerAccount = cachedStylerAccountDTO(stylerEntity);
+            if(stylerPresence != null && stylerAccount != null){
+                stylerAccount = objectMapper.convertValue(stylerAccount, StylerAccountDTO.class);
+                stylerPresence.stamp(stylerAccount);
+            }
             HashMap<String, Object> stylerInformationMap = new HashMap<>();
             stylerInformationMap.put("stylerInformation", stylerAccount);
             stylerInformationMap.put("stylerSubService" , subServiceResult);
