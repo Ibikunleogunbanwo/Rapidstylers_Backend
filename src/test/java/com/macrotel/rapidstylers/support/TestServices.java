@@ -39,7 +39,7 @@ import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.service.AuditService;
 import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ImageReclaimService;
+import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;

@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.media.controller;
 
 import com.macrotel.rapidstylers.controller.ApiResponses;
 import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.service.GalleryService;
+import com.macrotel.rapidstylers.media.service.GalleryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

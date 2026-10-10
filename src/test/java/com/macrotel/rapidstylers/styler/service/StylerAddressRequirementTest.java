@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.styler.service;
 
 import org.springframework.test.util.ReflectionTestUtils;
 import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ImageReclaimService;
+import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
 import com.macrotel.rapidstylers.payment.service.StripeService;

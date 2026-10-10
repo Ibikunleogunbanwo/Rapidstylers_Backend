@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.media.service;
 
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;

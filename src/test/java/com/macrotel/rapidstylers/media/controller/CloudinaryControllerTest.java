@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.controller;
+package com.macrotel.rapidstylers.media.controller;
 
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.service.RateLimiterService;

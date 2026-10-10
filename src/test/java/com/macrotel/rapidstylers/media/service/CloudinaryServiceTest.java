@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.media.service;
 
 import org.junit.jupiter.api.Test;
 

@@ -32,7 +32,7 @@ import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
 import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ImageReclaimService;
+import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
 import com.stripe.model.Account;
 import java.time.Duration;

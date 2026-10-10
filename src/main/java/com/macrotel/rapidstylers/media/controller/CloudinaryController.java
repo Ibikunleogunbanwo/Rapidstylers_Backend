@@ -1,7 +1,8 @@
-package com.macrotel.rapidstylers.controller;
+package com.macrotel.rapidstylers.media.controller;
 
+import com.macrotel.rapidstylers.controller.ApiResponses;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.service.ImageReclaimService;
+import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

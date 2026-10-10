@@ -13,7 +13,7 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.ImageReclaimService;
+import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
 import java.util.*;
 import java.util.logging.Logger;
