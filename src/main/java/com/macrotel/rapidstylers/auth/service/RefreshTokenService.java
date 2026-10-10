@@ -1,7 +1,7 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.entity.RefreshTokenEntity;
-import com.macrotel.rapidstylers.repo.RefreshTokenRepo;
+import com.macrotel.rapidstylers.auth.entity.RefreshTokenEntity;
+import com.macrotel.rapidstylers.auth.repo.RefreshTokenRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

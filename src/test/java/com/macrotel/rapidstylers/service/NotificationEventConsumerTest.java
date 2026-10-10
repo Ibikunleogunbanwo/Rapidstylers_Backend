@@ -1,7 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.service.NotificationDedupService;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;

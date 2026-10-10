@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RoutesTest {
 
-    private static final Path CONTROLLERS = Path.of("src/main/java/com/macrotel/rapidstylers/controller");
+    private static final Path SOURCES = Path.of("src/main/java/com/macrotel/rapidstylers");
     private static final Pattern CLASS_MAPPING = Pattern.compile("@RequestMapping\\(\"([^\"]+)\"\\)");
     private static final Pattern METHOD_MAPPING =
             Pattern.compile("@(?:Get|Post|Put|Delete|Patch)Mapping(?:\\((?:value\\s*=\\s*)?\"([^\"]*)\"\\))?");
@@ -75,8 +75,9 @@ class RoutesTest {
 
     private static List<ControllerRoute> controllerRoutes() throws IOException {
         List<ControllerRoute> routes = new ArrayList<>();
-        try (Stream<Path> files = Files.list(CONTROLLERS)) {
-            for (Path file : (Iterable<Path>) files.filter(f -> f.toString().endsWith(".java"))::iterator) {
+        // Each domain has its own controller folder, so read every *Controller.java.
+        try (Stream<Path> files = Files.walk(SOURCES)) {
+            for (Path file : (Iterable<Path>) files.filter(f -> f.toString().endsWith("Controller.java"))::iterator) {
                 String source = Files.readString(file);
                 Matcher base = CLASS_MAPPING.matcher(source);
                 String prefix = base.find() ? base.group(1) : "";
@@ -92,6 +93,7 @@ class RoutesTest {
                     int to = (i + 1 < starts.size()) ? starts.get(i + 1) : source.length();
                     String method = source.substring(starts.get(i), to);
                     boolean readsAccount = method.contains("currentAccountId(")
+                            || method.contains("CurrentAccount.id(")
                             || method.contains("requireAdmin(")
                             || method.contains("getAttribute(\"accountId\")");
                     routes.add(new ControllerRoute(paths.get(i), readsAccount));

@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.repo.OTPRepo;
+import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;

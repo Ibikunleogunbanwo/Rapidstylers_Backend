@@ -1,11 +1,11 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.auth.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.RefreshTokenEntity;
+import com.macrotel.rapidstylers.auth.entity.RefreshTokenEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
-import com.macrotel.rapidstylers.repo.RefreshTokenRepo;
+import com.macrotel.rapidstylers.auth.repo.RefreshTokenRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

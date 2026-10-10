@@ -1,7 +1,7 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.entity.LoginAttemptEntity;
-import com.macrotel.rapidstylers.repo.LoginAttemptRepo;
+import com.macrotel.rapidstylers.auth.entity.LoginAttemptEntity;
+import com.macrotel.rapidstylers.auth.repo.LoginAttemptRepo;
 import org.springframework.stereotype.Service;
 
 @Service

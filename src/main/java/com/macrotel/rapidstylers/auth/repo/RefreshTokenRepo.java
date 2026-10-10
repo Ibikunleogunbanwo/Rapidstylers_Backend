@@ -1,6 +1,6 @@
-package com.macrotel.rapidstylers.repo;
+package com.macrotel.rapidstylers.auth.repo;
 
-import com.macrotel.rapidstylers.entity.RefreshTokenEntity;
+import com.macrotel.rapidstylers.auth.entity.RefreshTokenEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;

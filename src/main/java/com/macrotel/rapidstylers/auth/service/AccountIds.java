@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.repo.StylerRepo;
@@ -24,7 +24,7 @@ public class AccountIds {
      * A new customer id: first initial, four random digits, last initial (or U and
      * four digits), never one an account already holds.
      */
-    String newCustomerId(String fname, String lname) {
+    public String newCustomerId(String fname, String lname) {
         java.util.function.Supplier<String> candidate = (!fname.isEmpty() && !lname.isEmpty())
                 ? () -> fname.charAt(0) + appUtils.randomDigit(4) + lname.charAt(0)
                 : () -> "U" + appUtils.randomDigit(4);
@@ -37,7 +37,7 @@ public class AccountIds {
      * The ids are short (four random digits), so collisions are real: keep
      * drawing until the id is free in both account tables.
      */
-    String freeAccountId(String first, java.util.function.Supplier<String> next) {
+    public String freeAccountId(String first, java.util.function.Supplier<String> next) {
         String id = first;
         for (int attempt = 0; attempt < 100; attempt++) {
             if (userRepo.findByUserId(id).isEmpty() && stylerRepo.findByStylerId(id).isEmpty()) {

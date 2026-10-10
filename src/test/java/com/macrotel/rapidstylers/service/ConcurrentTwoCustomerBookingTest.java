@@ -14,7 +14,7 @@ import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.repo.NotificationRepo;
-import com.macrotel.rapidstylers.repo.OTPRepo;
+import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;

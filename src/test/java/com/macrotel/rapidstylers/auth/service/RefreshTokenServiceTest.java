@@ -1,7 +1,7 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.entity.RefreshTokenEntity;
-import com.macrotel.rapidstylers.repo.RefreshTokenRepo;
+import com.macrotel.rapidstylers.auth.entity.RefreshTokenEntity;
+import com.macrotel.rapidstylers.auth.repo.RefreshTokenRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;

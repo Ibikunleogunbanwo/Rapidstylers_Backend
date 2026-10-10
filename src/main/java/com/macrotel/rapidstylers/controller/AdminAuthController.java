@@ -2,13 +2,13 @@ package com.macrotel.rapidstylers.controller;
 
 import com.macrotel.rapidstylers.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.pojo.SignInData;
+import com.macrotel.rapidstylers.auth.pojo.SignInData;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.TurnstileVerifier;
-import com.macrotel.rapidstylers.service.LoginAttemptService;
+import com.macrotel.rapidstylers.auth.service.LoginAttemptService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
-import com.macrotel.rapidstylers.service.RefreshTokenService;
+import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;

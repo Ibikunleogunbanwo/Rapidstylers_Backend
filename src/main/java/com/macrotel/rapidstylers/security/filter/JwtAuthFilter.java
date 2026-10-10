@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.security.filter;
 
 import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
-import com.macrotel.rapidstylers.service.SessionActivityService;
+import com.macrotel.rapidstylers.auth.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;

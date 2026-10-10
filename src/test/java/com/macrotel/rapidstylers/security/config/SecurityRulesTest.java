@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.security.config;
 
 import com.macrotel.rapidstylers.security.handler.JsonAuthErrorHandler;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
-import com.macrotel.rapidstylers.service.SessionActivityService;
+import com.macrotel.rapidstylers.auth.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.BeforeEach;

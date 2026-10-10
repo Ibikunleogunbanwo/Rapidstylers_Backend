@@ -1,11 +1,11 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.entity.OTPEntity;
+import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventType;
-import com.macrotel.rapidstylers.repo.OTPRepo;
+import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

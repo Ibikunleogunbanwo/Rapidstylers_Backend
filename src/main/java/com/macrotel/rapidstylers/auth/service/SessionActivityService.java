@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.beans.factory.annotation.Value;

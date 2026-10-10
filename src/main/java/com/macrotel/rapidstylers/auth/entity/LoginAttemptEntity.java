@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.entity;
+package com.macrotel.rapidstylers.auth.entity;
 
 import lombok.Data;
 

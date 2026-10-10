@@ -1,8 +1,10 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.auth.service.AccountIds;
+import com.macrotel.rapidstylers.auth.service.AuthService;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.entity.IdentificationEntity;
-import com.macrotel.rapidstylers.entity.OTPEntity;
+import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
@@ -13,7 +15,7 @@ import com.macrotel.rapidstylers.pojo.StylerData;
 import com.macrotel.rapidstylers.pojo.VerificationActionData;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.IdentificationRepo;
-import com.macrotel.rapidstylers.repo.OTPRepo;
+import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
@@ -96,9 +98,8 @@ class StylerAddressRequirementTest {
         appService.readCacheService = readCacheService;
         appService.geocodingService = geocodingService;
         appService.accountIds = new AccountIds(userRepo, stylerRepo);
-        AuthService authService = new AuthService();
-        authService.rateLimiterService = rateLimiterService;
-        appService.authService = authService;
+        // Not locked out: a mock answers false.
+        appService.authService = mock(AuthService.class);
         appService.stripeService = stripeService;
 
         dtoService = new DTOService();
