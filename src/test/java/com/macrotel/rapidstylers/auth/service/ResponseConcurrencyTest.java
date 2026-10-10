@@ -1,7 +1,6 @@
 package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.auth.pojo.SignInData;
-import com.macrotel.rapidstylers.common.controller.StatusController;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -10,6 +9,7 @@ import com.macrotel.rapidstylers.customer.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
  * error/success state.
  *
  * {@link #concurrentCallsNeverBleedStateBetweenResponses()} hammers the real
- * status endpoint and AuthService from many threads and asserts no response ever carries another
+ * AuthService from many threads and asserts no response ever carries another
  * call's token or state. {@link #legacySharedFieldPatternIsDetectedByTheHarness()}
  * runs the identical harness against a replica of the OLD shared-field pattern
  * and asserts that bleed IS detected — proving the harness can actually fail.
@@ -50,6 +50,7 @@ class ResponseConcurrencyTest {
     private static final int ITERATIONS = 300;
     private static final String VALID_EMAIL = "concurrent@rapidstylers.test";
     private static final String INVALID_EMAIL = "nobody@rapidstylers.test";
+    private static final String SUCCESS_ONLY_MESSAGE = "Styler is currently offline";
 
     /** Marker for the currently-executing worker thread; drives the per-thread JWT value. */
     private static final ThreadLocal<String> THREAD_MARKER = new ThreadLocal<>();
@@ -61,7 +62,6 @@ class ResponseConcurrencyTest {
         BaseResponse failingCall();   // must carry its own error and no token
     }
 
-    private final StatusController statusController = new StatusController();
     private AuthService authService;
 
     @BeforeEach
@@ -108,6 +108,7 @@ class ResponseConcurrencyTest {
         authService.userRepo = userRepo;
         StylerRepo stylerRepo = mock(StylerRepo.class);
         when(stylerRepo.findByEmailAddress(anyString())).thenReturn(Optional.empty());
+        when(stylerRepo.findByStylerId(anyString())).thenReturn(Optional.of(new StylerEntity()));
         authService.stylerRepo = stylerRepo;
         authService.rateLimiterService = rateLimiterService;
         authService.loginAttemptService = loginAttemptService;
@@ -122,7 +123,7 @@ class ResponseConcurrencyTest {
         ConcurrentLinkedQueue<String> failures = hammer(new Calls() {
             @Override
             public BaseResponse successOnly() {
-                return statusController.testing().getBody();
+                return authService.stylerLogOut("S-CONCURRENT");
             }
 
             @Override
@@ -188,7 +189,7 @@ class ResponseConcurrencyTest {
                         if (ping.getToken() != null) {
                             failures.add(threadId + "/" + i + ": success-only returned foreign token " + ping.getToken());
                         }
-                        if (!"200".equals(ping.getStatusCode()) || !"API is working well".equals(ping.getMessage())) {
+                        if (!"200".equals(ping.getStatusCode()) || !SUCCESS_ONLY_MESSAGE.equals(ping.getMessage())) {
                             failures.add(threadId + "/" + i + ": success-only state corrupted: "
                                     + ping.getStatusCode() + "/" + ping.getMessage());
                         }
@@ -244,7 +245,7 @@ class ResponseConcurrencyTest {
 
         BaseResponse testing() {
             baseResponse.setStatusCode("200");
-            baseResponse.setMessage("API is working well");
+            baseResponse.setMessage(SUCCESS_ONLY_MESSAGE);
             baseResponse.setData(new Object[0]);
             return baseResponse;
         }

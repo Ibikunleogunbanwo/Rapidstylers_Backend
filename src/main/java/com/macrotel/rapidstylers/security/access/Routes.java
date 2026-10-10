@@ -67,8 +67,6 @@ public final class Routes {
 
             // Signed by Stripe instead of a token
             "/rapid_stylers/stripe/webhook",
-
-            "/rapid_stylers/testing",
     };
 
     public static final String[] ADMIN = {
