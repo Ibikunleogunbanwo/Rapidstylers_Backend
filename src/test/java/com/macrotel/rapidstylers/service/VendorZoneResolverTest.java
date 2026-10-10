@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.entity.AvailabilityExceptionEntity;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
@@ -54,7 +55,7 @@ class VendorZoneResolverTest {
     private static final ZoneId TORONTO = ZoneId.of("America/Toronto");
     private static final ZoneId EDMONTON = ZoneId.of("America/Edmonton");
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private AvailabilityRepo availabilityRepo;
     private AvailabilityExceptionRepo availabilityExceptionRepo;
@@ -62,15 +63,15 @@ class VendorZoneResolverTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         availabilityRepo = mock(AvailabilityRepo.class);
         availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
         bookAppointmentRepo = mock(BookAppointmentRepo.class);
-        appService.stylerRepo = stylerRepo;
-        appService.availabilityRepo = availabilityRepo;
-        appService.availabilityExceptionRepo = availabilityExceptionRepo;
-        appService.bookAppointmentRepo = bookAppointmentRepo;
+        services.stylerRepo = stylerRepo;
+        services.availabilityRepo = availabilityRepo;
+        services.availabilityExceptionRepo = availabilityExceptionRepo;
+        services.bookAppointmentRepo = bookAppointmentRepo;
         // isOpenAt's conflict check reads the stylist's own bookings for the day.
         when(bookAppointmentRepo.findByStylerIdAndAppointmentDateValue(anyString(), org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(List.of());
@@ -109,7 +110,7 @@ class VendorZoneResolverTest {
             Method method = AppService.class.getDeclaredMethod(
                     "isOpenAt", String.class, LocalDate.class, LocalTime.class, int.class);
             method.setAccessible(true);
-            return (boolean) method.invoke(appService, stylerId,
+            return (boolean) method.invoke(services.appService(), stylerId,
                     vendorNow.toLocalDate(), vendorNow.toLocalTime(), 30);
         } catch (Exception ex) {
             throw new IllegalStateException(ex);

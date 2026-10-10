@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.repo.StylerRepo;
@@ -16,14 +17,14 @@ import static org.mockito.Mockito.when;
 
 class AdminConnectStatusTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
-        appService.stylerRepo = stylerRepo;
+        services.stylerRepo = stylerRepo;
     }
 
     @Test
@@ -35,7 +36,7 @@ class AdminConnectStatusTest {
         StylerEntity pending = styler("S4", "PENDING", "acct_4", "APPROVED");
         when(stylerRepo.findAll()).thenReturn(Arrays.asList(complete, rejected, notStarted, pending));
 
-        BaseResponse response = appService.getAdminStylerConnectStatuses();
+        BaseResponse response = services.appService().getAdminStylerConnectStatuses();
 
         assertEquals("200", response.getStatusCode());
         List<Map<String, Object>> rows = (List<Map<String, Object>>) response.getData();
@@ -56,7 +57,7 @@ class AdminConnectStatusTest {
         StylerEntity styler = styler("S3", null, null, "PENDING");
         when(stylerRepo.findAll()).thenReturn(Arrays.asList(styler));
 
-        BaseResponse response = appService.getAdminStylerConnectStatuses();
+        BaseResponse response = services.appService().getAdminStylerConnectStatuses();
 
         List<Map<String, Object>> rows = (List<Map<String, Object>>) response.getData();
         assertEquals("NOT_STARTED", rows.get(0).get("connectStatus"));

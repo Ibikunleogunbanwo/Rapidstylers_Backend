@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.repo.BlogPostRepo;
-import com.macrotel.rapidstylers.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import org.springframework.beans.factory.annotation.Autowired;

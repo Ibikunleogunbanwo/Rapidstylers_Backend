@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.controller.ApplicationController;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
@@ -55,7 +56,7 @@ import static org.mockito.Mockito.when;
 
 class BookingWorkflowTest {
 
-    private AppService appService;
+    private TestServices services;
     private BookingSlotLockRepo slotLockRepo;
     private BookAppointmentRepo appointmentRepo;
     private StylerRepo stylerRepo;
@@ -69,7 +70,7 @@ class BookingWorkflowTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         slotLockRepo = mock(BookingSlotLockRepo.class);
         appointmentRepo = mock(BookAppointmentRepo.class);
         stylerRepo = mock(StylerRepo.class);
@@ -79,33 +80,32 @@ class BookingWorkflowTest {
         availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
         outboxEventService = mock(OutboxEventService.class);
         cardDetailsRepo = mock(CardDetailsRepo.class);
-        appService.bookingSlotLockRepo = slotLockRepo;
-        appService.bookAppointmentRepo = appointmentRepo;
-        appService.stylerRepo = stylerRepo;
-        appService.userRepo = userRepo;
-        appService.subServiceRepo = subServiceRepo;
-        appService.availabilityRepo = availabilityRepo;
-        appService.availabilityExceptionRepo = availabilityExceptionRepo;
-        appService.emailConfig = mock(EmailConfig.class);
-        appService.outboxEventService = outboxEventService;
-        appService.cardDetailsRepo = cardDetailsRepo;
+        services.bookingSlotLockRepo = slotLockRepo;
+        services.bookAppointmentRepo = appointmentRepo;
+        services.stylerRepo = stylerRepo;
+        services.userRepo = userRepo;
+        services.subServiceRepo = subServiceRepo;
+        services.availabilityRepo = availabilityRepo;
+        services.availabilityExceptionRepo = availabilityExceptionRepo;
+        services.emailConfig = mock(EmailConfig.class);
+        services.outboxEventService = outboxEventService;
+        services.cardDetailsRepo = cardDetailsRepo;
         // Payments disabled in tests: booking proceeds without Stripe authorization.
         stripeService = mock(StripeService.class);
         when(stripeService.isConfigured()).thenReturn(false);
-        appService.stripeService = stripeService;
+        services.stripeService = stripeService;
         // Same default as application.properties (STRIPE_COMMISSION_PERCENT).
-        ReflectionTestUtils.setField(appService, "stripeCommissionPercent", 10.0);
-        ReflectionTestUtils.setField(appService, "paymentAuthorizationWindowDays", 7L);
-        ReflectionTestUtils.setField(appService, "paymentAuthorizationLeadHours", 48L);
+        ReflectionTestUtils.setField(services, "paymentAuthorizationWindowDays", 7L);
+        ReflectionTestUtils.setField(services, "paymentAuthorizationLeadHours", 48L);
         // Payment ops (commission, receipts, refunds) live in PaymentOpsService —
         // share the same mocks and rate default (see docs/simplification-plan.md).
         PaymentOpsService paymentOps = new PaymentOpsService();
         paymentOps.bookAppointmentRepo = appointmentRepo;
         paymentOps.stylerRepo = stylerRepo;
         paymentOps.stripeService = stripeService;
-        paymentOps.auditService = appService.auditService;
+        paymentOps.auditService = services.auditService;
         ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);
-        appService.paymentOpsService = paymentOps;
+        services.paymentOpsService = paymentOps;
     }
 
     @Test
@@ -117,7 +117,7 @@ class BookingWorkflowTest {
         appointment.setStylerId("STYLER1");
         appointment.setAppointmentId("APPT-1");
 
-        reserve.invoke(appService, appointment, LocalDate.of(2030, 8, 24), LocalTime.of(9, 30), 90);
+        reserve.invoke(services.appService(), appointment, LocalDate.of(2030, 8, 24), LocalTime.of(9, 30), 90);
 
         verify(slotLockRepo).saveAllAndFlush(argThatListSize(6));
     }
@@ -153,7 +153,7 @@ class BookingWorkflowTest {
                 .thenThrow(new CardException("Your card was declined", "req_1", "card_declined",
                         "insufficient_funds", null, null, 402, null));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("400", response.getStatusCode());
         org.junit.jupiter.api.Assertions.assertTrue(
@@ -194,7 +194,7 @@ class BookingWorkflowTest {
                 .thenThrow(new CardException("Your card has expired", "req_2", "expired_card",
                         null, null, null, 402, null));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("400", response.getStatusCode());
         Map<String, Object> errorData = (Map<String, Object>) response.getData();
@@ -235,7 +235,7 @@ class BookingWorkflowTest {
                 .thenReturn(pi);
         when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("200", response.getStatusCode());
         // Service price 100.00 -> 10000 cents; 10% commission -> 1000 cents, routed to the stylist's account.
@@ -259,7 +259,7 @@ class BookingWorkflowTest {
         when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(styler));
         when(stripeService.isConfigured()).thenReturn(true);
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("400", response.getStatusCode());
         assertEquals("This professional is not yet available for online booking", response.getMessage());
@@ -300,7 +300,7 @@ class BookingWorkflowTest {
                 .thenReturn(pi);
         when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("200", response.getStatusCode());
     }
@@ -327,7 +327,7 @@ class BookingWorkflowTest {
         when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class)))
                 .thenThrow(new DataIntegrityViolationException("duplicate appointment"));
 
-        assertThrows(DataIntegrityViolationException.class, () -> appService.bookAppointment(data));
+        assertThrows(DataIntegrityViolationException.class, () -> services.appService().bookAppointment(data));
         verify(slotLockRepo, never()).saveAllAndFlush(any());
     }
 
@@ -355,7 +355,7 @@ class BookingWorkflowTest {
         when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
         when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("200", response.getStatusCode());
         verify(appointmentRepo).saveAndFlush(argThat(appointment ->
@@ -392,7 +392,7 @@ class BookingWorkflowTest {
         when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
         when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("200", response.getStatusCode());
         verify(appointmentRepo).saveAndFlush(argThat(appointment ->
@@ -423,7 +423,7 @@ class BookingWorkflowTest {
         when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
         when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("200", response.getStatusCode());
         verify(appointmentRepo).saveAndFlush(argThat(appointment ->
@@ -458,7 +458,7 @@ class BookingWorkflowTest {
         when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
         when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("200", response.getStatusCode());
         verify(outboxEventService).appointmentNotification(any(BookAppointmentEntity.class),
@@ -467,7 +467,7 @@ class BookingWorkflowTest {
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.eq("New booking request"),
                 org.mockito.ArgumentMatchers.anyString());
-        verifyNoInteractions(appService.emailConfig);
+        verifyNoInteractions(services.emailConfig);
     }
 
     @Test
@@ -503,7 +503,7 @@ class BookingWorkflowTest {
         when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(approvedStyler()));
         when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(90)));
 
-        BaseResponse response = appService.bookAppointment(data);
+        BaseResponse response = services.appService().bookAppointment(data);
 
         assertEquals("400", response.getStatusCode());
         assertEquals("Travel distance is required for home service bookings", response.getMessage());
@@ -515,13 +515,13 @@ class BookingWorkflowTest {
         BookAppointmentEntity pending = appointment("1");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-1")).thenReturn(Optional.of(pending));
 
-        BaseResponse declined = appService.declineAppointment("STYLER1", "APPT-1");
+        BaseResponse declined = services.appService().declineAppointment("STYLER1", "APPT-1");
         assertEquals("200", declined.getStatusCode());
         verify(slotLockRepo).deleteByAppointmentId("APPT-1");
 
         BookAppointmentEntity accepted = appointment("APPT-2", "3");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-2")).thenReturn(Optional.of(accepted));
-        BaseResponse cancelled = appService.cancelAppointment("CUSTOMER1", "APPT-2");
+        BaseResponse cancelled = services.appService().cancelAppointment("CUSTOMER1", "APPT-2");
         assertEquals("200", cancelled.getStatusCode());
         verify(slotLockRepo).deleteByAppointmentId("APPT-2");
     }
@@ -532,7 +532,7 @@ class BookingWorkflowTest {
         pending.setAppointmentId("APPT-NOTE");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-NOTE")).thenReturn(Optional.of(pending));
 
-        BaseResponse accepted = appService.acceptAppointment("STYLER1", "APPT-NOTE", " Accepted anyway — far but worth it ");
+        BaseResponse accepted = services.appService().acceptAppointment("STYLER1", "APPT-NOTE", " Accepted anyway — far but worth it ");
 
         assertEquals("200", accepted.getStatusCode());
         assertEquals("3", pending.getStatus());
@@ -545,7 +545,7 @@ class BookingWorkflowTest {
         pending.setAppointmentId("APPT-NOTE2");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-NOTE2")).thenReturn(Optional.of(pending));
 
-        appService.acceptAppointment("STYLER1", "APPT-NOTE2", "<script>alert(1)</script>accepted");
+        services.appService().acceptAppointment("STYLER1", "APPT-NOTE2", "<script>alert(1)</script>accepted");
         assertNotNull(pending.getStylerNote());
         assertFalse(pending.getStylerNote().contains("<script>"));
 

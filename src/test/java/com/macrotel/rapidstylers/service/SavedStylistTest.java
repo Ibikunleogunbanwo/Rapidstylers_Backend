@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.SavedStylistEntity;
@@ -29,32 +30,32 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SavedStylistTest {
-    private AppService appService;
+    private TestServices services;
     private SavedStylistRepo savedRepo;
     private UserRepo userRepo;
     private StylerRepo stylerRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         savedRepo = mock(SavedStylistRepo.class);
         userRepo = mock(UserRepo.class);
         stylerRepo = mock(StylerRepo.class);
-        appService.savedStylistRepo = savedRepo;
-        appService.userRepo = userRepo;
-        appService.stylerRepo = stylerRepo;
-        appService.dtoService = mock(DTOService.class);
+        services.savedStylistRepo = savedRepo;
+        services.userRepo = userRepo;
+        services.stylerRepo = stylerRepo;
+        services.dtoService = mock(DTOService.class);
         // A list row now carries the professional's weekly hours, which the row
         // builder reads through the per-styler caches: the copy needs a mapper,
         // and the passthrough cache invokes the real loaders, so the repos behind
         // them must exist (empty means this fixture has set no hours).
-        appService.objectMapper = new ObjectMapper();
+        services.objectMapper = new ObjectMapper();
         ReadCacheService readCacheService = mock(ReadCacheService.class);
-        appService.readCacheService = readCacheService;
+        services.readCacheService = readCacheService;
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
-        appService.availabilityRepo = mock(AvailabilityRepo.class);
-        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
+        services.availabilityRepo = mock(AvailabilityRepo.class);
+        services.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     @Test
@@ -66,8 +67,8 @@ class SavedStylistTest {
         when(savedRepo.findByUserIdAndStylerId("USER1", "STYLER1"))
                 .thenReturn(Optional.empty(), Optional.of(new SavedStylistEntity("USER1", "STYLER1")));
 
-        BaseResponse first = appService.saveStylist("USER1", "STYLER1");
-        BaseResponse second = appService.saveStylist("USER1", "STYLER1");
+        BaseResponse first = services.appService().saveStylist("USER1", "STYLER1");
+        BaseResponse second = services.appService().saveStylist("USER1", "STYLER1");
 
         assertEquals("200", first.getStatusCode());
         assertEquals("200", second.getStatusCode());
@@ -79,7 +80,7 @@ class SavedStylistTest {
         when(userRepo.findByUserId("USER1")).thenReturn(Optional.of(new UserEntity()));
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist("REJECTED")));
 
-        BaseResponse response = appService.saveStylist("USER1", "STYLER1");
+        BaseResponse response = services.appService().saveStylist("USER1", "STYLER1");
 
         assertEquals("400", response.getStatusCode());
         verify(savedRepo, never()).save(any(SavedStylistEntity.class));
@@ -96,9 +97,9 @@ class SavedStylistTest {
         when(stylerRepo.findByStylerId("STYLER2")).thenReturn(Optional.of(stylist("REJECTED")));
         StylerAccountDTO dto = new StylerAccountDTO();
         dto.setStylerId("STYLER1");
-        when(appService.dtoService.stylerAccountDTO(any(StylerEntity.class))).thenReturn(dto);
+        when(services.dtoService.stylerAccountDTO(any(StylerEntity.class))).thenReturn(dto);
 
-        BaseResponse response = appService.listSavedStylists("USER1");
+        BaseResponse response = services.appService().listSavedStylists("USER1");
 
         assertEquals("200", response.getStatusCode());
         assertEquals(1, ((java.util.List<?>) response.getData()).size());

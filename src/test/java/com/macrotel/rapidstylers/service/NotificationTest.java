@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.NotificationEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
@@ -19,17 +20,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class NotificationTest {
-    private AppService appService;
+    private TestServices services;
     private NotificationRepo notificationRepo;
     private UserRepo userRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         notificationRepo = mock(NotificationRepo.class);
         userRepo = mock(UserRepo.class);
-        appService.notificationRepo = notificationRepo;
-        appService.userRepo = userRepo;
+        services.notificationRepo = notificationRepo;
+        services.userRepo = userRepo;
     }
 
     @Test
@@ -41,7 +42,7 @@ class NotificationTest {
                 .thenReturn(Collections.singletonList(notification));
         when(notificationRepo.countByUserIdAndReadFalse("USER1")).thenReturn(1L);
 
-        BaseResponse response = appService.listNotifications("USER1");
+        BaseResponse response = services.appService().listNotifications("USER1");
 
         assertEquals("200", response.getStatusCode());
         assertEquals(1L, ((java.util.Map<?, ?>) response.getData()).get("unreadCount"));
@@ -54,12 +55,12 @@ class NotificationTest {
         when(userRepo.findByUserId("USER1")).thenReturn(Optional.of(user));
         when(notificationRepo.findByIdAndUserId(4L, "USER1")).thenReturn(Optional.of(notification));
 
-        BaseResponse readResponse = appService.markNotificationRead("USER1", 4L);
+        BaseResponse readResponse = services.appService().markNotificationRead("USER1", 4L);
         NotificationPreferencesData preferences = new NotificationPreferencesData();
         preferences.setAvailability(false);
         preferences.setPrice(true);
         preferences.setVerification(false);
-        BaseResponse preferenceResponse = appService.updateNotificationPreferences("USER1", preferences);
+        BaseResponse preferenceResponse = services.appService().updateNotificationPreferences("USER1", preferences);
 
         assertEquals("200", readResponse.getStatusCode());
         assertEquals("200", preferenceResponse.getStatusCode());

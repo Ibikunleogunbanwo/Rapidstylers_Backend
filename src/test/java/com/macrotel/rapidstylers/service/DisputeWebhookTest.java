@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
@@ -22,22 +23,22 @@ import static org.mockito.Mockito.when;
 
 class DisputeWebhookTest {
 
-    private AppService appService;
+    private TestServices services;
     private BookAppointmentRepo bookAppointmentRepo;
     private StripeService stripeService;
     private EmailConfig emailConfig;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         bookAppointmentRepo = mock(BookAppointmentRepo.class);
         stripeService = mock(StripeService.class);
         emailConfig = mock(EmailConfig.class);
-        appService.bookAppointmentRepo = bookAppointmentRepo;
-        appService.stripeService = stripeService;
-        appService.auditLogRepo = mock(AuditLogRepo.class);
-        appService.emailConfig = emailConfig;
-        appService.outboxEventService = mock(OutboxEventService.class);
+        services.bookAppointmentRepo = bookAppointmentRepo;
+        services.stripeService = stripeService;
+        services.auditLogRepo = mock(AuditLogRepo.class);
+        services.emailConfig = emailConfig;
+        services.outboxEventService = mock(OutboxEventService.class);
         // Webhook handling lives in PaymentOpsService — share the same mocks;
         // the ops-alert address now sits on AuditService (moved from AppService).
         AuditService sharedAudit = new AuditService();
@@ -48,8 +49,8 @@ class DisputeWebhookTest {
         paymentOps.bookAppointmentRepo = bookAppointmentRepo;
         paymentOps.stripeService = stripeService;
         paymentOps.auditService = sharedAudit;
-        appService.auditService = sharedAudit;
-        appService.paymentOpsService = paymentOps;
+        services.auditService = sharedAudit;
+        services.paymentOpsService = paymentOps;
     }
 
     private Event disputeEvent(String type, String status) {
@@ -78,7 +79,7 @@ class DisputeWebhookTest {
                 .thenReturn(disputeEvent("charge.dispute.created", "needs_response"));
         when(bookAppointmentRepo.findByPaymentIntentId("pi_1")).thenReturn(Optional.of(appointment));
 
-        appService.handleStripeWebhook("payload", "sig");
+        services.appService().handleStripeWebhook("payload", "sig");
 
         assertEquals("DISPUTED", appointment.getPaymentStatus());
         verify(bookAppointmentRepo).save(appointment);
@@ -92,7 +93,7 @@ class DisputeWebhookTest {
                 .thenReturn(disputeEvent("charge.dispute.closed", "won"));
         when(bookAppointmentRepo.findByPaymentIntentId("pi_1")).thenReturn(Optional.of(appointment));
 
-        appService.handleStripeWebhook("payload", "sig");
+        services.appService().handleStripeWebhook("payload", "sig");
 
         assertEquals("CAPTURED", appointment.getPaymentStatus());
     }
@@ -104,7 +105,7 @@ class DisputeWebhookTest {
                 .thenReturn(disputeEvent("charge.dispute.closed", "lost"));
         when(bookAppointmentRepo.findByPaymentIntentId("pi_1")).thenReturn(Optional.of(appointment));
 
-        appService.handleStripeWebhook("payload", "sig");
+        services.appService().handleStripeWebhook("payload", "sig");
 
         assertEquals("DISPUTE_LOST", appointment.getPaymentStatus());
     }

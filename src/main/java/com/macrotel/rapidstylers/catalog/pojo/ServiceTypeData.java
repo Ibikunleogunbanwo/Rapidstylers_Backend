@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.pojo;
+package com.macrotel.rapidstylers.catalog.pojo;
 
 import lombok.Data;
 
@@ -8,9 +8,11 @@ import javax.validation.constraints.Pattern;
 import static com.macrotel.rapidstylers.config.AppConstants.CHARACTER_VALIDATION_REGEX;
 
 @Data
-public class IdentificationData {
-    @NotEmpty(message = "Identification name cannot be empty")
+public class ServiceTypeData {
+    @NotEmpty(message = "Service name cannot be empty")
     @Pattern(regexp = CHARACTER_VALIDATION_REGEX)
-    private String identificationName;
+    private String serviceName;
     private String id;
+    private String imageUrl;
+    private String description;
 }

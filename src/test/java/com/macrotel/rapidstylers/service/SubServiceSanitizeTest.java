@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.dto.SubServiceDTO;
 import com.macrotel.rapidstylers.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
@@ -21,17 +22,17 @@ import static org.mockito.Mockito.when;
 
 class SubServiceSanitizeTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private SubServiceRepo subServiceRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         subServiceRepo = mock(SubServiceRepo.class);
-        appService.stylerRepo = stylerRepo;
-        appService.subServiceRepo = subServiceRepo;
+        services.stylerRepo = stylerRepo;
+        services.subServiceRepo = subServiceRepo;
     }
 
     @Test
@@ -44,7 +45,7 @@ class SubServiceSanitizeTest {
         data.setPrice("150.00");
         data.setDurationMinutes(60);
 
-        BaseResponse response = appService.createSubService(data);
+        BaseResponse response = services.appService().createSubService(data);
 
         assertEquals("200", response.getStatusCode());
         ArgumentCaptor<SubServiceEntity> captor = ArgumentCaptor.forClass(SubServiceEntity.class);
@@ -58,8 +59,8 @@ class SubServiceSanitizeTest {
         existing.setName("Old Name");
         existing.setPrice("100.00");
         when(subServiceRepo.isServiceExistById("S1", 5L)).thenReturn(Optional.of(existing));
-        appService.dtoService = mock(DTOService.class);
-        when(appService.dtoService.subServiceDTO(existing)).thenReturn(new SubServiceDTO());
+        services.dtoService = mock(DTOService.class);
+        when(services.dtoService.subServiceDTO(existing)).thenReturn(new SubServiceDTO());
 
         ServiceUpdateData data = new ServiceUpdateData();
         data.setId(5L);
@@ -67,7 +68,7 @@ class SubServiceSanitizeTest {
         data.setPrice("120.00");
         data.setDurationMinutes(60);
 
-        BaseResponse response = appService.updateSubService("S1", data);
+        BaseResponse response = services.appService().updateSubService("S1", data);
 
         assertEquals("200", response.getStatusCode());
         assertEquals("New Name", existing.getName());

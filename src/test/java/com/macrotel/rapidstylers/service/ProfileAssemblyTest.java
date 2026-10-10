@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.dto.StylerPortfolioDTO;
 import com.macrotel.rapidstylers.dto.StylerReviewDTO;
@@ -47,7 +48,7 @@ import static org.mockito.Mockito.when;
  */
 class ProfileAssemblyTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private SubServiceRepo subServiceRepo;
     private StylerPortfolioRepo stylerPortfolioRepo;
@@ -60,7 +61,7 @@ class ProfileAssemblyTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         subServiceRepo = mock(SubServiceRepo.class);
         stylerPortfolioRepo = mock(StylerPortfolioRepo.class);
@@ -70,15 +71,15 @@ class ProfileAssemblyTest {
         availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
         dtoService = mock(DTOService.class);
         readCacheService = mock(ReadCacheService.class);
-        appService.stylerRepo = stylerRepo;
-        appService.subServiceRepo = subServiceRepo;
-        appService.stylerPortfolioRepo = stylerPortfolioRepo;
-        appService.reviewRepo = reviewRepo;
-        appService.bookAppointmentRepo = bookAppointmentRepo;
-        appService.availabilityRepo = availabilityRepo;
-        appService.availabilityExceptionRepo = availabilityExceptionRepo;
-        appService.dtoService = dtoService;
-        appService.readCacheService = readCacheService;
+        services.stylerRepo = stylerRepo;
+        services.subServiceRepo = subServiceRepo;
+        services.stylerPortfolioRepo = stylerPortfolioRepo;
+        services.reviewRepo = reviewRepo;
+        services.bookAppointmentRepo = bookAppointmentRepo;
+        services.availabilityRepo = availabilityRepo;
+        services.availabilityExceptionRepo = availabilityExceptionRepo;
+        services.dtoService = dtoService;
+        services.readCacheService = readCacheService;
     }
 
     @Test
@@ -115,7 +116,7 @@ class ProfileAssemblyTest {
             return ((Supplier<?>) inv.getArgument(3)).get();
         });
 
-        BaseResponse response = appService.getStylerDetails("S1");
+        BaseResponse response = services.appService().getStylerDetails("S1");
 
         assertEquals("200", response.getStatusCode());
         Map<?, ?> data = (Map<?, ?>) response.getData();
@@ -178,7 +179,7 @@ class ProfileAssemblyTest {
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
 
-        BaseResponse response = appService.getStylerDetails("S1");
+        BaseResponse response = services.appService().getStylerDetails("S1");
 
         assertEquals("200", response.getStatusCode());
         Map<?, ?> data = (Map<?, ?>) response.getData();
@@ -241,7 +242,7 @@ class ProfileAssemblyTest {
     }
 
     private List<?> badgesOf(String stylerId){
-        Map<?, ?> data = (Map<?, ?>) appService.getStylerDetails(stylerId).getData();
+        Map<?, ?> data = (Map<?, ?>) services.appService().getStylerDetails(stylerId).getData();
         return (List<?>) data.get("badges");
     }
 

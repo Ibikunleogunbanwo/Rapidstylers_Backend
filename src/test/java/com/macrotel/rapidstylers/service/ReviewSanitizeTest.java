@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.entity.ReviewEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
@@ -23,7 +24,7 @@ import static org.mockito.Mockito.when;
 
 class ReviewSanitizeTest {
 
-    private AppService appService;
+    private TestServices services;
     private UserRepo userRepo;
     private StylerRepo stylerRepo;
     private BookAppointmentRepo bookAppointmentRepo;
@@ -31,15 +32,15 @@ class ReviewSanitizeTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         userRepo = mock(UserRepo.class);
         stylerRepo = mock(StylerRepo.class);
         bookAppointmentRepo = mock(BookAppointmentRepo.class);
         reviewRepo = mock(ReviewRepo.class);
-        appService.userRepo = userRepo;
-        appService.stylerRepo = stylerRepo;
-        appService.bookAppointmentRepo = bookAppointmentRepo;
-        appService.reviewRepo = reviewRepo;
+        services.userRepo = userRepo;
+        services.stylerRepo = stylerRepo;
+        services.bookAppointmentRepo = bookAppointmentRepo;
+        services.reviewRepo = reviewRepo;
     }
 
     @Test
@@ -66,7 +67,7 @@ class ReviewSanitizeTest {
         data.setRatingScore("5");
         data.setReviewMessage("Amazing <script>alert('x')</script> work, <img src=x onerror=alert(1)> thank you!");
 
-        BaseResponse response = appService.createStylerReview(data);
+        BaseResponse response = services.appService().createStylerReview(data);
 
         assertEquals("200", response.getStatusCode());
         ArgumentCaptor<ReviewEntity> captor = ArgumentCaptor.forClass(ReviewEntity.class);

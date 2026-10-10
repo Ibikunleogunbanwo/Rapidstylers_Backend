@@ -1,8 +1,8 @@
 package com.macrotel.rapidstylers.repo;
 
-import com.macrotel.rapidstylers.entity.BlogPostEntity;
+import com.macrotel.rapidstylers.catalog.entity.BlogPostEntity;
 import com.macrotel.rapidstylers.entity.NotificationEntity;
-import com.macrotel.rapidstylers.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;

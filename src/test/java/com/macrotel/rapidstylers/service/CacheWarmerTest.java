@@ -1,9 +1,10 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.entity.ServiceEntity;
+import com.macrotel.rapidstylers.support.TestServices;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.repo.IdentificationRepo;
-import com.macrotel.rapidstylers.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ import static org.mockito.Mockito.when;
  */
 class CacheWarmerTest {
 
-    private AppService appService;
+    private TestServices services;
     private ReadCacheService readCacheService;
     private StylerRepo stylerRepo;
     private ServiceRepo serviceRepo;
@@ -42,26 +43,26 @@ class CacheWarmerTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         readCacheService = mock(ReadCacheService.class);
         stylerRepo = mock(StylerRepo.class);
         serviceRepo = mock(ServiceRepo.class);
         IdentificationRepo identificationRepo = mock(IdentificationRepo.class);
-        com.macrotel.rapidstylers.repo.BlogPostRepo blogPostRepo =
-                mock(com.macrotel.rapidstylers.repo.BlogPostRepo.class);
+        com.macrotel.rapidstylers.catalog.repo.BlogPostRepo blogPostRepo =
+                mock(com.macrotel.rapidstylers.catalog.repo.BlogPostRepo.class);
         dtoService = mock(DTOService.class);
-        appService.readCacheService = readCacheService;
-        appService.stylerRepo = stylerRepo;
-        appService.serviceRepo = serviceRepo;
-        appService.identificationRepo = identificationRepo;
-        appService.blogPostRepo = blogPostRepo;
-        appService.dtoService = dtoService;
+        services.readCacheService = readCacheService;
+        services.stylerRepo = stylerRepo;
+        services.serviceRepo = serviceRepo;
+        services.identificationRepo = identificationRepo;
+        services.blogPostRepo = blogPostRepo;
+        services.dtoService = dtoService;
         when(serviceRepo.findAll()).thenReturn(Collections.emptyList());
         when(identificationRepo.findAll()).thenReturn(Collections.emptyList());
         when(blogPostRepo.findAll()).thenReturn(Collections.emptyList());
         when(dtoService.stylerAccountDTO(any())).thenReturn(new com.macrotel.rapidstylers.dto.StylerAccountDTO());
-        ReflectionTestUtils.setField(appService, "warmReadCachesEnabled", true);
-        ReflectionTestUtils.setField(appService, "warmMaxStylers", 2);
+        ReflectionTestUtils.setField(services, "warmReadCachesEnabled", true);
+        ReflectionTestUtils.setField(services, "warmMaxStylers", 2);
     }
 
     private void answerThroughLoader() {
@@ -74,7 +75,7 @@ class CacheWarmerTest {
         when(stylerRepo.findAll()).thenReturn(Collections.emptyList());
         answerThroughLoader();
 
-        appService.warmReadCaches();
+        services.appService().warmReadCaches();
 
         verify(readCacheService).getOrLoad(eq(ReadCacheService.KEY_CATALOG_SERVICES),
                 any(), any(), any());
@@ -94,7 +95,7 @@ class CacheWarmerTest {
         service.setDescription("desc");
         when(serviceRepo.findAll()).thenReturn(Arrays.asList(service));
 
-        List<?> result = appService.loadCatalogServices();
+        List<?> result = services.catalogService().loadCatalogServices();
 
         assertEquals(1, result.size());
         Map<?, ?> entry = (Map<?, ?>) result.get(0);
@@ -111,10 +112,10 @@ class CacheWarmerTest {
                 approvedStyler("S1", "2026-01-01 00:00:00"),
                 approvedStyler("S2", "2026-02-01 00:00:00")));
         answerThroughLoader();
-        ReflectionTestUtils.setField(appService, "warmMaxStylers", 1);
+        ReflectionTestUtils.setField(services, "warmMaxStylers", 1);
 
         org.mockito.ArgumentCaptor<String> cap = org.mockito.ArgumentCaptor.forClass(String.class);
-        appService.warmReadCaches();
+        services.appService().warmReadCaches();
         verify(readCacheService, org.mockito.Mockito.atLeastOnce()).getOrLoad(cap.capture(), any(), any(), any());
 
         // S2 is newest -> warmed; S1 (older) must NOT be warmed under cap=1.
@@ -126,9 +127,9 @@ class CacheWarmerTest {
 
     @Test
     void warmingIsNoOpWhenDisabled() {
-        ReflectionTestUtils.setField(appService, "warmReadCachesEnabled", false);
+        ReflectionTestUtils.setField(services, "warmReadCachesEnabled", false);
 
-        appService.warmReadCaches();
+        services.appService().warmReadCaches();
 
         verify(readCacheService, never()).getOrLoad(anyString(), any(), any(), any());
     }
@@ -138,10 +139,10 @@ class CacheWarmerTest {
         when(stylerRepo.findAll()).thenReturn(Collections.emptyList());
         answerThroughLoader();
         java.util.concurrent.atomic.AtomicBoolean inFlight =
-                (java.util.concurrent.atomic.AtomicBoolean) ReflectionTestUtils.getField(appService, "warmInFlight");
+                (java.util.concurrent.atomic.AtomicBoolean) ReflectionTestUtils.getField(services.appService(), "warmInFlight");
         inFlight.set(true);
 
-        appService.warmReadCaches();
+        services.appService().warmReadCaches();
 
         verify(readCacheService, never()).getOrLoad(anyString(), any(), any(), any());
     }

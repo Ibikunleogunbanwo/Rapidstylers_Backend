@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.entity.RefundEntity;
@@ -36,7 +37,7 @@ import static org.mockito.Mockito.when;
 
 class RefundServiceTest {
 
-    private AppService appService;
+    private TestServices services;
     private BookAppointmentRepo bookAppointmentRepo;
     private RefundRepo refundRepo;
     private StripeService stripeService;
@@ -46,22 +47,20 @@ class RefundServiceTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         bookAppointmentRepo = mock(BookAppointmentRepo.class);
         refundRepo = mock(RefundRepo.class);
         stripeService = mock(StripeService.class);
         outboxEventService = mock(OutboxEventService.class);
         slotLockRepo = mock(BookingSlotLockRepo.class);
-        appService.bookAppointmentRepo = bookAppointmentRepo;
-        appService.refundRepo = refundRepo;
-        appService.stripeService = stripeService;
-        appService.outboxEventService = outboxEventService;
-        appService.bookingSlotLockRepo = slotLockRepo;
+        services.bookAppointmentRepo = bookAppointmentRepo;
+        services.stripeService = stripeService;
+        services.outboxEventService = outboxEventService;
+        services.bookingSlotLockRepo = slotLockRepo;
         payoutReversalService = mock(PayoutReversalService.class);
-        appService.payoutReversalService = payoutReversalService;
-        appService.auditLogRepo = mock(AuditLogRepo.class);
-        appService.emailConfig = mock(EmailConfig.class);
-        org.springframework.test.util.ReflectionTestUtils.setField(appService, "stylerCancelWindowHours", 24L);
+        services.auditLogRepo = mock(AuditLogRepo.class);
+        services.emailConfig = mock(EmailConfig.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(services, "stylerCancelWindowHours", 24L);
         // Refund logic lives in PaymentOpsService — share the same mocks
         // and the same AuditService sink (see docs/simplification-plan.md).
         AuditService sharedAudit = new AuditService();
@@ -74,8 +73,8 @@ class RefundServiceTest {
         paymentOps.outboxEventService = outboxEventService;
         paymentOps.payoutReversalService = payoutReversalService;
         paymentOps.auditService = sharedAudit;
-        appService.auditService = sharedAudit;
-        appService.paymentOpsService = paymentOps;
+        services.auditService = sharedAudit;
+        services.paymentOpsService = paymentOps;
     }
 
     private BookAppointmentEntity capturedAppointment() {
@@ -104,7 +103,7 @@ class RefundServiceTest {
         data.setAppointmentId("APPT1");
         data.setReason("Client request");
 
-        BaseResponse response = appService.adminRefund("ADMIN1", data);
+        BaseResponse response = services.appService().adminRefund("ADMIN1", data);
 
         assertEquals("200", response.getStatusCode());
         assertEquals("REFUNDED", appointment.getPaymentStatus());
@@ -128,7 +127,7 @@ class RefundServiceTest {
 
         RefundRequestData data = new RefundRequestData();
         data.setAppointmentId("APPT1");
-        BaseResponse response = appService.adminRefund("ADMIN1", data);
+        BaseResponse response = services.appService().adminRefund("ADMIN1", data);
 
         assertEquals("400", response.getStatusCode());
         verify(stripeService, never()).refundBookingPayment(anyString(), anyLong(), any(), any());
@@ -144,7 +143,7 @@ class RefundServiceTest {
 
         RefundRequestData data = new RefundRequestData();
         data.setAppointmentId("APPT1");
-        BaseResponse response = appService.adminRefund("ADMIN1", data);
+        BaseResponse response = services.appService().adminRefund("ADMIN1", data);
 
         assertEquals("400", response.getStatusCode());
         verify(stripeService, never()).refundBookingPayment(anyString(), anyLong(), any(), any());
@@ -163,7 +162,7 @@ class RefundServiceTest {
         RefundRequestData data = new RefundRequestData();
         data.setAppointmentId("APPT1");
         data.setAmount("50.00");
-        BaseResponse response = appService.adminRefund("ADMIN1", data);
+        BaseResponse response = services.appService().adminRefund("ADMIN1", data);
 
         assertEquals("200", response.getStatusCode());
         verify(stripeService).refundBookingPayment(eq("pi_1"), eq(5000L), any(), any());
@@ -180,7 +179,7 @@ class RefundServiceTest {
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(12500L), any(), any());
 
-        BaseResponse response = appService.cancelAppointment("USER1", "APPT1");
+        BaseResponse response = services.appService().cancelAppointment("USER1", "APPT1");
 
         assertEquals("200", response.getStatusCode());
         assertEquals("4", appointment.getStatus());
@@ -203,7 +202,7 @@ class RefundServiceTest {
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(12500L), any(), any());
 
-        BaseResponse response = appService.stylerCancelAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.appService().stylerCancelAppointment("STYLER1", "APPT1");
 
         assertEquals("200", response.getStatusCode());
         assertEquals("4", appointment.getStatus());
@@ -227,10 +226,10 @@ class RefundServiceTest {
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(12500L), any(), any());
 
-        BaseResponse first = appService.stylerCancelAppointment("STYLER1", "APPT1");
+        BaseResponse first = services.appService().stylerCancelAppointment("STYLER1", "APPT1");
         // The second cancel arrives after the booking is already cancelled — the
         // state machine rejects it before any refund logic runs.
-        BaseResponse second = appService.stylerCancelAppointment("STYLER1", "APPT1");
+        BaseResponse second = services.appService().stylerCancelAppointment("STYLER1", "APPT1");
 
         assertEquals("200", first.getStatusCode());
         assertEquals("400", second.getStatusCode());
@@ -250,7 +249,7 @@ class RefundServiceTest {
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
 
-        BaseResponse response = appService.stylerCancelAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.appService().stylerCancelAppointment("STYLER1", "APPT1");
 
         assertEquals("200", response.getStatusCode());
         assertEquals("4", appointment.getStatus());
@@ -266,7 +265,7 @@ class RefundServiceTest {
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
 
-        BaseResponse response = appService.stylerCancelAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.appService().stylerCancelAppointment("STYLER1", "APPT1");
 
         assertEquals("400", response.getStatusCode());
         assertTrue(response.getMessage().contains("within 24 hours of completion"));
@@ -283,7 +282,7 @@ class RefundServiceTest {
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
 
-        BaseResponse response = appService.stylerCancelAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.appService().stylerCancelAppointment("STYLER1", "APPT1");
 
         assertEquals("400", response.getStatusCode());
         assertTrue(response.getMessage().contains("completion time is unknown"));
@@ -301,7 +300,7 @@ class RefundServiceTest {
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         // stripeService.isConfigured() defaults to false → no capture/transfer in this test
 
-        BaseResponse response = appService.completeAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.appService().completeAppointment("STYLER1", "APPT1");
 
         assertEquals("200", response.getStatusCode());
         assertEquals("0", appointment.getStatus());

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.auth.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.service.DTOService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
@@ -62,12 +63,12 @@ class AppServiceConcurrencyTest {
         BaseResponse failingCall();   // must carry its own error and no token
     }
 
-    private AppService appService;
+    private TestServices services;
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         authService = new AuthService();
 
         UserRepo userRepo = mock(UserRepo.class);
@@ -124,7 +125,7 @@ class AppServiceConcurrencyTest {
         ConcurrentLinkedQueue<String> failures = hammer(new Calls() {
             @Override
             public BaseResponse successOnly() {
-                return appService.testing();
+                return services.appService().testing();
             }
 
             @Override

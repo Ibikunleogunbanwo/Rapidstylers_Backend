@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.entity.ReviewEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
@@ -34,21 +35,21 @@ import static org.mockito.Mockito.when;
  */
 class StylerOwnReviewsTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private ReviewRepo reviewRepo;
     private ReadCacheService readCacheService;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         reviewRepo = mock(ReviewRepo.class);
         readCacheService = mock(ReadCacheService.class);
-        appService.stylerRepo = stylerRepo;
-        appService.reviewRepo = reviewRepo;
-        appService.readCacheService = readCacheService;
-        appService.dtoService = new DTOService();
+        services.stylerRepo = stylerRepo;
+        services.reviewRepo = reviewRepo;
+        services.readCacheService = readCacheService;
+        services.dtoService = new DTOService();
         // Serve what the loader would build, so Redis never enters the picture.
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(3)).get());
@@ -89,7 +90,7 @@ class StylerOwnReviewsTest {
                         review("STYLER1", "Bo", 3, "APPROVED"),
                         review("STYLER1", "Cy", 4, "PENDING")));
 
-        BaseResponse response = appService.getOwnStylerReviews("STYLER1");
+        BaseResponse response = services.appService().getOwnStylerReviews("STYLER1");
 
         assertEquals("200", response.getStatusCode());
         Map<String, Object> data = dataOf(response);
@@ -107,7 +108,7 @@ class StylerOwnReviewsTest {
         when(reviewRepo.findByStylerId("STYLER2"))
                 .thenReturn(Collections.singletonList(review("STYLER2", "Cy", 4, "PENDING")));
 
-        Map<String, Object> data = dataOf(appService.getOwnStylerReviews("STYLER2"));
+        Map<String, Object> data = dataOf(services.appService().getOwnStylerReviews("STYLER2"));
 
         assertEquals(0, data.get("reviewCount"));
         assertNull(data.get("averageRating"), "no approved ratings means no average to report");
@@ -129,7 +130,7 @@ class StylerOwnReviewsTest {
                         review("STYLER3", "Bo", 4, "APPROVED"),
                         review("STYLER3", "Cy", 4, "APPROVED")));
 
-        Map<String, Object> data = dataOf(appService.getOwnStylerReviews("STYLER3"));
+        Map<String, Object> data = dataOf(services.appService().getOwnStylerReviews("STYLER3"));
 
         // 13 / 3 = 4.333... -> 4.3, one decimal, no trailing zeros to confuse the UI.
         assertEquals(4.3, data.get("averageRating"));
@@ -139,7 +140,7 @@ class StylerOwnReviewsTest {
     void anUnknownStylerIsRejectedRatherThanShowingAnEmptyList() {
         when(stylerRepo.findByStylerId("NOPE")).thenReturn(Optional.empty());
 
-        BaseResponse response = appService.getOwnStylerReviews("NOPE");
+        BaseResponse response = services.appService().getOwnStylerReviews("NOPE");
 
         assertNotEquals("200", response.getStatusCode());
         assertEquals("Invalid Styler Id", response.getMessage());

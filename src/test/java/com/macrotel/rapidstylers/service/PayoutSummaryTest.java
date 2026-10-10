@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
@@ -21,30 +22,29 @@ import static org.mockito.Mockito.when;
 
 class PayoutSummaryTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private BookAppointmentRepo appointmentRepo;
     private StripeService stripeService;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         appointmentRepo = mock(BookAppointmentRepo.class);
         stripeService = mock(StripeService.class);
         when(stripeService.isConfigured()).thenReturn(false);
-        appService.stylerRepo = stylerRepo;
-        appService.bookAppointmentRepo = appointmentRepo;
-        appService.stripeService = stripeService;
-        ReflectionTestUtils.setField(appService, "stripeCommissionPercent", 10.0);
+        services.stylerRepo = stylerRepo;
+        services.bookAppointmentRepo = appointmentRepo;
+        services.stripeService = stripeService;
         // Payout summary logic lives in PaymentOpsService — share the same mocks.
         PaymentOpsService paymentOps = new PaymentOpsService();
         paymentOps.stylerRepo = stylerRepo;
         paymentOps.bookAppointmentRepo = appointmentRepo;
         paymentOps.stripeService = stripeService;
-        paymentOps.auditService = appService.auditService;
+        paymentOps.auditService = services.auditService;
         ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);
-        appService.paymentOpsService = paymentOps;
+        services.paymentOpsService = paymentOps;
     }
 
     @Test
@@ -65,7 +65,7 @@ class PayoutSummaryTest {
         when(appointmentRepo.findByStylerId("STYLER1"))
                 .thenReturn(Arrays.asList(paid, paid2, pending, noIntent));
 
-        BaseResponse response = appService.getStylerPayouts("STYLER1");
+        BaseResponse response = services.appService().getStylerPayouts("STYLER1");
 
         assertEquals("200", response.getStatusCode());
         Map<String, Object> data = (Map<String, Object>) response.getData();
@@ -96,7 +96,7 @@ class PayoutSummaryTest {
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
         when(appointmentRepo.findByStylerId("STYLER1")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = appService.getStylerPayouts("STYLER1");
+        BaseResponse response = services.appService().getStylerPayouts("STYLER1");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals(true, data.get("connected"));
@@ -114,7 +114,7 @@ class PayoutSummaryTest {
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
         when(appointmentRepo.findByStylerId("STYLER1")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = appService.getStylerPayouts("STYLER1");
+        BaseResponse response = services.appService().getStylerPayouts("STYLER1");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals("REJECTED", data.get("status"));

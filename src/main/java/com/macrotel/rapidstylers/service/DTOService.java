@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.dto.*;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.repo.*;

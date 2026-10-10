@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.SupportTicketEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
@@ -19,17 +20,17 @@ import static org.mockito.Mockito.when;
 
 class SupportTicketSanitizeTest {
 
-    private AppService appService;
+    private TestServices services;
     private UserRepo userRepo;
     private SupportTicketRepo supportTicketRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         userRepo = mock(UserRepo.class);
         supportTicketRepo = mock(SupportTicketRepo.class);
-        appService.userRepo = userRepo;
-        appService.supportTicketRepo = supportTicketRepo;
+        services.userRepo = userRepo;
+        services.supportTicketRepo = supportTicketRepo;
     }
 
     @Test
@@ -46,7 +47,7 @@ class SupportTicketSanitizeTest {
         data.setSubject("<script>alert(1)</script> Login broken");
         data.setMessage("Cant sign in <img src=x onerror=alert(2)> please help");
 
-        BaseResponse response = appService.createSupportTicket("U1", data);
+        BaseResponse response = services.appService().createSupportTicket("U1", data);
 
         assertEquals("200", response.getStatusCode());
         ArgumentCaptor<SupportTicketEntity> captor = ArgumentCaptor.forClass(SupportTicketEntity.class);

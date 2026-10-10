@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.config;
 
-import com.macrotel.rapidstylers.entity.BlogPostEntity;
+import com.macrotel.rapidstylers.catalog.entity.BlogPostEntity;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.ReviewEntity;
-import com.macrotel.rapidstylers.repo.BlogPostRepo;
+import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.ReviewRepo;
 import org.springframework.beans.factory.annotation.Autowired;

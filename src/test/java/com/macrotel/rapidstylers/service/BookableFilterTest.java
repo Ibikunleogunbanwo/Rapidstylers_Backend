@@ -1,11 +1,12 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.repo.AvailabilityRepo;
-import com.macrotel.rapidstylers.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,40 +33,40 @@ import static org.mockito.Mockito.when;
  */
 class BookableFilterTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private ReadCacheService readCacheService;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         readCacheService = mock(ReadCacheService.class);
         DTOService dtoService = mock(DTOService.class);
-        appService.stylerRepo = stylerRepo;
-        appService.readCacheService = readCacheService;
-        appService.dtoService = dtoService;
-        appService.objectMapper = new ObjectMapper();
+        services.stylerRepo = stylerRepo;
+        services.readCacheService = readCacheService;
+        services.dtoService = dtoService;
+        services.objectMapper = new ObjectMapper();
         when(dtoService.stylerAccountDTO(any())).thenReturn(new StylerAccountDTO());
         // The passthrough invokes the real loader so the filter is exercised.
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
         // Rows ship the professional's weekly hours now, so the loader behind
         // those hours reads a repo as well.
-        appService.availabilityRepo = mock(AvailabilityRepo.class);
-        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
+        services.availabilityRepo = mock(AvailabilityRepo.class);
+        services.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
         // Payments ON: the Stripe clause of the bookable filter must exercise,
         // which is the production configuration this test exists to pin.
         StripeService stripeService = mock(StripeService.class);
         when(stripeService.isConfigured()).thenReturn(true);
-        appService.stripeService = stripeService;
+        services.stripeService = stripeService;
         // The category search resolves the service type before filtering.
         ServiceRepo serviceRepo = mock(ServiceRepo.class);
         ServiceEntity serviceType = new ServiceEntity();
         serviceType.setId(3L);
         serviceType.setServiceName("Barber");
         when(serviceRepo.findById(3L)).thenReturn(Optional.of(serviceType));
-        appService.serviceRepo = serviceRepo;
+        services.serviceRepo = serviceRepo;
     }
 
     private StylerEntity styler(String id, String verification, String onboarding) {
@@ -86,7 +87,7 @@ class BookableFilterTest {
         when(stylerRepo.searchStyler("studio"))
                 .thenReturn(Collections.singletonList(styler("S1", "APPROVED", "PENDING")));
 
-        List<?> data = (List<?>) appService.searchStyler("studio").getData();
+        List<?> data = (List<?>) services.appService().searchStyler("studio").getData();
 
         assertEquals(0, data.size());
     }
@@ -96,7 +97,7 @@ class BookableFilterTest {
         when(stylerRepo.searchStyler("studio"))
                 .thenReturn(Collections.singletonList(styler("S1", "APPROVED", "COMPLETE")));
 
-        List<?> data = (List<?>) appService.searchStyler("studio").getData();
+        List<?> data = (List<?>) services.appService().searchStyler("studio").getData();
 
         assertEquals(1, data.size());
     }
@@ -106,7 +107,7 @@ class BookableFilterTest {
         when(stylerRepo.findByServiceTypeId("3"))
                 .thenReturn(Collections.singletonList(styler("S1", "APPROVED", null)));
 
-        List<?> data = (List<?>) appService.getStylerByService("3").getData();
+        List<?> data = (List<?>) services.appService().getStylerByService("3").getData();
 
         assertEquals(0, data.size());
     }
@@ -116,7 +117,7 @@ class BookableFilterTest {
         when(stylerRepo.findByProvinceIgnoreCase("Alberta"))
                 .thenReturn(Collections.singletonList(styler("S1", "APPROVED", "PENDING")));
 
-        List<?> data = (List<?>) appService.searchStylerByProvince("Alberta").getData();
+        List<?> data = (List<?>) services.appService().searchStylerByProvince("Alberta").getData();
 
         assertEquals(0, data.size());
     }
@@ -132,7 +133,7 @@ class BookableFilterTest {
         when(stylerRepo.findByProvinceIgnoreCase("Alberta"))
                 .thenReturn(Collections.singletonList(styler("S9", "APPROVED", "PENDING")));
 
-        Object data = appService.searchStylerByCity("Strathmore").getData();
+        Object data = services.appService().searchStylerByCity("Strathmore").getData();
 
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> payload = (java.util.Map<String, Object>) data;

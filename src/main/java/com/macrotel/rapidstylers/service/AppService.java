@@ -1,41 +1,33 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
-import com.macrotel.rapidstylers.auth.service.LoginAttemptService;
-import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
+import com.macrotel.rapidstylers.catalog.service.CatalogService;
+import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.config.EncryptionConfig;
-import com.macrotel.rapidstylers.security.access.Roles;
-import com.macrotel.rapidstylers.security.jwt.JwtUtil;
-import com.macrotel.rapidstylers.security.verifier.GoogleTokenVerifier;
-import com.macrotel.rapidstylers.entity.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
-import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.dto.StylerReviewDTO;
+import com.macrotel.rapidstylers.entity.*;
+import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
+import com.macrotel.rapidstylers.outbox.OutboxEventService;
+import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
-import com.stripe.model.Balance;
 import com.stripe.model.Customer;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
-import com.stripe.net.RequestOptions;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.scheduling.annotation.Scheduled;
-import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -43,12 +35,16 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoUnit;
-import java.util.Locale;
 import java.util.*;
+import java.util.Locale;
 import java.util.logging.Logger;
-import java.time.Duration;
-
+import javax.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 @Service
@@ -96,23 +92,13 @@ public class AppService {
     @Autowired
     CardDetailsRepo cardDetailsRepo;
     @Autowired
-    BlogPostRepo blogPostRepo;
-    @Autowired
     AvailabilityRepo availabilityRepo;
     @Autowired
     AvailabilityExceptionRepo availabilityExceptionRepo;
     @Autowired
     BookingSlotLockRepo bookingSlotLockRepo;
     @Autowired
-    JwtUtil jwtUtil;
-    @Autowired
     StripeService stripeService;
-    @Value("${app.stripe.commission-percent:12}")
-    private double stripeCommissionPercent;
-    @Autowired
-    PlatformSettingRepo platformSettingRepo;
-    // Runtime commission (admin-configurable). null = use the @Value default.
-    private volatile Double cachedCommissionPercent;
     @Autowired
     GeocodingService geocodingService;
     // Initialized inline so bare construction (unit tests) behaves as a
@@ -124,27 +110,13 @@ public class AppService {
     @Autowired
     LocationService locationService;
     @Autowired
-    RateLimiterService rateLimiterService;
-    @Autowired
-    LoginAttemptService loginAttemptService;
-    @Autowired
     OutboxEventService outboxEventService;
-    @Autowired
-    EncryptionConfig encryptionConfig;
     @Autowired
     IdempotencyService idempotencyService;
     @Autowired
     ObjectMapper objectMapper;
     @Autowired
     OutboxEventRepo outboxEventRepo;
-    @Autowired
-    RefreshTokenService refreshTokenService;
-    @Autowired
-    GoogleTokenVerifier googleTokenVerifier;
-    @Autowired
-    RefundRepo refundRepo;
-    @Autowired
-    PayoutReversalService payoutReversalService;
     @Autowired
     ReadCacheService readCacheService;
     // Payment domain ops (carved out of this class; see simplification-plan.md).
@@ -159,7 +131,6 @@ public class AppService {
     AccountIds accountIds;
     @Autowired
     AuthService authService;
-
     // Read-cache warm-up bounds (see warmReadCaches). warmInFlight prevents a
     // concurrent re-run from doubling the load when warming overlaps startup.
     @Value("${app.cache.warm-enabled:true}")
@@ -167,26 +138,22 @@ public class AppService {
     @Value("${app.cache.warm-max-stylers:25}")
     private int warmMaxStylers = 25;
     private final java.util.concurrent.atomic.AtomicBoolean warmInFlight = new java.util.concurrent.atomic.AtomicBoolean(false);
-
     // Booking starts and slot holds use 15-minute granularity; each service's
     // configured duration determines how much of the stylist's calendar is blocked.
     private static final int SLOT_GRANULARITY_MINUTES = 15;
-
     @Value("${app.time-zone:America/Edmonton}")
     private String appTimeZone;
-
     @Value("${app.booking.completion-grace-minutes:0}")
     private long completionGraceMinutes;
-
     @Value("${app.booking.payment-authorization-window-days:7}")
     private long paymentAuthorizationWindowDays;
-
     @Value("${app.booking.payment-authorization-lead-hours:48}")
     private long paymentAuthorizationLeadHours;
-
     /** Stylists may cancel a completed booking only within this window (hours since completion). */
     @Value("${app.booking.styler-cancel-window-hours:24}")
     private long stylerCancelWindowHours;
+    @Autowired
+    CatalogService catalogService;
 
     public BaseResponse testing(){
         BaseResponse response = new BaseResponse(true);
@@ -248,349 +215,6 @@ public class AppService {
         return response;
     }
 
-    public BaseResponse createIdentificationType (IdentificationData identificationData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<IdentificationEntity> isIdNameExist = identificationRepo.findByIdentificationName(identificationData.getIdentificationName());
-            if(isIdNameExist.isPresent()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Identification already exist");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            IdentificationEntity identificationEntity = new IdentificationEntity();
-            identificationEntity.setIdentificationName(identificationData.getIdentificationName());
-            identificationRepo.save(identificationEntity);
-            evict(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS);
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(identificationData.getIdentificationName()+ " successfully added to list of identification");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse listIdentification(){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            List<Object> result = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_IDENTIFICATIONS, ReadCacheService.CATALOG_TTL, null,
-                    this::loadCatalogIdentifications);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse updateIdentification(IdentificationData identificationData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            //Get Identifications
-            if(identificationData.getId().isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Identification Id cannot be empty");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            Optional<IdentificationEntity> isIdentificationExist = identificationRepo.findById(Long.parseLong(identificationData.getId()));
-            if(isIdentificationExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("No Identification available for such id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            IdentificationEntity identificationEntity = isIdentificationExist.get();
-            identificationEntity.setIdentificationName(identificationData.getIdentificationName());
-            identificationRepo.save(identificationEntity);
-            evict(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS);
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Identification Updated Successful");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse deleteIdentification(String id){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<IdentificationEntity> getIdentification = identificationRepo.findById(Long.parseLong(id));
-            if(getIdentification.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("No Identification available for such id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            IdentificationEntity identificationEntity = getIdentification.get();
-            identificationRepo.delete(identificationEntity);
-            evict(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Identification deleted successful");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse createServiceType (ServiceTypeData serviceTypeData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<ServiceEntity> isServiceNameExist = serviceRepo.findByServiceName(serviceTypeData.getServiceName());
-            if(isServiceNameExist.isPresent()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Service Name already exist");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            ServiceEntity serviceEntity = new ServiceEntity();
-            serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
-            serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
-            serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
-            serviceRepo.save(serviceEntity);
-            evict(ReadCacheService.KEY_CATALOG_SERVICES);
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(serviceTypeData.getServiceName()+ " successfully added to list of service");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse listService(){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            List<Object> result = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_SERVICES, ReadCacheService.CATALOG_TTL, null,
-                    this::loadCatalogServices);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse updateService(ServiceTypeData serviceTypeData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            //Get Identifications
-            if(serviceTypeData.getId().isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Service Id cannot be empty");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            Optional<ServiceEntity> isServiceExist = serviceRepo.findById(Long.parseLong(serviceTypeData.getId()));
-            if(isServiceExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("No Service exist for such id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            ServiceEntity serviceEntity = isServiceExist.get();
-            String previousImageUrl = serviceEntity.getServiceImageUrl();
-            serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
-            serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
-            serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
-            serviceRepo.save(serviceEntity);
-            evict(ReadCacheService.KEY_CATALOG_SERVICES);
-            // Replacing a picture leaves the old one behind unless it is handed back.
-            if(previousImageUrl != null && !previousImageUrl.equals(serviceEntity.getServiceImageUrl())){
-                imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
-            }
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Service Updated Successful");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse deleteService(String id){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<ServiceEntity> getService = serviceRepo.findById(Long.parseLong(id));
-            if(getService.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("No Service available for such id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            ServiceEntity serviceEntity = getService.get();
-            String previousImageUrl = serviceEntity.getServiceImageUrl();
-            serviceRepo.delete(serviceEntity);
-            evict(ReadCacheService.KEY_CATALOG_SERVICES);
-            // The row that held this picture is gone, so unless another row still
-            // refers to it, the asset has nothing left to belong to.
-            imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Service deleted successful");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse listBlogPosts(){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            List<Object> result = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.BLOG_TTL, null,
-                    this::loadCatalogBlogs);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse singleBlogPost(String id){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Map<String, String> postMap = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_BLOG + id, ReadCacheService.BLOG_TTL, null,
-                    () -> {
-                        Optional<BlogPostEntity> post = blogPostRepo.findById(Long.parseLong(id));
-                        if(post.isEmpty()) return null;
-                        BlogPostEntity blogPost = post.get();
-                        HashMap<String, String> map = new HashMap<>();
-                        map.put("id", String.valueOf(blogPost.getId()));
-                        map.put("title", blogPost.getTitle());
-                        map.put("category", blogPost.getCategory());
-                        map.put("content", blogPost.getContent());
-                        map.put("imageUrl", blogPost.getImageUrl());
-                        map.put("author", blogPost.getAuthor());
-                        map.put("dateCreated", blogPost.getInsertedDt());
-                        return map;
-                    });
-            if(postMap == null){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("No blog article found for such id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(postMap);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse createBlogPost(BlogPostData blogPostData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            if(blogPostData.getTitle() == null || blogPostData.getTitle().isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Blog title cannot be empty");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            BlogPostEntity post = new BlogPostEntity();
-            post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
-            post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
-            post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
-            post.setImageUrl(blogPostData.getImageUrl());
-            post.setAuthor(blogPostData.getAuthor() == null || blogPostData.getAuthor().isEmpty()
-                    ? "RapidStylers Team" : AppUtils.sanitizeText(blogPostData.getAuthor()));
-            blogPostRepo.save(post);
-            evict(ReadCacheService.KEY_CATALOG_BLOGS);
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Blog article created successfully");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse updateBlogPost(BlogPostData blogPostData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            if(blogPostData.getId() == null || blogPostData.getId().isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Blog article id cannot be empty");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            Optional<BlogPostEntity> isPostExist = blogPostRepo.findById(Long.parseLong(blogPostData.getId()));
-            if(isPostExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("No blog article exist for such id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            BlogPostEntity post = isPostExist.get();
-            String previousImageUrl = post.getImageUrl();
-            post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
-            post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
-            post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
-            post.setImageUrl(blogPostData.getImageUrl());
-            if(blogPostData.getAuthor() != null && !blogPostData.getAuthor().isEmpty()){
-                post.setAuthor(AppUtils.sanitizeText(blogPostData.getAuthor()));
-            }
-            blogPostRepo.save(post);
-            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + blogPostData.getId());
-            // A new cover leaves the previous one unused, so it goes back.
-            if(previousImageUrl != null && !previousImageUrl.equals(post.getImageUrl())){
-                imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
-            }
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Blog article updated successfully");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-    public BaseResponse deleteBlogPost(String id){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<BlogPostEntity> getPost = blogPostRepo.findById(Long.parseLong(id));
-            if(getPost.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("No blog article available for such id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            BlogPostEntity deletedPost = getPost.get();
-            String coverImageUrl = deletedPost.getImageUrl();
-            blogPostRepo.delete(deletedPost);
-            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + id);
-            // The cover is only kept if some other article still uses the same URL.
-            imageReclaimService.reclaimIfUnreferenced(coverImageUrl);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Blog article deleted successfully");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
     /**
      * Creates a professional account, and gives the images back if it cannot.
      *
@@ -728,6 +352,7 @@ public class AppService {
         }
         return response;
     }
+
     // ── Professional verification workflow (admin) ─────────────────────
 
     private boolean isApprovedStyler(StylerEntity styler){
@@ -1057,7 +682,7 @@ public class AppService {
            }
            int durationMinutes = subServiceData.getDurationMinutes();
            if(durationMinutes % SLOT_GRANULARITY_MINUTES != 0){
-               return errorResponse(response, "Duration must be in 15-minute increments");
+               return Responses.errorResponse(response, "Duration must be in 15-minute increments");
            }
            SubServiceEntity subServiceEntity = new SubServiceEntity(subServiceData);
            subServiceRepo.save(subServiceEntity);
@@ -1077,10 +702,10 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             Optional<SubServiceEntity> existing = subServiceRepo.isServiceExistById(stylerId, data.getId());
-            if(existing.isEmpty()) return errorResponse(response, "Service not found");
+            if(existing.isEmpty()) return Responses.errorResponse(response, "Service not found");
             int duration = data.getDurationMinutes() == null ? DEFAULT_SERVICE_DURATION_MINUTES : data.getDurationMinutes();
             if(duration < MIN_SERVICE_DURATION_MINUTES || duration > MAX_SERVICE_DURATION_MINUTES || duration % SLOT_GRANULARITY_MINUTES != 0){
-                return errorResponse(response, "Duration must be in 15-minute increments between 15 and 480 minutes");
+                return Responses.errorResponse(response, "Duration must be in 15-minute increments between 15 and 480 minutes");
             }
             SubServiceEntity service = existing.get();
             String previousPrice = service.getPrice();
@@ -1520,13 +1145,13 @@ public class AppService {
             reviewEntity.setUserName(userName);
             int rating = Integer.parseInt(reviewData.getRatingScore());
             if(rating < 1 || rating > 5){
-                return errorResponse(response, "Rating Score must be between 1 and 5");
+                return Responses.errorResponse(response, "Rating Score must be between 1 and 5");
             }
             reviewEntity.setMessage(AppUtils.sanitizeText(reviewData.getReviewMessage()));
             reviewEntity.setModerationStatus("PENDING");
             reviewEntity.setRatingScore(rating);
             reviewRepo.save(reviewEntity);
-            audit("" + reviewData.getUserId(), "CUSTOMER", "CREATE_REVIEW", "REVIEW", reviewData.getBookingId(), "Review submitted");
+            auditService.audit("" + reviewData.getUserId(), "CUSTOMER", "CREATE_REVIEW", "REVIEW", reviewData.getBookingId(), "Review submitted");
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Rating Submitted Successful");
@@ -1555,16 +1180,16 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             if(reviewId == null){
-                return errorResponse(response, "Review id is required");
+                return Responses.errorResponse(response, "Review id is required");
             }
             Optional<ReviewEntity> review = reviewRepo.findById(reviewId);
             String status = action == null ? "" : action.trim().toUpperCase(Locale.ROOT);
-            if(review.isEmpty() || !Arrays.asList("APPROVED", "REJECTED").contains(status)) return errorResponse(response, "Invalid review or moderation action");
+            if(review.isEmpty() || !Arrays.asList("APPROVED", "REJECTED").contains(status)) return Responses.errorResponse(response, "Invalid review or moderation action");
             review.get().setModerationStatus(status);
             reviewRepo.save(review.get());
             evict(ReadCacheService.KEY_STYLER_REVIEWS + review.get().getStylerId(),
                     ReadCacheService.KEY_STYLER_DTO + review.get().getStylerId());
-            audit(adminId, "ADMIN", "MODERATE_REVIEW", "REVIEW", String.valueOf(reviewId), status);
+            auditService.audit(adminId, "ADMIN", "MODERATE_REVIEW", "REVIEW", String.valueOf(reviewId), status);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Review moderation updated");
             response.setData(EMPTY_DATA);
@@ -1604,7 +1229,7 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try{
             if(stylerRepo.findByStylerId(stylerId).isEmpty()){
-                return errorResponse(response, "Invalid Styler Id");
+                return Responses.errorResponse(response, "Invalid Styler Id");
             }
             List<Object> approved = cachedReviews(stylerId);
             Map<String, Object> data = new LinkedHashMap<>();
@@ -1618,7 +1243,7 @@ public class AppService {
         }
         catch (Exception ex){
             LOG.warning("Own reviews failed: " + ex.getMessage());
-            return errorResponse(response, "Could not load reviews");
+            return Responses.errorResponse(response, "Could not load reviews");
         }
         return response;
     }
@@ -2020,7 +1645,7 @@ public class AppService {
                 return response;
             }
             if(includedTravelKm != null && includedTravelKm < 0){
-                return errorResponse(response, "Included travel distance cannot be negative");
+                return Responses.errorResponse(response, "Included travel distance cannot be negative");
             }
             Double includedKm = includedTravelKm == null ? 15.0 : includedTravelKm;
             String fee;
@@ -2028,11 +1653,11 @@ public class AppService {
             try {
                 BigDecimal feeAmount = new BigDecimal(rawFee);
                 if(feeAmount.signum() < 0){
-                    return errorResponse(response, "Home visit fee cannot be negative");
+                    return Responses.errorResponse(response, "Home visit fee cannot be negative");
                 }
                 fee = feeAmount.setScale(2, RoundingMode.HALF_UP).toPlainString();
             } catch(NumberFormatException ex){
-                return errorResponse(response, "Home visit fee must be a valid amount");
+                return Responses.errorResponse(response, "Home visit fee must be a valid amount");
             }
             StylerEntity styler = isStylerExist.get();
             String previousFee = styler.getBaseTravelFee();
@@ -2054,7 +1679,7 @@ public class AppService {
             return response;
         } catch(Exception ex){
             LOG.warning("Home visit settings update failed: " + ex.getMessage());
-            return errorResponse(response, "Could not update home visit settings");
+            return Responses.errorResponse(response, "Could not update home visit settings");
         }
     }
 
@@ -2254,11 +1879,11 @@ public class AppService {
         try{
             // Bounded catalog keys — cheap and read on every page load.
             readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_SERVICES,
-                    ReadCacheService.CATALOG_TTL, null, this::loadCatalogServices);
+                    ReadCacheService.CATALOG_TTL, null, catalogService::loadCatalogServices);
             readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS,
-                    ReadCacheService.CATALOG_TTL, null, this::loadCatalogIdentifications);
+                    ReadCacheService.CATALOG_TTL, null, catalogService::loadCatalogIdentifications);
             readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_BLOGS,
-                    ReadCacheService.BLOG_TTL, null, this::loadCatalogBlogs);
+                    ReadCacheService.BLOG_TTL, null, catalogService::loadCatalogBlogs);
 
             // Bounded set of approved stylists, most active first. We cannot know
             // prior cross-restart hit frequency (counters reset on boot), so we warm
@@ -2291,55 +1916,6 @@ public class AppService {
         finally{
             warmInFlight.set(false);
         }
-    }
-
-    // ---- Catalog read-cache loaders (shared by the list APIs and warm-up) ----
-
-    List<Object> loadCatalogServices(){
-        List<ServiceEntity> getAllService = serviceRepo.findAll();
-        List<Object> built = new ArrayList<>();
-        for(ServiceEntity serviceEntity : getAllService){
-            HashMap<String, String> serviceMap = new HashMap<>();
-            serviceMap.put("id", String.valueOf(serviceEntity.getId()));
-            serviceMap.put("serviceName", serviceEntity.getServiceName());
-            serviceMap.put("status", serviceEntity.getStatus());
-            serviceMap.put("dateCreated", serviceEntity.getInsertedDt());
-            serviceMap.put("imageUrl", serviceEntity.getServiceImageUrl());
-            serviceMap.put("description", serviceEntity.getDescription());
-            built.add(serviceMap);
-        }
-        return built;
-    }
-
-    private List<Object> loadCatalogIdentifications(){
-        List<IdentificationEntity> getAllIdentification = identificationRepo.findAll();
-        List<Object> built = new ArrayList<>();
-        for(IdentificationEntity identificationEntity : getAllIdentification){
-            HashMap<String, String> idMap = new HashMap<>();
-            idMap.put("id", String.valueOf(identificationEntity.getId()));
-            idMap.put("identificationName", identificationEntity.getIdentificationName());
-            idMap.put("status", identificationEntity.getStatus());
-            idMap.put("dateCreated", identificationEntity.getInsertedDate());
-            built.add(idMap);
-        }
-        return built;
-    }
-
-    private List<Object> loadCatalogBlogs(){
-        List<BlogPostEntity> allPosts = blogPostRepo.findAll();
-        allPosts.sort(Comparator.comparing(BlogPostEntity::getId).reversed());
-        List<Object> built = new ArrayList<>();
-        for(BlogPostEntity post : allPosts){
-            HashMap<String, String> postMap = new HashMap<>();
-            postMap.put("id", String.valueOf(post.getId()));
-            postMap.put("title", post.getTitle());
-            postMap.put("category", post.getCategory());
-            postMap.put("imageUrl", post.getImageUrl());
-            postMap.put("author", post.getAuthor());
-            postMap.put("dateCreated", post.getInsertedDt());
-            built.add(postMap);
-        }
-        return built;
     }
 
     /** Warms every read-cache partition for one stylist (best-effort, never throws). */
@@ -2462,11 +2038,11 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             if(userRepo.findByUserId(userId).isEmpty()){
-                return errorResponse(response, "Invalid User Id");
+                return Responses.errorResponse(response, "Invalid User Id");
             }
             Optional<StylerEntity> styler = stylerRepo.findByStylerId(stylerId);
             if(styler.isEmpty() || !isBookableStyler(styler.get())){
-                return errorResponse(response, "This professional is not available");
+                return Responses.errorResponse(response, "This professional is not available");
             }
             if(savedStylistRepo.findByUserIdAndStylerId(userId, stylerId).isEmpty()){
                 savedStylistRepo.save(new SavedStylistEntity(userId, stylerId));
@@ -2499,7 +2075,7 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             if(userRepo.findByUserId(userId).isEmpty()){
-                return errorResponse(response, "Invalid User Id");
+                return Responses.errorResponse(response, "Invalid User Id");
             }
             List<Object> result = new ArrayList<>();
             for(SavedStylistEntity saved : savedStylistRepo.findByUserIdOrderByCreatedAtDesc(userId)){
@@ -2521,7 +2097,7 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             if(userRepo.findByUserId(userId).isEmpty()){
-                return errorResponse(response, "Invalid User Id");
+                return Responses.errorResponse(response, "Invalid User Id");
             }
             List<Map<String, Object>> result = new ArrayList<>();
             for(NotificationEntity notification : notificationRepo.findByUserIdOrderByCreatedAtDesc(userId)){
@@ -2552,7 +2128,7 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             Optional<NotificationEntity> notification = notificationRepo.findByIdAndUserId(notificationId, userId);
-            if(notification.isEmpty()) return errorResponse(response, "Notification not found");
+            if(notification.isEmpty()) return Responses.errorResponse(response, "Notification not found");
             notification.get().setRead(true);
             notificationRepo.save(notification.get());
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -2585,7 +2161,7 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             Optional<UserEntity> user = userRepo.findByUserId(userId);
-            if(user.isEmpty()) return errorResponse(response, "Invalid User Id");
+            if(user.isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             Map<String, Boolean> data = new LinkedHashMap<>();
             data.put("availability", !Boolean.FALSE.equals(user.get().getNotifySavedAvailability()));
             data.put("price", !Boolean.FALSE.equals(user.get().getNotifySavedPrice()));
@@ -2603,7 +2179,7 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             Optional<UserEntity> user = userRepo.findByUserId(userId);
-            if(user.isEmpty()) return errorResponse(response, "Invalid User Id");
+            if(user.isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             UserEntity entity = user.get();
             if(data.getAvailability() != null) entity.setNotifySavedAvailability(data.getAvailability());
             if(data.getPrice() != null) entity.setNotifySavedPrice(data.getPrice());
@@ -2647,10 +2223,10 @@ public class AppService {
     public BaseResponse createSupportTicket(String userId, SupportTicketData data){
         BaseResponse response = new BaseResponse(true);
         try {
-            if(userRepo.findByUserId(userId).isEmpty()) return errorResponse(response, "Invalid User Id");
+            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             SupportTicketEntity ticket = supportTicketRepo.save(new SupportTicketEntity(userId,
                     AppUtils.sanitizeText(data.getSubject().trim()), AppUtils.sanitizeText(data.getMessage().trim())));
-            audit(userId, "CUSTOMER", "CREATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), ticket.getSubject());
+            auditService.audit(userId, "CUSTOMER", "CREATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), ticket.getSubject());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Support ticket created");
             response.setData(ticket.getId());
@@ -2661,7 +2237,7 @@ public class AppService {
     public BaseResponse listSupportTickets(String userId){
         BaseResponse response = new BaseResponse(true);
         try {
-            if(userRepo.findByUserId(userId).isEmpty()) return errorResponse(response, "Invalid User Id");
+            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(supportTicketRepo.findByUserIdOrderByUpdatedAtDesc(userId));
@@ -2725,13 +2301,13 @@ public class AppService {
         try {
             Optional<SupportTicketEntity> ticketOpt = supportTicketRepo.findById(data.getTicketId());
             String status = data.getStatus().trim().toUpperCase(Locale.ROOT);
-            if(ticketOpt.isEmpty() || !Arrays.asList("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED").contains(status)) return errorResponse(response, "Invalid support ticket or status");
+            if(ticketOpt.isEmpty() || !Arrays.asList("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED").contains(status)) return Responses.errorResponse(response, "Invalid support ticket or status");
             SupportTicketEntity ticket = ticketOpt.get();
             ticket.setStatus(status);
             ticket.setAdminResponse(AppUtils.sanitizeText(data.getAdminResponse()));
             ticket.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             supportTicketRepo.save(ticket);
-            audit(adminId, "ADMIN", "UPDATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), status);
+            auditService.audit(adminId, "ADMIN", "UPDATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), status);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Support ticket updated");
             response.setData(ticket);
@@ -2753,21 +2329,21 @@ public class AppService {
         try{
             if(recipient == null || recipient.isBlank()
                     || !recipient.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")){
-                return errorResponse(response, "Enter a valid recipient email address");
+                return Responses.errorResponse(response, "Enter a valid recipient email address");
             }
             String result = emailConfig.sendSimpleMail(recipient, "RapidStylers test email",
                     "<h2>RapidStylers</h2><p>This is a test email sent from the admin console to verify email delivery.</p>");
             if("Mail Sent Successfully...".equals(result)){
-                audit(adminId, "ADMIN", "SEND_TEST_EMAIL", "EMAIL", recipient, "sent");
+                auditService.audit(adminId, "ADMIN", "SEND_TEST_EMAIL", "EMAIL", recipient, "sent");
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Test email sent to " + recipient);
                 response.setData(EMPTY_DATA);
             } else {
-                return errorResponse(response, "Email provider rejected the send — check the backend log");
+                return Responses.errorResponse(response, "Email provider rejected the send — check the backend log");
             }
         } catch(Exception ex){
             LOG.warning("Test email failed: " + ex.getMessage());
-            return errorResponse(response, "Could not send test email");
+            return Responses.errorResponse(response, "Could not send test email");
         }
         return response;
     }
@@ -2815,7 +2391,7 @@ public class AppService {
     public BaseResponse getLoyaltyAccount(String userId){
         BaseResponse response = new BaseResponse(true);
         try {
-            if(userRepo.findByUserId(userId).isEmpty()) return errorResponse(response, "Invalid User Id");
+            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             LoyaltyAccountEntity account = loyaltyAccountRepo.findByUserId(userId).orElseGet(() -> new LoyaltyAccountEntity(userId, "RS-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT)));
             if(account.getId() == null) loyaltyAccountRepo.save(account);
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -2829,11 +2405,11 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             if(referralCode == null || referralCode.trim().isEmpty()){
-                return errorResponse(response, "Referral code cannot be empty");
+                return Responses.errorResponse(response, "Referral code cannot be empty");
             }
             Optional<LoyaltyAccountEntity> referrer = loyaltyAccountRepo.findByReferralCode(referralCode.trim().toUpperCase(Locale.ROOT));
-            if(referrer.isEmpty() || referrer.get().getUserId().equals(userId)) return errorResponse(response, "Invalid referral code");
-            if(referralRepo.findByReferredUserId(userId).isPresent()) return errorResponse(response, "Referral already applied");
+            if(referrer.isEmpty() || referrer.get().getUserId().equals(userId)) return Responses.errorResponse(response, "Invalid referral code");
+            if(referralRepo.findByReferredUserId(userId).isPresent()) return Responses.errorResponse(response, "Referral already applied");
             ReferralEntity referral = referralRepo.save(new ReferralEntity(referrer.get().getUserId(), userId, referralCode.trim().toUpperCase(Locale.ROOT)));
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Referral applied");
@@ -2881,24 +2457,24 @@ public class AppService {
         try {
             Optional<StylerEntity> styler = stylerRepo.findByStylerId(bookAppointmentData.getStylerId());
             if(styler.isEmpty()){
-                return errorResponse(response, "Invalid Styler Id");
+                return Responses.errorResponse(response, "Invalid Styler Id");
             }
             if(!isApprovedStyler(styler.get())){
-                return errorResponse(response, "This professional is not yet available for booking");
+                return Responses.errorResponse(response, "This professional is not yet available for booking");
             }
             Optional<SubServiceEntity> subService = subServiceRepo.isServiceExistById(
                     bookAppointmentData.getStylerId(), Long.parseLong(bookAppointmentData.getSubServiceId()));
             if(subService.isEmpty()){
-                return errorResponse(response, "Invalid service for this stylist");
+                return Responses.errorResponse(response, "Invalid service for this stylist");
             }
             TravelPricing pricing = calculateTravelPricing(bookAppointmentData, styler.get(), subService.get().getPrice());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(pricing.toMap());
         } catch(NumberFormatException ex){
-            return errorResponse(response, "Invalid service for this stylist");
+            return Responses.errorResponse(response, "Invalid service for this stylist");
         } catch(IllegalArgumentException ex){
-            return errorResponse(response, ex.getMessage());
+            return Responses.errorResponse(response, ex.getMessage());
         }
         return response;
     }
@@ -2920,31 +2496,31 @@ public class AppService {
                         LOG.info("Replaying stored idempotency response for booking");
                         return new BaseResponse(); // The controller will deserialize the stored JSON
                     }
-                    return errorResponse(response, "This booking request is already being processed or was already submitted");
+                    return Responses.errorResponse(response, "This booking request is already being processed or was already submitted");
                 }
             }
             LocalDate appointmentDate = parseBookingDate(bookAppointmentData.getAppointmentDate());
             LocalTime appointmentStart = parseBookingTime(bookAppointmentData.getArrivalTime());
             if(appointmentDate.isBefore(LocalDate.now(applicationZone()))){
-                return errorResponse(response, "Appointment date cannot be in the past");
+                return Responses.errorResponse(response, "Appointment date cannot be in the past");
             }
             // The marketplace exposes quarter-hour boundaries; reject unsupported API values too.
             if(appointmentStart.getMinute() % SLOT_GRANULARITY_MINUTES != 0){
-                return errorResponse(response, "Arrival time must start on a 15-minute boundary");
+                return Responses.errorResponse(response, "Arrival time must start on a 15-minute boundary");
             }
 
             Optional<UserEntity> isUserExist = userRepo.findByUserId(bookAppointmentData.getUserId());
             if(isUserExist.isEmpty()){
-                return errorResponse(response, "Invalid User Id, Kindly create account");
+                return Responses.errorResponse(response, "Invalid User Id, Kindly create account");
             }
             // This row lock serializes all booking attempts for one stylist before
             // the availability/conflict read and the unique slot inserts.
             Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerIdForUpdate(bookAppointmentData.getStylerId());
             if(isStylerExist.isEmpty()){
-                return errorResponse(response, "Invalid Styler Id");
+                return Responses.errorResponse(response, "Invalid Styler Id");
             }
             if(!isApprovedStyler(isStylerExist.get())){
-                return errorResponse(response, "This professional is not yet available for booking");
+                return Responses.errorResponse(response, "This professional is not yet available for booking");
             }
             // Visiting the professional is the default delivery, and a customer
             // with no destination cannot travel. Approval already refuses an
@@ -2952,17 +2528,17 @@ public class AppService {
             // before that rule — but a booking must not be creatable against a
             // profile the customer could never reach.
             if(!hasStreetAddress(isStylerExist.get())){
-                return errorResponse(response, "This professional has no address published, so a visit cannot be booked with them yet");
+                return Responses.errorResponse(response, "This professional has no address published, so a visit cannot be booked with them yet");
             }
             // With payments live, a stylist must have finished Connect onboarding
             // to receive payouts — the marketplace blocks booking until then.
             if(stripeService.isConfigured() && !"COMPLETE".equals(isStylerExist.get().getConnectOnboardingStatus())){
-                return errorResponse(response, "This professional is not yet available for online booking");
+                return Responses.errorResponse(response, "This professional is not yet available for online booking");
             }
 
             String subServiceId = bookAppointmentData.getSubServiceId();
             if(subServiceId == null || subServiceId.trim().isEmpty()){
-                return errorResponse(response, "A service must be selected");
+                return Responses.errorResponse(response, "A service must be selected");
             }
             String price;
             int durationMinutes;
@@ -2971,14 +2547,14 @@ public class AppService {
                 Optional<SubServiceEntity> subService = subServiceRepo.isServiceExistById(
                         bookAppointmentData.getStylerId(), Long.parseLong(subServiceId));
                 if(subService.isEmpty()){
-                    return errorResponse(response, "Invalid service for this stylist");
+                    return Responses.errorResponse(response, "Invalid service for this stylist");
                 }
                 // The client price and duration are never trusted.
                 price = subService.get().getPrice();
                 durationMinutes = serviceDuration(subService.get().getDurationMinutes());
                 pricing = calculateTravelPricing(bookAppointmentData, isStylerExist.get(), price);
             } catch(NumberFormatException ex){
-                return errorResponse(response, "Invalid service for this stylist");
+                return Responses.errorResponse(response, "Invalid service for this stylist");
             }
 
             List<String> activeStatuses = Arrays.asList("1", "3");
@@ -2991,18 +2567,18 @@ public class AppService {
                     bookAppointmentData.getUserId(), bookAppointmentData.getStylerId(),
                     bookAppointmentData.getAppointmentDate(), bookAppointmentData.getArrivalTime()).isEmpty();
             if(canonicalDuplicate || legacyDuplicate){
-                return errorResponse(response, "You already have a booking request for this date and time");
+                return Responses.errorResponse(response, "You already have a booking request for this date and time");
             }
             if(!isWindowFree(bookAppointmentData.getStylerId(),
                     bookAppointmentData.getAppointmentDate(), bookAppointmentData.getArrivalTime(), durationMinutes)){
-                return errorResponse(response, "The stylist already has a booking in this time window — please pick a different time");
+                return Responses.errorResponse(response, "The stylist already has a booking in this time window — please pick a different time");
             }
             if(!timeWithinAvailability(bookAppointmentData.getStylerId(),
                     bookAppointmentData.getAppointmentDate(), bookAppointmentData.getArrivalTime(), durationMinutes)){
-                return errorResponse(response, "The stylist is not available at this time — please pick a time within their working hours");
+                return Responses.errorResponse(response, "The stylist is not available at this time — please pick a time within their working hours");
             }
             if(!isDateNotException(bookAppointmentData.getStylerId(), bookAppointmentData.getAppointmentDate())){
-                return errorResponse(response, "The stylist is unavailable on this date — please choose another day");
+                return Responses.errorResponse(response, "The stylist is unavailable on this date — please choose another day");
             }
 
             bookAppointmentData.setPrice(pricing.totalPrice);
@@ -3028,7 +2604,7 @@ public class AppService {
                 String pm = bookAppointmentData.getPaymentMethodId();
                 UserEntity buyer = isUserExist.get();
                 if(pm == null || pm.trim().isEmpty()){
-                    return paymentErrorResponse(response, "NO_PAYMENT_METHOD",
+                    return Responses.paymentErrorResponse(response, "NO_PAYMENT_METHOD",
                             "A card is required to confirm this booking");
                 }
                 String connectAccountId = isStylerExist.get().getStripeConnectAccountId();
@@ -3054,7 +2630,7 @@ public class AppService {
                                     }
                                 });
                         if(customerId == null){
-                            return paymentErrorResponse(response, "PAYMENT_ERROR",
+                            return Responses.paymentErrorResponse(response, "PAYMENT_ERROR",
                                     "Payment could not be authorized — please try again");
                         }
                         PaymentIntent intent = stripeService.authorizeBookingPayment(
@@ -3066,16 +2642,16 @@ public class AppService {
                         appointment.setPaymentAuthorizationDueAt(null);
                     } catch(com.stripe.exception.CardException ex){
                         if("expired_card".equals(ex.getCode())){
-                            return paymentErrorResponse(response, "CARD_EXPIRED",
+                            return Responses.paymentErrorResponse(response, "CARD_EXPIRED",
                                     "Your card has expired. Please try another card.");
                         }
                         String detail = ex.getDeclineCode() == null || ex.getDeclineCode().isBlank()
                                 ? "" : " (" + ex.getDeclineCode().replace('_', ' ') + ")";
-                        return paymentErrorResponse(response, "CARD_DECLINED",
+                        return Responses.paymentErrorResponse(response, "CARD_DECLINED",
                                 "Your card was declined" + detail + ". Please try another card.");
                     } catch(com.stripe.exception.StripeException ex){
                         LOG.warning("Payment authorization failed: " + ex.getMessage());
-                        return paymentErrorResponse(response, "PAYMENT_ERROR",
+                        return Responses.paymentErrorResponse(response, "PAYMENT_ERROR",
                                 "Payment could not be authorized — please check your card or try again");
                     }
                 } else {
@@ -3096,14 +2672,14 @@ public class AppService {
                         appointment.setPaymentAuthorizationDueAt(paymentAuthorizationDueAt(appointmentDate, appointmentStart));
                     } catch(com.stripe.exception.StripeException ex){
                         LOG.warning("Payment reference save failed: " + ex.getMessage());
-                        return paymentErrorResponse(response, "PAYMENT_ERROR",
+                        return Responses.paymentErrorResponse(response, "PAYMENT_ERROR",
                                 "Payment could not be set up — please try again");
                     }
                 }
             }
             bookAppointmentRepo.saveAndFlush(appointment);
             reserveBookingSlots(appointment, appointmentDate, appointmentStart, durationMinutes);
-            audit(bookAppointmentData.getUserId(), "CUSTOMER", "CREATE_BOOKING", "APPOINTMENT",
+            auditService.audit(bookAppointmentData.getUserId(), "CUSTOMER", "CREATE_BOOKING", "APPOINTMENT",
                     appointment.getAppointmentId(), "Booking request created");
 
             sendAppointmentNotification(appointment, "Request",
@@ -3140,10 +2716,10 @@ public class AppService {
             if (idempotencyClaim != null && idempotencyClaim.isAcquired() && idempotencyService != null) {
                 idempotencyService.release(idempotencyClaim);
             }
-            return errorResponse(response, "Invalid appointment date or arrival time");
+            return Responses.errorResponse(response, "Invalid appointment date or arrival time");
         }
         catch(IllegalArgumentException ex){
-            return errorResponse(response, ex.getMessage());
+            return Responses.errorResponse(response, ex.getMessage());
         }
         return response;
     }
@@ -3262,10 +2838,10 @@ public class AppService {
 
     private TravelPricing calculateTravelPricing(BookAppointmentData data, StylerEntity styler, String rawServicePrice){
         int people = parsePeople(data.getNoOfPeople());
-        BigDecimal serviceUnitPrice = amount(rawServicePrice);
+        BigDecimal serviceUnitPrice = MoneyUtils.amount(rawServicePrice);
         BigDecimal servicePrice = serviceUnitPrice.multiply(BigDecimal.valueOf(people)).setScale(2, RoundingMode.HALF_UP);
         double includedKm = styler.getIncludedTravelKm() == null ? 15.0 : styler.getIncludedTravelKm();
-        BigDecimal baseTravelFee = amount(styler.getBaseTravelFee() == null ? "0.00" : styler.getBaseTravelFee());
+        BigDecimal baseTravelFee = MoneyUtils.amount(styler.getBaseTravelFee() == null ? "0.00" : styler.getBaseTravelFee());
         double distanceKm = 0.0;
         double billableKm = 0.0;
         BigDecimal travelFee = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -3287,13 +2863,13 @@ public class AppService {
 
         BigDecimal total = servicePrice.add(travelFee).setScale(2, RoundingMode.HALF_UP);
         return new TravelPricing(
-                money(servicePrice),
-                money(travelFee),
+                MoneyUtils.money(servicePrice),
+                MoneyUtils.money(travelFee),
                 includedKm,
                 distanceKm,
                 billableKm,
-                money(baseTravelFee),
-                money(total));
+                MoneyUtils.money(baseTravelFee),
+                MoneyUtils.money(total));
     }
 
     private int parsePeople(String noOfPeople){
@@ -3309,15 +2885,6 @@ public class AppService {
         return "homeService".equalsIgnoreCase(serviceTime);
     }
 
-    private BigDecimal amount(String value){
-        String normalized = value == null ? "0" : value.replace(",", "").trim();
-        return new BigDecimal(normalized).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private String money(BigDecimal value){
-        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
-    }
-
     private double roundKm(double value){
         return Math.round(value * 10.0) / 10.0;
     }
@@ -3326,8 +2893,6 @@ public class AppService {
         paymentOpsService.handleStripeWebhook(payload, signatureHeader);
     }
 
-
-    /** Loads the admin-configured commission from the DB (seeded by the .env default on first boot). */
     @PostConstruct
     void rebuildStylerLocationIndex(){
         if (locationCacheService == null || stylerRepo == null) return;
@@ -3345,7 +2910,6 @@ public class AppService {
             LOG.warning("Could not rebuild stylist location index: " + ex.getMessage());
         }
     }
-
 
     /**
      * Periodic reconciliation: rebuild the Redis geo index from MySQL every
@@ -3376,8 +2940,6 @@ public class AppService {
     void handleAccountUpdated(Account account){
         paymentOpsService.handleAccountUpdated(account);
     }
-
-
 
     private static class TravelPricing {
         private final String servicePrice;
@@ -3439,35 +3001,8 @@ public class AppService {
         return !ZonedDateTime.now(applicationZone()).isBefore(scheduled.plusMinutes(completionGraceMinutes));
     }
 
-    private BaseResponse errorResponse(BaseResponse response, String message){
-        response.setStatusCode(ERROR_STATUS_CODE);
-        response.setMessage(message);
-        response.setData(EMPTY_DATA);
-        return response;
-    }
-
-    /** Error response that also exposes a machine-readable paymentError code for the UI. */
-    private BaseResponse paymentErrorResponse(BaseResponse response, String paymentError, String message){
-        response.setStatusCode(ERROR_STATUS_CODE);
-        response.setMessage(message);
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("paymentError", paymentError);
-        response.setData(data);
-        return response;
-    }
-
     private void autoRefundCapturedPayment(BookAppointmentEntity appointment, String reason, String actorId){
         paymentOpsService.autoRefundCapturedPayment(appointment, reason, actorId);
-    }
-
-    /** Sends an operational alert to the configured ops address (no-op when unset). */
-    /** Sends an operational alert to the configured ops address (no-op when unset). */
-    private void alertAdmin(String message){
-        auditService.alertAdmin(message);
-    }
-
-    private void audit(String actorId, String actorRole, String action, String resourceType, String resourceId, String details){
-        auditService.audit(actorId, actorRole, action, resourceType, resourceId, details);
     }
 
     private void awardCompletionPoints(String userId, String appointmentId){
@@ -3486,7 +3021,7 @@ public class AppService {
                     });
                 }
             });
-            audit("system", "SYSTEM", "AWARD_LOYALTY", "APPOINTMENT", appointmentId, "Completion points awarded");
+            auditService.audit("system", "SYSTEM", "AWARD_LOYALTY", "APPOINTMENT", appointmentId, "Completion points awarded");
         } catch(Exception ex){
             LOG.warning("Loyalty award failed: " + ex.getMessage());
         }
@@ -3575,11 +3110,11 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try {
             Optional<BookAppointmentEntity> found = bookAppointmentRepo.findByAppointmentId(appointmentId);
-            if(found.isEmpty()) return errorResponse(response, "Invalid Appointment Id");
+            if(found.isEmpty()) return Responses.errorResponse(response, "Invalid Appointment Id");
             BookAppointmentEntity appointment = found.get();
-            if(!userId.equals(appointment.getUserId())) return errorResponse(response, "You do not have permission to update this appointment");
+            if(!userId.equals(appointment.getUserId())) return Responses.errorResponse(response, "You do not have permission to update this appointment");
             if(!Arrays.asList("PAYMENT_FAILED", "PAYMENT_REQUIRES_ACTION", "PAYMENT_ACCEPTED_SCHEDULED").contains(appointment.getPaymentStatus())){
-                return errorResponse(response, "This appointment does not need a payment retry");
+                return Responses.errorResponse(response, "This appointment does not need a payment retry");
             }
             PaymentAttemptResult payment = authorizeScheduledPayment(appointment, "3".equals(appointment.getStatus()));
             if(!payment.success){
@@ -3593,11 +3128,10 @@ public class AppService {
             response.setData(EMPTY_DATA);
         } catch(Exception ex){
             LOG.warning("Payment retry failed: " + ex.getMessage());
-            return errorResponse(response, "Payment could not be completed. Please try again.");
+            return Responses.errorResponse(response, "Payment could not be completed. Please try again.");
         }
         return response;
     }
-
 
     /** List failed outbox events for admin review. */
     public BaseResponse listFailedOutboxEvents() {
@@ -3634,18 +3168,18 @@ public class AppService {
         try {
             var event = outboxEventRepo.findById(eventId);
             if (event.isEmpty()) {
-                return errorResponse(response, "Event not found");
+                return Responses.errorResponse(response, "Event not found");
             }
             var entity = event.get();
             if (entity.getStatus() != com.macrotel.rapidstylers.outbox.OutboxStatus.FAILED) {
-                return errorResponse(response, "Only failed events can be retried");
+                return Responses.errorResponse(response, "Only failed events can be retried");
             }
             entity.setStatus(com.macrotel.rapidstylers.outbox.OutboxStatus.PENDING);
             entity.setAttempts(0);
             entity.setLastError(null);
             entity.setNextAttemptAt(LocalDateTime.now());
             outboxEventRepo.save(entity);
-            audit(adminId, "ADMIN", "RETRY_OUTBOX_EVENT", "OUTBOX_EVENT",
+            auditService.audit(adminId, "ADMIN", "RETRY_OUTBOX_EVENT", "OUTBOX_EVENT",
                     String.valueOf(eventId), "Admin retried failed outbox event");
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Event queued for retry");
@@ -3655,7 +3189,6 @@ public class AppService {
         }
         return response;
     }
-
 
     public BaseResponse adminRefund(String adminId, RefundRequestData data){
         return paymentOpsService.adminRefund(adminId, data);
@@ -3828,7 +3361,7 @@ public class AppService {
                 }
                 awardCompletionPoints(appointment.getUserId(), appointment.getAppointmentId());
             }
-            audit(ownerId, actorRole == ActorRole.STYLER ? "STYLER" : "CUSTOMER", "APPOINTMENT_" + newStatus,
+            auditService.audit(ownerId, actorRole == ActorRole.STYLER ? "STYLER" : "CUSTOMER", "APPOINTMENT_" + newStatus,
                     "APPOINTMENT", appointmentId, successMessage);
 
             // Notify both parties about the outcome.
@@ -3987,11 +3520,11 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try{
             if(!stripeService.isConfigured()){
-                return errorResponse(response, "Payments are not configured yet");
+                return Responses.errorResponse(response, "Payments are not configured yet");
             }
             Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
             if(stylerOpt.isEmpty()){
-                return errorResponse(response, "Invalid Styler Id");
+                return Responses.errorResponse(response, "Invalid Styler Id");
             }
             StylerEntity styler = stylerOpt.get();
             String accountId = styler.getStripeConnectAccountId();
@@ -4013,7 +3546,7 @@ public class AppService {
             response.setData(data);
         } catch(Exception ex){
             LOG.warning("Connect account setup failed: " + ex.getMessage());
-            return errorResponse(response, "Could not start payout setup — please try again");
+            return Responses.errorResponse(response, "Could not start payout setup — please try again");
         }
         return response;
     }
@@ -4032,14 +3565,14 @@ public class AppService {
         try{
             Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
             if(stylerOpt.isEmpty()){
-                return errorResponse(response, "Invalid Styler Id");
+                return Responses.errorResponse(response, "Invalid Styler Id");
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(businessSummaryData(stylerOpt.get()));
         } catch(Exception ex){
             LOG.warning("Business summary failed: " + ex.getMessage());
-            return errorResponse(response, "Could not load business summary");
+            return Responses.errorResponse(response, "Could not load business summary");
         }
         return response;
     }
@@ -4068,7 +3601,7 @@ public class AppService {
             response.setData(rows);
         } catch(Exception ex){
             LOG.warning("Admin business summaries failed: " + ex.getMessage());
-            return errorResponse(response, "Could not load business summaries");
+            return Responses.errorResponse(response, "Could not load business summaries");
         }
         return response;
     }
@@ -4103,7 +3636,7 @@ public class AppService {
             if(appointment.getUserId() != null) clients.add(appointment.getUserId());
             if("0".equals(appointment.getStatus())){
                 boolean captured = "CAPTURED".equals(appointment.getPaymentStatus());
-                grossRevenue = grossRevenue.add(amount(
+                grossRevenue = grossRevenue.add(MoneyUtils.amount(
                         captured && appointment.getPaymentAmount() != null
                                 ? appointment.getPaymentAmount() : appointment.getPrice()));
             }
@@ -4134,27 +3667,24 @@ public class AppService {
         data.put("confirmed", confirmed);
         data.put("finished", finished);
         data.put("cancelled", cancelled);
-        data.put("totalRevenue", money(grossRevenue));
+        data.put("totalRevenue", MoneyUtils.money(grossRevenue));
         // Listing health, so the dashboard can explain a profile that is not
         // reachable instead of leaving the professional to guess why nobody
         // books. `bookable` is the same gate public search uses.
         data.put("addressOnFile", hasStreetAddress(styler));
         data.put("bookable", isBookableStyler(styler));
-        data.put("totalCommission", money(commission));
-        data.put("netRevenue", money(netRevenue));
+        data.put("totalCommission", MoneyUtils.money(commission));
+        data.put("netRevenue", MoneyUtils.money(netRevenue));
         data.put("popularServices", popularServices);
         return data;
     }
-
-
-
 
     public BaseResponse getStylerConnectStatus(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try{
             Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
             if(stylerOpt.isEmpty()){
-                return errorResponse(response, "Invalid Styler Id");
+                return Responses.errorResponse(response, "Invalid Styler Id");
             }
             StylerEntity styler = stylerOpt.get();
             Map<String, Object> data = new LinkedHashMap<>();
@@ -4167,7 +3697,7 @@ public class AppService {
             response.setData(data);
         } catch(Exception ex){
             LOG.warning("Connect status lookup failed: " + ex.getMessage());
-            return errorResponse(response, "Could not load payout status");
+            return Responses.errorResponse(response, "Could not load payout status");
         }
         return response;
     }
@@ -4209,7 +3739,7 @@ public class AppService {
             response.setData(rows);
         } catch(Exception ex){
             LOG.warning("Connect status list failed: " + ex.getMessage());
-            return errorResponse(response, "Could not load stylist payout statuses");
+            return Responses.errorResponse(response, "Could not load stylist payout statuses");
         }
         return response;
     }
@@ -4228,11 +3758,11 @@ public class AppService {
         BaseResponse response = new BaseResponse(true);
         try{
             if(!stripeService.isConfigured()){
-                return errorResponse(response, "Payments are not configured yet");
+                return Responses.errorResponse(response, "Payments are not configured yet");
             }
             Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
             if(isUserExist.isEmpty()){
-                return errorResponse(response, "Invalid User Id");
+                return Responses.errorResponse(response, "Invalid User Id");
             }
             UserEntity user = isUserExist.get();
             Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(userId);
@@ -4249,7 +3779,7 @@ public class AppService {
             response.setData(data);
         } catch(Exception ex){
             LOG.warning("Setup intent failed: " + ex.getMessage());
-            return errorResponse(response, "Could not start card setup — please try again");
+            return Responses.errorResponse(response, "Could not start card setup — please try again");
         }
         return response;
     }
@@ -4278,10 +3808,10 @@ public class AppService {
         try{
             Optional<UserEntity> isUserExist = userRepo.findByUserId(cardDetailsData.getUserId());
             if(isUserExist.isEmpty()){
-                return errorResponse(response, "Invalid User Id");
+                return Responses.errorResponse(response, "Invalid User Id");
             }
             if(!stripeService.isConfigured()){
-                return errorResponse(response, "Payments are not configured yet");
+                return Responses.errorResponse(response, "Payments are not configured yet");
             }
             UserEntity user = isUserExist.get();
             Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(cardDetailsData.getUserId());
@@ -4308,7 +3838,7 @@ public class AppService {
             response.setData(EMPTY_DATA);
         } catch(Exception ex){
             LOG.warning("Card update failed: " + ex.getMessage());
-            return errorResponse(response, "Could not save your card — please try again");
+            return Responses.errorResponse(response, "Could not save your card — please try again");
         }
         return response;
     }
@@ -4363,7 +3893,7 @@ public class AppService {
                 response.setData(candidates);
             }
         } catch(Exception ex){
-            return errorResponse(response, "Invalid search date or time");
+            return Responses.errorResponse(response, "Invalid search date or time");
         }
         return response;
     }
@@ -4545,5 +4075,4 @@ public class AppService {
         }
         return sb.toString();
     }
-
 }

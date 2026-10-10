@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.pojo.AvailabilityData;
@@ -21,17 +22,17 @@ import static org.mockito.Mockito.when;
 
 class AvailabilityValidationTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private AvailabilityRepo availabilityRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         availabilityRepo = mock(AvailabilityRepo.class);
-        appService.stylerRepo = stylerRepo;
-        appService.availabilityRepo = availabilityRepo;
+        services.stylerRepo = stylerRepo;
+        services.availabilityRepo = availabilityRepo;
         when(stylerRepo.findByStylerId("S1")).thenReturn(Optional.of(new StylerEntity()));
     }
 
@@ -45,28 +46,28 @@ class AvailabilityValidationTest {
 
     @Test
     void rejectsDayOfWeekOutOfRange() {
-        BaseResponse response = appService.updateStylerAvailability("S1", List.of(slot("7", "09:00", "17:00")));
+        BaseResponse response = services.appService().updateStylerAvailability("S1", List.of(slot("7", "09:00", "17:00")));
         assertEquals("400", response.getStatusCode());
         verify(availabilityRepo, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test
     void rejectsMalformedTimeFormat() {
-        BaseResponse response = appService.updateStylerAvailability("S1", List.of(slot("1", "9am", "17:00")));
+        BaseResponse response = services.appService().updateStylerAvailability("S1", List.of(slot("1", "9am", "17:00")));
         assertEquals("400", response.getStatusCode());
         verify(availabilityRepo, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test
     void rejectsEndNotAfterStart() {
-        BaseResponse response = appService.updateStylerAvailability("S1", List.of(slot("1", "17:00", "09:00")));
+        BaseResponse response = services.appService().updateStylerAvailability("S1", List.of(slot("1", "17:00", "09:00")));
         assertEquals("400", response.getStatusCode());
         verify(availabilityRepo, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test
     void acceptsValidSlotsAndPersists() {
-        BaseResponse response = appService.updateStylerAvailability("S1",
+        BaseResponse response = services.appService().updateStylerAvailability("S1",
                 List.of(slot("1", "09:00", "17:00"), slot("2", "10:00", "14:00")));
         assertEquals("200", response.getStatusCode());
 

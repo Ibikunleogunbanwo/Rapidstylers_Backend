@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.SupportTicketEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.SupportTicketActionData;
@@ -16,14 +17,14 @@ import static org.mockito.Mockito.when;
 
 class TicketResponseSanitizeTest {
 
-    private AppService appService;
+    private TestServices services;
     private SupportTicketRepo supportTicketRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         supportTicketRepo = mock(SupportTicketRepo.class);
-        appService.supportTicketRepo = supportTicketRepo;
+        services.supportTicketRepo = supportTicketRepo;
     }
 
     @Test
@@ -37,7 +38,7 @@ class TicketResponseSanitizeTest {
         data.setStatus("RESOLVED");
         data.setAdminResponse("Fixed it <script>alert(1)</script> — try again <img src=x onerror=alert(2)>");
 
-        BaseResponse response = appService.updateSupportTicket(data, "ADMIN1");
+        BaseResponse response = services.appService().updateSupportTicket(data, "ADMIN1");
 
         assertEquals("200", response.getStatusCode());
         verify(supportTicketRepo).save(ticket);

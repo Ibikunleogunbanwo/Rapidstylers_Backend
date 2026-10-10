@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.BookAppointmentData;
@@ -22,17 +23,17 @@ import static org.mockito.Mockito.when;
 
 class BookingHardeningTest {
 
-    private AppService appService;
+    private TestServices services;
     private BookAppointmentRepo appointmentRepo;
     private BookingSlotLockRepo slotLockRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         appointmentRepo = mock(BookAppointmentRepo.class);
         slotLockRepo = mock(BookingSlotLockRepo.class);
-        appService.bookAppointmentRepo = appointmentRepo;
-        appService.bookingSlotLockRepo = slotLockRepo;
+        services.bookAppointmentRepo = appointmentRepo;
+        services.bookingSlotLockRepo = slotLockRepo;
     }
 
     @Test
@@ -72,7 +73,7 @@ class BookingHardeningTest {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "3");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
-        BaseResponse response = appService.completeAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.appService().completeAppointment("STYLER1", "APPT1");
 
         assertEquals("400", response.getStatusCode());
         assertTrue(response.getMessage().contains("after its scheduled start"));
@@ -84,8 +85,8 @@ class BookingHardeningTest {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "1");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
-        BaseResponse stylistAttemptToCancel = appService.cancelAppointment("STYLER1", "APPT1");
-        BaseResponse customerAttemptToAccept = appService.acceptAppointment("CUSTOMER1", "APPT1");
+        BaseResponse stylistAttemptToCancel = services.appService().cancelAppointment("STYLER1", "APPT1");
+        BaseResponse customerAttemptToAccept = services.appService().acceptAppointment("CUSTOMER1", "APPT1");
 
         assertEquals("400", stylistAttemptToCancel.getStatusCode());
         assertEquals("400", customerAttemptToAccept.getStatusCode());

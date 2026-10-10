@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.StylerEntity;
@@ -36,7 +37,7 @@ import static org.mockito.Mockito.when;
  */
 class SearchReadCacheTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private LocationCacheService locationCacheService;
     private DTOService dtoService;
@@ -44,20 +45,20 @@ class SearchReadCacheTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         locationCacheService = mock(LocationCacheService.class);
         dtoService = mock(DTOService.class);
         readCacheService = mock(ReadCacheService.class);
-        appService.stylerRepo = stylerRepo;
-        appService.locationCacheService = locationCacheService;
-        appService.dtoService = dtoService;
-        appService.readCacheService = readCacheService;
-        appService.objectMapper = new ObjectMapper();
+        services.stylerRepo = stylerRepo;
+        services.locationCacheService = locationCacheService;
+        services.dtoService = dtoService;
+        services.readCacheService = readCacheService;
+        services.objectMapper = new ObjectMapper();
         // Search rows carry the professional's weekly hours, read through the
         // same cache; the passthrough above invokes that real loader.
-        appService.availabilityRepo = mock(AvailabilityRepo.class);
-        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
+        services.availabilityRepo = mock(AvailabilityRepo.class);
+        services.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     @Test
@@ -78,7 +79,7 @@ class SearchReadCacheTest {
             return ((Supplier<?>) inv.getArgument(3)).get();
         });
 
-        BaseResponse response = appService.searchNearby(10.0, 20.0, 50.0, null, null);
+        BaseResponse response = services.appService().searchNearby(10.0, 20.0, 50.0, null, null);
 
         assertEquals("200", response.getStatusCode());
         List<?> data = (List<?>) response.getData();
@@ -102,7 +103,7 @@ class SearchReadCacheTest {
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
 
-        BaseResponse response = appService.searchNearby(10.0, 20.0, 50.0, null, null);
+        BaseResponse response = services.appService().searchNearby(10.0, 20.0, 50.0, null, null);
 
         assertEquals("200", response.getStatusCode());
         List<?> data = (List<?>) response.getData();

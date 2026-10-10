@@ -1,11 +1,12 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.entity.IdentificationEntity;
+import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
-import com.macrotel.rapidstylers.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.UserEntity;
@@ -14,9 +15,9 @@ import com.macrotel.rapidstylers.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.pojo.StylerData;
 import com.macrotel.rapidstylers.pojo.VerificationActionData;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.repo.IdentificationRepo;
+import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
-import com.macrotel.rapidstylers.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
@@ -54,7 +55,7 @@ import static org.mockito.Mockito.when;
  */
 class StylerAddressRequirementTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private UserRepo userRepo;
     private OTPRepo otpRepo;
@@ -70,7 +71,7 @@ class StylerAddressRequirementTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         userRepo = mock(UserRepo.class);
         otpRepo = mock(OTPRepo.class);
@@ -85,27 +86,26 @@ class StylerAddressRequirementTest {
 
         // A refused signup hands its already-uploaded images back, so the service
         // is wired here even though these tests only exercise the refusal.
-        appService.imageReclaimService = mock(ImageReclaimService.class);
+        services.imageReclaimService = mock(ImageReclaimService.class);
 
-        appService.stylerRepo = stylerRepo;
-        appService.userRepo = userRepo;
-        appService.otpRepo = otpRepo;
-        appService.identificationRepo = identificationRepo;
-        appService.serviceRepo = serviceRepo;
-        appService.bookAppointmentRepo = bookAppointmentRepo;
-        appService.subServiceRepo = subServiceRepo;
-        appService.rateLimiterService = rateLimiterService;
-        appService.readCacheService = readCacheService;
-        appService.geocodingService = geocodingService;
-        appService.accountIds = new AccountIds(userRepo, stylerRepo);
+        services.stylerRepo = stylerRepo;
+        services.userRepo = userRepo;
+        services.otpRepo = otpRepo;
+        services.identificationRepo = identificationRepo;
+        services.serviceRepo = serviceRepo;
+        services.bookAppointmentRepo = bookAppointmentRepo;
+        services.subServiceRepo = subServiceRepo;
+        services.readCacheService = readCacheService;
+        services.geocodingService = geocodingService;
+        services.accountIds = new AccountIds(userRepo, stylerRepo);
         // Not locked out: a mock answers false.
-        appService.authService = mock(AuthService.class);
-        appService.stripeService = stripeService;
+        services.authService = mock(AuthService.class);
+        services.stripeService = stripeService;
 
         dtoService = new DTOService();
         dtoService.stripeService = stripeService;
         dtoService.serviceRepo = serviceRepo;
-        appService.dtoService = dtoService;
+        services.dtoService = dtoService;
 
         when(stripeService.isConfigured()).thenReturn(false);
         // Serve what the loader would build, so Redis never enters the picture.
@@ -114,9 +114,9 @@ class StylerAddressRequirementTest {
         // The public list stamps each row with the professional's weekly hours,
         // which needs a mapper for the per-result copy and repos for the hours
         // loader the passthrough invokes.
-        appService.objectMapper = new ObjectMapper();
-        appService.availabilityRepo = mock(AvailabilityRepo.class);
-        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
+        services.objectMapper = new ObjectMapper();
+        services.availabilityRepo = mock(AvailabilityRepo.class);
+        services.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     /* ── helpers ─────────────────────────────────────────────────────────── */
@@ -173,7 +173,7 @@ class StylerAddressRequirementTest {
     void signupRefusesAProfessionalWithNoAddress() {
         stubSignupPreconditions();
 
-        BaseResponse response = appService.createStyler(signupData(null, "   "));
+        BaseResponse response = services.appService().createStyler(signupData(null, "   "));
 
         assertEquals("400", response.getStatusCode());
         assertTrue(messageOf(response).contains("address"),
@@ -187,7 +187,7 @@ class StylerAddressRequirementTest {
 
         // The signup form writes only businessAddress (the formatted Places
         // string); rejecting that would break the real onboarding flow.
-        BaseResponse response = appService.createStyler(signupData(null, "700 2 St SW, Calgary, Alberta"));
+        BaseResponse response = services.appService().createStyler(signupData(null, "700 2 St SW, Calgary, Alberta"));
 
         assertEquals("200", response.getStatusCode());
         verify(stylerRepo).save(any(StylerEntity.class));
@@ -197,7 +197,7 @@ class StylerAddressRequirementTest {
     void signupAcceptsTheStructuredStreetAlone() {
         stubSignupPreconditions();
 
-        BaseResponse response = appService.createStyler(signupData("700 2 St SW", null));
+        BaseResponse response = services.appService().createStyler(signupData("700 2 St SW", null));
 
         assertEquals("200", response.getStatusCode());
         verify(stylerRepo).save(any(StylerEntity.class));
@@ -211,7 +211,7 @@ class StylerAddressRequirementTest {
         pending.setVerificationStatus("PENDING");
         when(stylerRepo.findByStylerId("ADDR1")).thenReturn(Optional.of(pending));
 
-        BaseResponse response = appService.updateStylerVerification(verification("ADDR1", "APPROVE"));
+        BaseResponse response = services.appService().updateStylerVerification(verification("ADDR1", "APPROVE"));
 
         assertEquals("400", response.getStatusCode());
         assertTrue(messageOf(response).contains("address"),
@@ -227,7 +227,7 @@ class StylerAddressRequirementTest {
         pending.setBusinessAddress("700 2 St SW, Calgary, Alberta");
         when(stylerRepo.findByStylerId("ADDR2")).thenReturn(Optional.of(pending));
 
-        BaseResponse response = appService.updateStylerVerification(verification("ADDR2", "APPROVE"));
+        BaseResponse response = services.appService().updateStylerVerification(verification("ADDR2", "APPROVE"));
 
         assertEquals("200", response.getStatusCode());
         assertEquals("APPROVED", pending.getVerificationStatus());
@@ -250,7 +250,7 @@ class StylerAddressRequirementTest {
         reachable.setBusinessAddress("700 2 St SW, Calgary, Alberta");
         when(stylerRepo.findAll()).thenReturn(Arrays.asList(unreachable, reachable));
 
-        BaseResponse response = appService.listAllStylers();
+        BaseResponse response = services.appService().listAllStylers();
 
         List<?> rows = (List<?>) response.getData();
         assertEquals(1, rows.size(), "only the reachable professional may be advertised");
@@ -266,7 +266,7 @@ class StylerAddressRequirementTest {
         when(stylerRepo.findByStylerIdForUpdate("ADDR5"))
                 .thenReturn(Optional.of(approvedStyler("ADDR5", null)));
 
-        BaseResponse response = appService.bookAppointment(booking("ADDR5"));
+        BaseResponse response = services.appService().bookAppointment(booking("ADDR5"));
 
         assertEquals("400", response.getStatusCode());
         assertTrue(messageOf(response).contains("address"),
@@ -281,7 +281,7 @@ class StylerAddressRequirementTest {
         when(userRepo.findByUserId("U1")).thenReturn(Optional.of(new UserEntity()));
         when(stylerRepo.findByStylerIdForUpdate("ADDR6")).thenReturn(Optional.of(pending));
 
-        BaseResponse response = appService.bookAppointment(booking("ADDR6"));
+        BaseResponse response = services.appService().bookAppointment(booking("ADDR6"));
 
         assertEquals("400", response.getStatusCode());
         assertFalse(messageOf(response).contains("address"),
@@ -307,7 +307,7 @@ class StylerAddressRequirementTest {
         when(stylerRepo.findByStylerId("ADDR7")).thenReturn(Optional.of(approvedStyler("ADDR7", null)));
         when(bookAppointmentRepo.findByStylerId("ADDR7")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = appService.getStylerBusinessSummary("ADDR7");
+        BaseResponse response = services.appService().getStylerBusinessSummary("ADDR7");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals(Boolean.FALSE, data.get("addressOnFile"));
@@ -321,7 +321,7 @@ class StylerAddressRequirementTest {
         when(stylerRepo.findByStylerId("ADDR8")).thenReturn(Optional.of(approvedStyler("ADDR8", "700 2 St SW")));
         when(bookAppointmentRepo.findByStylerId("ADDR8")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = appService.getStylerBusinessSummary("ADDR8");
+        BaseResponse response = services.appService().getStylerBusinessSummary("ADDR8");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals(Boolean.TRUE, data.get("addressOnFile"));

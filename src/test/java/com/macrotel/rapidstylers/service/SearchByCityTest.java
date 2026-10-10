@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.StylerEntity;
@@ -32,27 +33,27 @@ import static org.mockito.Mockito.when;
  */
 class SearchByCityTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private ReadCacheService readCacheService;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         readCacheService = mock(ReadCacheService.class);
         DTOService dtoService = mock(DTOService.class);
-        appService.stylerRepo = stylerRepo;
-        appService.readCacheService = readCacheService;
-        appService.dtoService = dtoService;
-        appService.objectMapper = new ObjectMapper();
+        services.stylerRepo = stylerRepo;
+        services.readCacheService = readCacheService;
+        services.dtoService = dtoService;
+        services.objectMapper = new ObjectMapper();
         // The read-cache passthrough invokes real loaders, so the DTO builder
         // must produce something (its internals query repos we don't stub).
         when(dtoService.stylerAccountDTO(any())).thenReturn(new StylerAccountDTO());
         // Rows carry the professional's weekly hours now, and that loader reads a
         // repo too: an unstubbed one would make the city search look broken.
-        appService.availabilityRepo = mock(AvailabilityRepo.class);
-        appService.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
+        services.availabilityRepo = mock(AvailabilityRepo.class);
+        services.availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
     }
 
     @Test
@@ -63,7 +64,7 @@ class SearchByCityTest {
         when(stylerRepo.findByCityIgnoreCase("Calgary"))
                 .thenReturn(Collections.singletonList(calgaryStyler));
 
-        BaseResponse response = appService.searchStylerByCity("Calgary");
+        BaseResponse response = services.appService().searchStylerByCity("Calgary");
 
         assertEquals("200", response.getStatusCode());
         List<?> data = (List<?>) response.getData();
@@ -81,7 +82,7 @@ class SearchByCityTest {
         when(stylerRepo.findByProvinceIgnoreCase("Alberta"))
                 .thenReturn(Collections.singletonList(approvedStyler("S9", "Calgary", "Alberta")));
 
-        BaseResponse response = appService.searchStylerByCity("Strathmore");
+        BaseResponse response = services.appService().searchStylerByCity("Strathmore");
 
         assertEquals("200", response.getStatusCode());
         assertTrue(response.getData() instanceof Map);
@@ -98,7 +99,7 @@ class SearchByCityTest {
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
         when(stylerRepo.findByCityIgnoreCase("Nowhere")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = appService.searchStylerByCity("Nowhere");
+        BaseResponse response = services.appService().searchStylerByCity("Nowhere");
 
         assertEquals("200", response.getStatusCode());
         List<?> data = (List<?>) response.getData();

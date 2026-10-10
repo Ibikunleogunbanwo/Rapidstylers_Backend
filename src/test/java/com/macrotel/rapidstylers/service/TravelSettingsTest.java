@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.StylerEntity;
 import com.macrotel.rapidstylers.repo.NotificationRepo;
 import com.macrotel.rapidstylers.repo.SavedStylistRepo;
@@ -25,19 +26,19 @@ import static org.mockito.Mockito.when;
  */
 class TravelSettingsTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
-        appService.stylerRepo = stylerRepo;
+        services.stylerRepo = stylerRepo;
         // Home-visit fee updates notify saved customers — wire minimal mocks.
-        appService.notificationRepo = mock(NotificationRepo.class);
+        services.notificationRepo = mock(NotificationRepo.class);
         SavedStylistRepo saved = mock(SavedStylistRepo.class);
         when(saved.findAll()).thenReturn(Collections.emptyList());
-        appService.savedStylistRepo = saved;
+        services.savedStylistRepo = saved;
     }
 
     @Test
@@ -45,7 +46,7 @@ class TravelSettingsTest {
         StylerEntity styler = styler(); // included null, fee null
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
 
-        Map<?, ?> data = (Map<?, ?>) appService.stylerTravelSettings("STYLER1").getData();
+        Map<?, ?> data = (Map<?, ?>) services.appService().stylerTravelSettings("STYLER1").getData();
         assertEquals(15.0, ((Number) data.get("includedTravelKm")).doubleValue());
         assertEquals("0.00", data.get("baseTravelFee"));
     }
@@ -55,7 +56,7 @@ class TravelSettingsTest {
         StylerEntity styler = styler();
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
 
-        appService.updateStylerTravelSettings("STYLER1", 20.0, "25.00");
+        services.appService().updateStylerTravelSettings("STYLER1", 20.0, "25.00");
 
         assertEquals(20.0, styler.getIncludedTravelKm().doubleValue());
         assertEquals("25.00", styler.getBaseTravelFee());
@@ -68,7 +69,7 @@ class TravelSettingsTest {
         styler.setBaseTravelFee("0.00");
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
 
-        String code = appService.updateStylerTravelSettings("STYLER1", 15.0, "-5").getStatusCode();
+        String code = services.appService().updateStylerTravelSettings("STYLER1", 15.0, "-5").getStatusCode();
 
         assertNotEquals("200", code);
         assertEquals("0.00", styler.getBaseTravelFee());
@@ -80,7 +81,7 @@ class TravelSettingsTest {
         styler.setBaseTravelFee("0.00");
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
 
-        String code = appService.updateStylerTravelSettings("STYLER1", 15.0, "abc").getStatusCode();
+        String code = services.appService().updateStylerTravelSettings("STYLER1", 15.0, "abc").getStatusCode();
 
         assertNotEquals("200", code);
         assertEquals("0.00", styler.getBaseTravelFee());
@@ -89,7 +90,7 @@ class TravelSettingsTest {
     @Test
     void missingStylerRejected() {
         when(stylerRepo.findByStylerId("NOPE")).thenReturn(Optional.empty());
-        assertEquals("400", appService.updateStylerTravelSettings("NOPE", 15.0, "10.00").getStatusCode());
+        assertEquals("400", services.appService().updateStylerTravelSettings("NOPE", 15.0, "10.00").getStatusCode());
     }
 
     private StylerEntity styler() {

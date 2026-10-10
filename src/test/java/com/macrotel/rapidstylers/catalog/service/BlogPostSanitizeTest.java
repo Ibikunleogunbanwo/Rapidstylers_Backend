@@ -1,9 +1,10 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.catalog.service;
 
-import com.macrotel.rapidstylers.entity.BlogPostEntity;
+import com.macrotel.rapidstylers.support.TestServices;
+import com.macrotel.rapidstylers.catalog.entity.BlogPostEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.pojo.BlogPostData;
-import com.macrotel.rapidstylers.repo.BlogPostRepo;
+import com.macrotel.rapidstylers.catalog.pojo.BlogPostData;
+import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -14,14 +15,14 @@ import static org.mockito.Mockito.verify;
 
 class BlogPostSanitizeTest {
 
-    private AppService appService;
+    private TestServices services;
     private BlogPostRepo blogPostRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         blogPostRepo = mock(BlogPostRepo.class);
-        appService.blogPostRepo = blogPostRepo;
+        services.blogPostRepo = blogPostRepo;
     }
 
     @Test
@@ -33,7 +34,7 @@ class BlogPostSanitizeTest {
         data.setImageUrl("https://example.com/img.jpg");
         data.setAuthor("<b>Admin</b> Team");
 
-        BaseResponse response = appService.createBlogPost(data);
+        BaseResponse response = services.catalogService().createBlogPost(data);
 
         assertEquals("200", response.getStatusCode());
         ArgumentCaptor<BlogPostEntity> captor = ArgumentCaptor.forClass(BlogPostEntity.class);

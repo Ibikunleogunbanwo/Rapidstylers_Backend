@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.AvailabilityEntity;
@@ -41,38 +42,38 @@ import static org.mockito.Mockito.when;
  */
 class ListRowHoursTest {
 
-    private AppService appService;
+    private TestServices services;
     private StylerRepo stylerRepo;
     private AvailabilityRepo availabilityRepo;
     private AvailabilityExceptionRepo availabilityExceptionRepo;
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        services = new TestServices();
         stylerRepo = mock(StylerRepo.class);
         availabilityRepo = mock(AvailabilityRepo.class);
         availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
-        appService.stylerRepo = stylerRepo;
-        appService.dtoService = mock(DTOService.class);
-        appService.objectMapper = new ObjectMapper();
-        appService.availabilityRepo = availabilityRepo;
-        appService.availabilityExceptionRepo = availabilityExceptionRepo;
+        services.stylerRepo = stylerRepo;
+        services.dtoService = mock(DTOService.class);
+        services.objectMapper = new ObjectMapper();
+        services.availabilityRepo = availabilityRepo;
+        services.availabilityExceptionRepo = availabilityExceptionRepo;
         // Passthrough: serve what the loader would build, so the hours under test
         // come from the repos rather than a canned cache entry.
         ReadCacheService readCacheService = mock(ReadCacheService.class);
-        appService.readCacheService = readCacheService;
+        services.readCacheService = readCacheService;
         when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
         // Payments not configured: approval and a published address are then the
         // whole bookable gate, so the fixture states one variable per test.
         StripeService stripeService = mock(StripeService.class);
         when(stripeService.isConfigured()).thenReturn(false);
-        appService.stripeService = stripeService;
+        services.stripeService = stripeService;
         // The canned DTO stands in for the read cache: one instance, served to
         // every caller, which is exactly the object the row must not modify.
         StylerAccountDTO cached = new StylerAccountDTO();
         cached.setStylerId("S1");
-        when(appService.dtoService.stylerAccountDTO(any(StylerEntity.class))).thenReturn(cached);
+        when(services.dtoService.stylerAccountDTO(any(StylerEntity.class))).thenReturn(cached);
         when(stylerRepo.findAll()).thenReturn(Collections.singletonList(approvedStyler("S1")));
     }
 
@@ -84,7 +85,7 @@ class ListRowHoursTest {
                 blocked("S1", LocalDate.now().minusDays(30).toString(), "Vacation"),
                 blocked("S1", LocalDate.now().plusDays(5).toString(), "Sick day")));
 
-        List<?> rows = (List<?>) appService.listAllStylers().getData();
+        List<?> rows = (List<?>) services.appService().listAllStylers().getData();
         StylerAccountDTO row = (StylerAccountDTO) rows.get(0);
 
         assertEquals(1, row.getAvailability().size());
@@ -100,9 +101,9 @@ class ListRowHoursTest {
         when(availabilityRepo.findByStylerId("S1")).thenReturn(Collections.singletonList(
                 window("S1", "2", "10:00", "17:00")));
 
-        List<?> rows = (List<?>) appService.listAllStylers().getData();
+        List<?> rows = (List<?>) services.appService().listAllStylers().getData();
         StylerAccountDTO row = (StylerAccountDTO) rows.get(0);
-        StylerAccountDTO shared = appService.dtoService.stylerAccountDTO(approvedStyler("S1"));
+        StylerAccountDTO shared = services.dtoService.stylerAccountDTO(approvedStyler("S1"));
 
         assertNotSame(shared, row);
         assertNull(shared.getAvailability(), "the cached DTO must not be decorated in place");
@@ -114,7 +115,7 @@ class ListRowHoursTest {
         // No stubbing of either repo: the loader returns empty, and an empty list
         // is what lets a card say "no weekly hours set" instead of falling back to
         // a presence badge that means something else entirely.
-        List<?> rows = (List<?>) appService.listAllStylers().getData();
+        List<?> rows = (List<?>) services.appService().listAllStylers().getData();
         StylerAccountDTO row = (StylerAccountDTO) rows.get(0);
 
         assertTrue(row.getAvailability().isEmpty());

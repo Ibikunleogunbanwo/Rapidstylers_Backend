@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.pojo;
+package com.macrotel.rapidstylers.catalog.pojo;
 
 import lombok.Data;
 
