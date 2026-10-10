@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.repo.NotificationRepo;
+import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;

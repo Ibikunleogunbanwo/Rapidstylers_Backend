@@ -6,7 +6,7 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
-import com.macrotel.rapidstylers.repo.NotificationRepo;
+import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.junit.jupiter.api.AfterEach;

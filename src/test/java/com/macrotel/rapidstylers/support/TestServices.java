@@ -4,30 +4,35 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
+import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
+import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.engagement.service.FeedbackService;
+import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
+import com.macrotel.rapidstylers.engagement.service.NotificationService;
+import com.macrotel.rapidstylers.engagement.service.ReviewService;
+import com.macrotel.rapidstylers.engagement.service.SupportService;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.repo.AvailabilityRepo;
-import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.repo.CardDetailsRepo;
-import com.macrotel.rapidstylers.repo.FeedBackRepo;
-import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
-import com.macrotel.rapidstylers.repo.LoyaltyAccountRepo;
-import com.macrotel.rapidstylers.repo.NotificationRepo;
-import com.macrotel.rapidstylers.repo.ReferralRepo;
-import com.macrotel.rapidstylers.repo.ReviewRepo;
+import com.macrotel.rapidstylers.engagement.repo.FeedBackRepo;
+import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;
+import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
+import com.macrotel.rapidstylers.engagement.repo.ReferralRepo;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.repo.SavedStylistRepo;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.SubServiceRepo;
-import com.macrotel.rapidstylers.repo.SupportTicketRepo;
+import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.service.AuditService;
@@ -109,20 +114,45 @@ public class TestServices {
     public Boolean warmReadCachesEnabled;
 
     private static final List<Class<?>> SERVICES = List.of(
-            AppService.class,
-            CatalogService.class);
+            CatalogService.class,
+            FeedbackService.class,
+            LoyaltyService.class,
+            NotificationService.class,
+            ReviewService.class,
+            SupportService.class,
+            AppService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
-
-    public AppService appService() {
-        return get(AppService.class);
-    }
 
     public CatalogService catalogService() {
         return get(CatalogService.class);
     }
 
-    private <T> T get(Class<T> type) {
+    public FeedbackService feedbackService() {
+        return get(FeedbackService.class);
+    }
+
+    public LoyaltyService loyaltyService() {
+        return get(LoyaltyService.class);
+    }
+
+    public NotificationService notificationService() {
+        return get(NotificationService.class);
+    }
+
+    public ReviewService reviewService() {
+        return get(ReviewService.class);
+    }
+
+    public SupportService supportService() {
+        return get(SupportService.class);
+    }
+
+    public AppService appService() {
+        return get(AppService.class);
+    }
+
+    private synchronized <T> T get(Class<T> type) {
         if (built.isEmpty()) {
             for (Class<?> c : SERVICES) {
                 try {

@@ -1,5 +1,10 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.engagement.dto.FeedBackDTO;
+import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
+import com.macrotel.rapidstylers.engagement.entity.FeedbackEntity;
+import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.dto.*;

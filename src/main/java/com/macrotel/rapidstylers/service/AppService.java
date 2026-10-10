@@ -1,23 +1,27 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
-import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
+import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
+import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.dto.StylerReviewDTO;
+import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
+import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
+import com.macrotel.rapidstylers.engagement.service.NotificationService;
+import com.macrotel.rapidstylers.engagement.service.ReviewService;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
-import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
 import com.stripe.model.Account;
@@ -76,19 +80,11 @@ public class AppService {
     @Autowired
     SavedStylistRepo savedStylistRepo;
     @Autowired
-    NotificationRepo notificationRepo;
-    @Autowired
     SupportTicketRepo supportTicketRepo;
     @Autowired
     AuditLogRepo auditLogRepo;
     @Autowired
-    LoyaltyAccountRepo loyaltyAccountRepo;
-    @Autowired
-    ReferralRepo referralRepo;
-    @Autowired
     BookAppointmentRepo bookAppointmentRepo;
-    @Autowired
-    FeedBackRepo feedBackRepo;
     @Autowired
     CardDetailsRepo cardDetailsRepo;
     @Autowired
@@ -109,8 +105,6 @@ public class AppService {
     LocationCacheService locationCacheService;
     @Autowired
     LocationService locationService;
-    @Autowired
-    OutboxEventService outboxEventService;
     @Autowired
     IdempotencyService idempotencyService;
     @Autowired
@@ -154,6 +148,12 @@ public class AppService {
     private long stylerCancelWindowHours;
     @Autowired
     CatalogService catalogService;
+    @Autowired
+    LoyaltyService loyaltyService;
+    @Autowired
+    NotificationService notificationService;
+    @Autowired
+    ReviewService reviewService;
 
     public BaseResponse testing(){
         BaseResponse response = new BaseResponse(true);
@@ -499,7 +499,7 @@ public class AppService {
             stylerRepo.save(styler);
             evict(ReadCacheService.KEY_STYLER_DTO + stylerId);
             if(!Objects.equals(previousStatus, action)){
-                notifySavedCustomers(stylerId, "VERIFICATION", "Professional verification updated",
+                notificationService.notifySavedCustomers(stylerId, "VERIFICATION", "Professional verification updated",
                         "The verification status for " + (styler.getBusinessName() == null ? "your saved professional" : styler.getBusinessName())
                                 + " is now " + action.toLowerCase(Locale.ROOT) + ".");
             }
@@ -715,7 +715,7 @@ public class AppService {
             subServiceRepo.save(service);
             evict(ReadCacheService.KEY_STYLER_SUBSERVICES + stylerId);
             if(!Objects.equals(previousPrice, service.getPrice())){
-                notifySavedCustomers(stylerId, "PRICE", "Saved professional price changed",
+                notificationService.notifySavedCustomers(stylerId, "PRICE", "Saved professional price changed",
                         "The price for " + service.getName() + " is now $" + service.getPrice() + ".");
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -1001,283 +1001,8 @@ public class AppService {
         return response;
     }
 
-    /**
-     * Emails both parties about an appointment event with role-appropriate
-     * wording. Uses the appointment's stored user/styler ids to look up
-     * current addresses and names.
-     */
-    private void sendAppointmentNotification(BookAppointmentEntity appointment, String eventLabel,
-                                             String customerHeadline, String customerDetail,
-                                             String stylerHeadline, String stylerDetail){
-        try{
-            if(outboxEventService != null){
-                outboxEventService.appointmentNotification(appointment, eventLabel, customerHeadline,
-                        customerDetail, stylerHeadline, stylerDetail);
-                return;
-            }
-            String serviceName = "Service";
-            if(appointment.getSubServiceId() != null && !appointment.getSubServiceId().isEmpty()){
-                try{
-                    Optional<SubServiceEntity> sub = subServiceRepo.isServiceExistById(appointment.getStylerId(), Long.parseLong(appointment.getSubServiceId()));
-                    if(sub.isPresent() && sub.get().getName() != null){
-                        serviceName = sub.get().getName();
-                    }
-                } catch (Exception ignored){}
-            }
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
-            // The appointment's times live on the stylist's clock, so the email
-            // names the zone rather than leaving a cross-province reader to
-            // guess whose 2:00 PM this is.
-            String zoneSuffix = VendorZoneResolver.timeSuffixForStyler(
-                    stylerOpt.map(StylerEntity::getTimeZone).orElse(null),
-                    stylerOpt.map(StylerEntity::getProvince).orElse(null));
-            String when = (appointment.getAppointmentDate() == null ? "" : appointment.getAppointmentDate())
-                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank()
-                            ? "" : " at " + appointment.getArrivalTime() + zoneSuffix);
-            String price = appointment.getPrice() == null ? "" : appointment.getPrice();
-            String servicePrice = appointment.getServicePrice() == null ? price : appointment.getServicePrice();
-            String travelFee = appointment.getTravelFee() == null ? "0.00" : appointment.getTravelFee();
-
-            String customerName = "there";
-            Optional<UserEntity> userOpt = userRepo.findByUserId(appointment.getUserId());
-            if(userOpt.isPresent()){
-                customerName = (userOpt.get().getFirstname() + " " + userOpt.get().getLastname()).trim();
-                if(customerName.isBlank()) customerName = "there";
-            }
-            String stylistName = "Stylist";
-            if(stylerOpt.isPresent()){
-                stylistName = (stylerOpt.get().getFirstname() + " " + stylerOpt.get().getLastname()).trim();
-                if(stylistName.isBlank()) stylistName = stylerOpt.get().getBusinessName();
-            }
-
-            String subject = "RapidStylers — Appointment " + eventLabel;
-            String details = "<p>Service: " + serviceName + "<br>"
-                    + "Date: " + when + "<br>"
-                    + "Service price: $" + (servicePrice.isBlank() ? "—" : servicePrice) + "<br>"
-                    + "Travel fee: $" + travelFee + "<br>"
-                    + "Total: $" + (price.isBlank() ? "—" : price) + "<br>"
-                    + "Appointment ref: " + appointment.getAppointmentId() + "</p>"
-                    + "<p>Thank you,<br>The RapidStylers Team</p>";
-
-            String customerEmail = userOpt.map(UserEntity::getEmailAddress).orElse(null);
-            if(customerEmail != null && !customerEmail.isBlank()){
-                String body = "<p>Dear " + customerName + ",</p><p><strong>" + customerHeadline + "</strong></p>"
-                        + "<p>" + customerDetail + "</p>" + details;
-                emailConfig.sendSimpleMail(customerEmail, subject, body);
-            }
-            String stylerEmail = stylerOpt.map(StylerEntity::getEmailAddress).orElse(null);
-            if(stylerEmail != null && !stylerEmail.isBlank()){
-                String body = "<p>Dear " + stylistName + ",</p><p><strong>" + stylerHeadline + "</strong></p>"
-                        + "<p>" + stylerDetail + "</p>" + details;
-                emailConfig.sendSimpleMail(stylerEmail, subject, body);
-            }
-        }
-        catch (Exception ex){
-            LOG.warning("Appointment notification mail failed: " + ex.getMessage());
-        }
-    }
-
     public void sendPaymentReceipt(BookAppointmentEntity appointment){
         paymentOpsService.sendPaymentReceipt(appointment);
-    }
-
-    @Transactional
-    public BaseResponse createStylerReview(ReviewData reviewData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            //Check if user account exist
-            Optional<UserEntity> isUserExist= userRepo.findByUserId(reviewData.getUserId()) ;
-            if(isUserExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid User Id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            //Check if styler account exist
-            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(reviewData.getStylerId()) ;
-            if(isStylerExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Styler Id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            // Reviews are only valid for a COMPLETED booking with this stylist,
-            // and the booking must belong to the authenticated customer.
-            Optional<BookAppointmentEntity> bookingOpt = bookAppointmentRepo.findByAppointmentId(reviewData.getBookingId());
-            if(bookingOpt.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid booking reference");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            BookAppointmentEntity booking = bookingOpt.get();
-            if(!booking.getUserId().equals(reviewData.getUserId())){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("You can only review your own bookings");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            if(!booking.getStylerId().equals(reviewData.getStylerId())){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("This booking is not with this stylist");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            if(!"0".equals(booking.getStatus())){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("You can only review a completed appointment");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            if(reviewRepo.findByBookingId(reviewData.getBookingId()).isPresent()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("You have already reviewed this booking");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            //Get User data
-            UserEntity userEntity = isUserExist.get();
-            String userName = userEntity.getFirstname() +" " + userEntity.getLastname();
-            ReviewEntity reviewEntity = new ReviewEntity();
-            reviewEntity.setStylerId(reviewData.getStylerId());
-            reviewEntity.setUserId(reviewData.getUserId());
-            reviewEntity.setBookingId(reviewData.getBookingId());
-            reviewEntity.setUserName(userName);
-            int rating = Integer.parseInt(reviewData.getRatingScore());
-            if(rating < 1 || rating > 5){
-                return Responses.errorResponse(response, "Rating Score must be between 1 and 5");
-            }
-            reviewEntity.setMessage(AppUtils.sanitizeText(reviewData.getReviewMessage()));
-            reviewEntity.setModerationStatus("PENDING");
-            reviewEntity.setRatingScore(rating);
-            reviewRepo.save(reviewEntity);
-            auditService.audit("" + reviewData.getUserId(), "CUSTOMER", "CREATE_REVIEW", "REVIEW", reviewData.getBookingId(), "Review submitted");
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Rating Submitted Successful");
-            response.setData(EMPTY_DATA);
-        }
-        catch (DataIntegrityViolationException ex){
-            throw ex;
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse getReviewModerationQueue(){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(reviewRepo.findByModerationStatusOrderByCreatedAtDesc("PENDING"));
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
-    }
-
-    public BaseResponse updateReviewModeration(Long reviewId, String action, String adminId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(reviewId == null){
-                return Responses.errorResponse(response, "Review id is required");
-            }
-            Optional<ReviewEntity> review = reviewRepo.findById(reviewId);
-            String status = action == null ? "" : action.trim().toUpperCase(Locale.ROOT);
-            if(review.isEmpty() || !Arrays.asList("APPROVED", "REJECTED").contains(status)) return Responses.errorResponse(response, "Invalid review or moderation action");
-            review.get().setModerationStatus(status);
-            reviewRepo.save(review.get());
-            evict(ReadCacheService.KEY_STYLER_REVIEWS + review.get().getStylerId(),
-                    ReadCacheService.KEY_STYLER_DTO + review.get().getStylerId());
-            auditService.audit(adminId, "ADMIN", "MODERATE_REVIEW", "REVIEW", String.valueOf(reviewId), status);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Review moderation updated");
-            response.setData(EMPTY_DATA);
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
-    }
-
-    public BaseResponse listStylerReviews(String stylerId){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            //Check if styler account exist
-            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
-            if(isStylerExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Styler Id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(cachedReviews(stylerId));
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /**
-     * The logged-in professional's own reviews. This is deliberately not just
-     * the public list: an approved review is what clients see, and a count of
-     * what is still in moderation stops a review the stylist was told about
-     * from looking lost. The average covers approved rows only, so it matches
-     * the number the public profile shows.
-     */
-    public BaseResponse getOwnStylerReviews(String stylerId){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            if(stylerRepo.findByStylerId(stylerId).isEmpty()){
-                return Responses.errorResponse(response, "Invalid Styler Id");
-            }
-            List<Object> approved = cachedReviews(stylerId);
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("reviews", approved);
-            data.put("reviewCount", approved.size());
-            data.put("averageRating", averageReviewRating(approved));
-            data.put("pendingCount", pendingReviewCount(stylerId));
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(data);
-        }
-        catch (Exception ex){
-            LOG.warning("Own reviews failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not load reviews");
-        }
-        return response;
-    }
-
-    /**
-     * Rounded to one decimal, matching how the public profile reports a rating
-     * (see DTOService), so the stylist and their clients read the same number.
-     */
-    static Double averageReviewRating(List<Object> reviews){
-        double total = 0;
-        int scored = 0;
-        for(Object row : reviews){
-            if(!(row instanceof StylerReviewDTO dto) || dto.getRatingScore() == null) continue;
-            try{
-                total += Double.parseDouble(dto.getRatingScore().trim());
-                scored++;
-            }
-            catch (NumberFormatException ignored){
-                // A malformed score is left out rather than dragging the average down.
-            }
-        }
-        if(scored == 0) return null;
-        return Math.round((total / scored) * 10.0) / 10.0;
-    }
-
-    /** How many of this stylist's reviews are waiting on moderation. */
-    private int pendingReviewCount(String stylerId){
-        List<ReviewEntity> rows = reviewRepo.findByStylerId(stylerId);
-        if(rows == null) return 0;
-        int pending = 0;
-        for(ReviewEntity row : rows){
-            if("PENDING".equalsIgnoreCase(row.getModerationStatus())) pending++;
-        }
-        return pending;
     }
 
     /** True when no active booking overlaps the requested service duration. */
@@ -1440,7 +1165,7 @@ public class AppService {
             if(slots == null || slots.isEmpty()){
                 availabilityRepo.deleteByStylerId(stylerId);
                 evictAvailabilityCache(stylerId);
-                notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+                notificationService.notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                         "The working hours for your saved professional have been cleared. Open their profile to view the latest schedule.");
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Availability cleared — no working hours set");
@@ -1482,7 +1207,7 @@ public class AppService {
             }
             availabilityRepo.saveAll(toSave);
             evictAvailabilityCache(stylerId);
-            notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+            notificationService.notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                     "The working hours for your saved professional have been updated. Open their profile to view the latest schedule.");
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Availability updated successfully");
@@ -1536,7 +1261,7 @@ public class AppService {
             AvailabilityExceptionEntity entity = new AvailabilityExceptionEntity(stylerId, exceptionData);
             availabilityExceptionRepo.save(entity);
             evictAvailabilityCache(stylerId);
-            notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+            notificationService.notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                     "Your saved professional marked " + exceptionData.getBlockedDate() + " as unavailable.");
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Date marked as unavailable");
@@ -1561,7 +1286,7 @@ public class AppService {
             }
             availabilityExceptionRepo.deleteByStylerIdAndId(stylerId, exceptionId);
             evictAvailabilityCache(stylerId);
-            notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
+            notificationService.notifySavedCustomers(stylerId, "AVAILABILITY", "Saved professional availability changed",
                     "A previously unavailable date was restored for your saved professional.");
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Date restored to available");
@@ -1666,7 +1391,7 @@ public class AppService {
             stylerRepo.save(styler);
             evict(ReadCacheService.KEY_STYLER_DTO + stylerId);
             if(!Objects.equals(previousFee, fee)){
-                notifySavedCustomers(stylerId, "TRAVEL_FEE", "Saved professional updated their home-visit fee",
+                notificationService.notifySavedCustomers(stylerId, "TRAVEL_FEE", "Saved professional updated their home-visit fee",
                         "Your saved professional's home-visit fee is now $" + fee
                                 + ". Check their profile for the latest details.");
             }
@@ -1784,22 +1509,6 @@ public class AppService {
                     List<Object> built = new ArrayList<>();
                     for(StylerPortfolioEntity entity : rows){
                         built.add(dtoService.stylerPortfolioDTO(entity));
-                    }
-                    Collections.reverse(built);
-                    return built;
-                });
-    }
-
-    /** Approved reviews through the read cache; evicted on review moderation writes. */
-    private List<Object> cachedReviews(String stylerId){
-        return readCacheService.getOrLoad(
-                ReadCacheService.KEY_STYLER_REVIEWS + stylerId,
-                ReadCacheService.STYLER_PART_TTL, ReadCacheService.STYLER_PART_JITTER,
-                () -> {
-                    List<ReviewEntity> rows = reviewRepo.findByStylerIdAndModerationStatus(stylerId, "APPROVED");
-                    List<Object> built = new ArrayList<>();
-                    for(ReviewEntity entity : rows){
-                        built.add(dtoService.stylerReviewDTO(entity));
                     }
                     Collections.reverse(built);
                     return built;
@@ -1924,7 +1633,7 @@ public class AppService {
             cachedStylerAccountDTO(styler);
             cachedSubServices(styler.getStylerId());
             cachedPortfolio(styler.getStylerId());
-            cachedReviews(styler.getStylerId());
+            reviewService.cachedReviews(styler.getStylerId());
             cachedAvailabilitySlots(styler.getStylerId());
             cachedExceptionSlots(styler.getStylerId());
         } catch(Exception ignored){
@@ -1970,7 +1679,7 @@ public class AppService {
             StylerEntity stylerEntity = isStylerExist.get();
             List<Object> subServiceResult = cachedSubServices(stylerId);
             List<Object> stylerPortfolioResult = cachedPortfolio(stylerId);
-            List<Object> stylerReviewResult = cachedReviews(stylerId);
+            List<Object> stylerReviewResult = reviewService.cachedReviews(stylerId);
             int totalRating = 0;
             double ratingCount = 0;
             for(Object reviewObj : stylerReviewResult){
@@ -2092,169 +1801,6 @@ public class AppService {
         return response;
     }
 
-    /** Returns customer notifications and the unread count for the authenticated account. */
-    public BaseResponse listNotifications(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(userRepo.findByUserId(userId).isEmpty()){
-                return Responses.errorResponse(response, "Invalid User Id");
-            }
-            List<Map<String, Object>> result = new ArrayList<>();
-            for(NotificationEntity notification : notificationRepo.findByUserIdOrderByCreatedAtDesc(userId)){
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("id", notification.getId());
-                item.put("stylerId", notification.getStylerId());
-                item.put("type", notification.getType());
-                item.put("title", notification.getTitle());
-                item.put("message", notification.getMessage());
-                item.put("read", notification.isRead());
-                item.put("createdAt", notification.getCreatedAt());
-                result.add(item);
-            }
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("items", result);
-            data.put("unreadCount", notificationRepo.countByUserIdAndReadFalse(userId));
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(data);
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Marks one notification as read, scoped to the authenticated customer. */
-    public BaseResponse markNotificationRead(String userId, Long notificationId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            Optional<NotificationEntity> notification = notificationRepo.findByIdAndUserId(notificationId, userId);
-            if(notification.isEmpty()) return Responses.errorResponse(response, "Notification not found");
-            notification.get().setRead(true);
-            notificationRepo.save(notification.get());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Notification marked as read");
-            response.setData(Collections.emptyMap());
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Marks all notifications read for the authenticated customer. */
-    public BaseResponse markAllNotificationsRead(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            List<NotificationEntity> notifications = notificationRepo.findByUserIdOrderByCreatedAtDesc(userId);
-            notifications.forEach(notification -> notification.setRead(true));
-            notificationRepo.saveAll(notifications);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Notifications marked as read");
-            response.setData(Collections.emptyMap());
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Reads and updates saved-stylist notification preferences for one customer. */
-    public BaseResponse getNotificationPreferences(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            Optional<UserEntity> user = userRepo.findByUserId(userId);
-            if(user.isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
-            Map<String, Boolean> data = new LinkedHashMap<>();
-            data.put("availability", !Boolean.FALSE.equals(user.get().getNotifySavedAvailability()));
-            data.put("price", !Boolean.FALSE.equals(user.get().getNotifySavedPrice()));
-            data.put("verification", !Boolean.FALSE.equals(user.get().getNotifySavedVerification()));
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(data);
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse updateNotificationPreferences(String userId, NotificationPreferencesData data){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            Optional<UserEntity> user = userRepo.findByUserId(userId);
-            if(user.isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
-            UserEntity entity = user.get();
-            if(data.getAvailability() != null) entity.setNotifySavedAvailability(data.getAvailability());
-            if(data.getPrice() != null) entity.setNotifySavedPrice(data.getPrice());
-            if(data.getVerification() != null) entity.setNotifySavedVerification(data.getVerification());
-            userRepo.save(entity);
-            return getNotificationPreferences(userId);
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Creates an in-app event and sends optional email for every saved customer. */
-    private void notifySavedCustomers(String stylerId, String type, String title, String message){
-        if(notificationRepo == null || savedStylistRepo == null) return;
-        try {
-            List<SavedStylistEntity> allSaved = savedStylistRepo.findAll();
-            for(SavedStylistEntity saved : allSaved){
-                if(!stylerId.equals(saved.getStylerId())) continue;
-                Optional<UserEntity> user = userRepo.findByUserId(saved.getUserId());
-                if(user.isEmpty()) continue;
-                notificationRepo.save(new NotificationEntity(saved.getUserId(), stylerId, type, title, message));
-                boolean emailEnabled = ("AVAILABILITY".equals(type) && !Boolean.FALSE.equals(user.get().getNotifySavedAvailability()))
-                        || ("PRICE".equals(type) && !Boolean.FALSE.equals(user.get().getNotifySavedPrice()))
-                        || ("VERIFICATION".equals(type) && !Boolean.FALSE.equals(user.get().getNotifySavedVerification()));
-                if(emailEnabled && user.get().getEmailAddress() != null && !user.get().getEmailAddress().isBlank()){
-                    try {
-                        emailConfig.sendSimpleMail(user.get().getEmailAddress(), title, "Dear "
-                                + user.get().getFirstname() + ",<br><br>" + message
-                                + "<br><br>The RapidStylers Team");
-                    } catch (Exception mailEx) {
-                        LOG.warning("Saved stylist notification email failed: " + mailEx.getMessage());
-                    }
-                }
-            }
-        } catch (Exception ex) {
-            LOG.warning("Saved stylist notification failed: " + ex.getMessage());
-        }
-    }
-
-    public BaseResponse createSupportTicket(String userId, SupportTicketData data){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
-            SupportTicketEntity ticket = supportTicketRepo.save(new SupportTicketEntity(userId,
-                    AppUtils.sanitizeText(data.getSubject().trim()), AppUtils.sanitizeText(data.getMessage().trim())));
-            auditService.audit(userId, "CUSTOMER", "CREATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), ticket.getSubject());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Support ticket created");
-            response.setData(ticket.getId());
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
-    }
-
-    public BaseResponse listSupportTickets(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(supportTicketRepo.findByUserIdOrderByUpdatedAtDesc(userId));
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
-    }
-
-    public BaseResponse listAllSupportTickets(){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(supportTicketRepo.findAll());
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
-    }
-
     /**
      * Admin recovery-campaign funnel: every email that started a sign-up, with
      * the recovery stage it reached, when the last stage email was sent, and
@@ -2294,25 +1840,6 @@ public class AppService {
             case 4 -> "1-month final";
             default -> "None";
         };
-    }
-
-    public BaseResponse updateSupportTicket(SupportTicketActionData data, String adminId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            Optional<SupportTicketEntity> ticketOpt = supportTicketRepo.findById(data.getTicketId());
-            String status = data.getStatus().trim().toUpperCase(Locale.ROOT);
-            if(ticketOpt.isEmpty() || !Arrays.asList("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED").contains(status)) return Responses.errorResponse(response, "Invalid support ticket or status");
-            SupportTicketEntity ticket = ticketOpt.get();
-            ticket.setStatus(status);
-            ticket.setAdminResponse(AppUtils.sanitizeText(data.getAdminResponse()));
-            ticket.setUpdatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-            supportTicketRepo.save(ticket);
-            auditService.audit(adminId, "ADMIN", "UPDATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), status);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Support ticket updated");
-            response.setData(ticket);
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
     }
 
     public BaseResponse getCommissionSetting(String adminId){
@@ -2384,36 +1911,6 @@ public class AppService {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(auditLogRepo.findTop100ByOrderByCreatedAtDesc());
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
-    }
-
-    public BaseResponse getLoyaltyAccount(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
-            LoyaltyAccountEntity account = loyaltyAccountRepo.findByUserId(userId).orElseGet(() -> new LoyaltyAccountEntity(userId, "RS-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT)));
-            if(account.getId() == null) loyaltyAccountRepo.save(account);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(account);
-        } catch(Exception ex){ LOG.warning(ex.getMessage()); }
-        return response;
-    }
-
-    public BaseResponse createReferral(String userId, String referralCode){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(referralCode == null || referralCode.trim().isEmpty()){
-                return Responses.errorResponse(response, "Referral code cannot be empty");
-            }
-            Optional<LoyaltyAccountEntity> referrer = loyaltyAccountRepo.findByReferralCode(referralCode.trim().toUpperCase(Locale.ROOT));
-            if(referrer.isEmpty() || referrer.get().getUserId().equals(userId)) return Responses.errorResponse(response, "Invalid referral code");
-            if(referralRepo.findByReferredUserId(userId).isPresent()) return Responses.errorResponse(response, "Referral already applied");
-            ReferralEntity referral = referralRepo.save(new ReferralEntity(referrer.get().getUserId(), userId, referralCode.trim().toUpperCase(Locale.ROOT)));
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Referral applied");
-            response.setData(referral);
         } catch(Exception ex){ LOG.warning(ex.getMessage()); }
         return response;
     }
@@ -2682,7 +2179,7 @@ public class AppService {
             auditService.audit(bookAppointmentData.getUserId(), "CUSTOMER", "CREATE_BOOKING", "APPOINTMENT",
                     appointment.getAppointmentId(), "Booking request created");
 
-            sendAppointmentNotification(appointment, "Request",
+            notificationService.sendAppointmentNotification(appointment, "Request",
                     "Booking request received",
                     "Your booking request has been received and is awaiting the professional's confirmation.",
                     "New booking request",
@@ -3003,28 +2500,6 @@ public class AppService {
 
     private void autoRefundCapturedPayment(BookAppointmentEntity appointment, String reason, String actorId){
         paymentOpsService.autoRefundCapturedPayment(appointment, reason, actorId);
-    }
-
-    private void awardCompletionPoints(String userId, String appointmentId){
-        try {
-            LoyaltyAccountEntity account = loyaltyAccountRepo.findByUserId(userId)
-                    .orElseGet(() -> new LoyaltyAccountEntity(userId, "RS-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT)));
-            account.addPoints(10);
-            loyaltyAccountRepo.save(account);
-            referralRepo.findByReferredUserId(userId).ifPresent(referral -> {
-                if("PENDING".equals(referral.getStatus())){
-                    referral.setStatus("COMPLETED");
-                    referralRepo.save(referral);
-                    loyaltyAccountRepo.findByUserId(referral.getReferrerUserId()).ifPresent(referrer -> {
-                        referrer.addPoints(25);
-                        loyaltyAccountRepo.save(referrer);
-                    });
-                }
-            });
-            auditService.audit("system", "SYSTEM", "AWARD_LOYALTY", "APPOINTMENT", appointmentId, "Completion points awarded");
-        } catch(Exception ex){
-            LOG.warning("Loyalty award failed: " + ex.getMessage());
-        }
     }
 
     private ZoneId applicationZone(){
@@ -3359,32 +2834,32 @@ public class AppService {
                         return response;
                     }
                 }
-                awardCompletionPoints(appointment.getUserId(), appointment.getAppointmentId());
+                loyaltyService.awardCompletionPoints(appointment.getUserId(), appointment.getAppointmentId());
             }
             auditService.audit(ownerId, actorRole == ActorRole.STYLER ? "STYLER" : "CUSTOMER", "APPOINTMENT_" + newStatus,
                     "APPOINTMENT", appointmentId, successMessage);
 
             // Notify both parties about the outcome.
             if("3".equals(newStatus)){
-                sendAppointmentNotification(appointment, "Confirmed",
+                notificationService.sendAppointmentNotification(appointment, "Confirmed",
                         "Your appointment has been confirmed",
                         "The professional has accepted your booking request. See you at your appointment!",
                         "Appointment confirmed",
                         "You have confirmed this client's booking request.");
             } else if("2".equals(newStatus)){
-                sendAppointmentNotification(appointment, "Declined",
+                notificationService.sendAppointmentNotification(appointment, "Declined",
                         "Your appointment request was declined",
                         "The professional could not take this booking. Please book another slot.",
                         "Appointment declined",
                         "You have declined this client's booking request.");
             } else if("0".equals(newStatus)){
-                sendAppointmentNotification(appointment, "Completed",
+                notificationService.sendAppointmentNotification(appointment, "Completed",
                         "Your appointment has been completed",
                         "Thanks for using RapidStylers. We hope you enjoyed your session — a review is welcome.",
                         "Appointment completed",
                         "You have marked this appointment as completed.");
             } else if("4".equals(newStatus)){
-                sendAppointmentNotification(appointment, "Cancelled",
+                notificationService.sendAppointmentNotification(appointment, "Cancelled",
                         "Your appointment was cancelled",
                         "Your appointment has been cancelled. Check your dashboard for updates.",
                         "Appointment cancelled",
@@ -3456,55 +2931,6 @@ public class AppService {
             response.setData(result);
         }
         catch(Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse addUserFeedBack (UserFeedbackData userFeedbackData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            //Check if userId exist
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(userFeedbackData.getUserId());
-            if(isUserExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid User Id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            FeedbackEntity feedbackEntity = new FeedbackEntity();
-            feedbackEntity.setUserId(userFeedbackData.getUserId());
-            feedbackEntity.setFeedBackType(userFeedbackData.getFeedbackType());
-            feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
-            feedbackEntity.setUserId(userFeedbackData.getUserId());
-            feedbackEntity.setMessage(AppUtils.sanitizeText(userFeedbackData.getMessage()));
-            feedbackEntity.setEmailAddress(userFeedbackData.getEmailAddress());
-            feedBackRepo.save(feedbackEntity);
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Your feedback has been submitted successful, Admin will take care of it.");
-            response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse listUserFeedBack(){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            List<FeedbackEntity> getAllFeedBack = feedBackRepo.findAll();
-            List<Object> result = new ArrayList<>();
-            for(FeedbackEntity feedbackEntity : getAllFeedBack){
-                result.add(dtoService.feedBackDTO(feedbackEntity));
-            }
-            Collections.reverse(result);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
-        }
-        catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;

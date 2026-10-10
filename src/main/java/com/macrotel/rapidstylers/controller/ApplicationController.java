@@ -1,5 +1,10 @@
 package com.macrotel.rapidstylers.controller;
 
+import com.macrotel.rapidstylers.engagement.service.FeedbackService;
+import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
+import com.macrotel.rapidstylers.engagement.service.NotificationService;
+import com.macrotel.rapidstylers.engagement.service.ReviewService;
+import com.macrotel.rapidstylers.engagement.service.SupportService;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.service.AppService;
@@ -249,41 +254,6 @@ public class ApplicationController {
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
-    @GetMapping("/admin/review_moderation_queue")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> reviewModerationQueue(HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        if(adminId == null) return unauthorized();
-        return ApiResponses.respond(appService.getReviewModerationQueue());
-    }
-
-    @PostMapping("/admin/update_review_moderation")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> updateReviewModeration(@RequestBody Map<String, Object> body, HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        if(adminId == null) return unauthorized();
-        Long reviewId = body.get("reviewId") == null ? null : Long.valueOf(String.valueOf(body.get("reviewId")));
-        return ApiResponses.respond(appService.updateReviewModeration(reviewId, String.valueOf(body.get("action")), adminId));
-    }
-
-    @PostMapping("/create_review")
-    public ResponseEntity <BaseResponse> createReview(@Valid @RequestBody ReviewData reviewData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        // The reviewer is the authenticated account — never trust the body's userId.
-        reviewData.setUserId(accountId);
-        BaseResponse baseResponse = appService.createStylerReview(reviewData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/list_review")
-    public ResponseEntity<BaseResponse> listReview(@RequestParam("stylerId") String stylerId){
-        BaseResponse baseResponse = appService.listStylerReviews(stylerId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
     @GetMapping("/single_styler")
     public ResponseEntity<BaseResponse> singleStyler(@RequestParam("stylerId") String stylerId){
         BaseResponse baseResponse = appService.getStylerDetails(stylerId);
@@ -472,44 +442,6 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @GetMapping("/notifications")
-    public ResponseEntity<BaseResponse> notifications(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        BaseResponse baseResponse = appService.listNotifications(accountId);
-        return ApiResponses.respond(baseResponse);
-    }
-
-    @PostMapping("/notifications/read")
-    public ResponseEntity<BaseResponse> markNotificationRead(@RequestBody Map<String, Long> body, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        BaseResponse baseResponse = appService.markNotificationRead(accountId, body.get("notificationId"));
-        return ApiResponses.respond(baseResponse);
-    }
-
-    @PostMapping("/notifications/read_all")
-    public ResponseEntity<BaseResponse> markAllNotificationsRead(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        BaseResponse baseResponse = appService.markAllNotificationsRead(accountId);
-        return ApiResponses.respond(baseResponse);
-    }
-
-    @GetMapping("/notification_preferences")
-    public ResponseEntity<BaseResponse> notificationPreferences(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.getNotificationPreferences(accountId));
-    }
-
-    @PostMapping("/notification_preferences")
-    public ResponseEntity<BaseResponse> updateNotificationPreferences(@RequestBody NotificationPreferencesData data, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.updateNotificationPreferences(accountId, data));
-    }
-
     @GetMapping("/user_appointments")
     public ResponseEntity<BaseResponse> userAppointments(HttpServletRequest request){
         String accountId = currentAccountId(request);
@@ -556,35 +488,6 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse, status);
     }
 
-    @PostMapping("/support_tickets")
-    public ResponseEntity<BaseResponse> createSupportTicket(@Valid @RequestBody SupportTicketData data, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.createSupportTicket(accountId, data));
-    }
-
-    @GetMapping("/support_tickets")
-    public ResponseEntity<BaseResponse> supportTickets(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.listSupportTickets(accountId));
-    }
-
-    @GetMapping("/loyalty_account")
-    public ResponseEntity<BaseResponse> loyaltyAccount(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.getLoyaltyAccount(accountId));
-    }
-
-    @PostMapping("/apply_referral")
-    public ResponseEntity<BaseResponse> applyReferral(@RequestBody Map<String, String> body, HttpServletRequest request){
-        String referralCode = body.getOrDefault("referralCode", "");
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.createReferral(accountId, referralCode));
-    }
-
     @GetMapping("/user_pending_appointments")
     public ResponseEntity<BaseResponse> userPendingAppointments(HttpServletRequest request){
         String accountId = currentAccountId(request);
@@ -606,27 +509,6 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @PostMapping("/add_feedback")
-    public ResponseEntity<BaseResponse> addFeedBack(@Valid @RequestBody UserFeedbackData userFeedbackData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        // Feedback is attributed to the authenticated account.
-        userFeedbackData.setUserId(accountId);
-        BaseResponse baseResponse = appService.addUserFeedBack(userFeedbackData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/list_feedback")
-    public ResponseEntity<BaseResponse> listFeedback(HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        if(adminId == null) return unauthorized();
-        BaseResponse baseResponse = appService.listUserFeedBack();
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
     @PostMapping("/update_card_details")
     public ResponseEntity<BaseResponse> updateCardDetails(@Valid @RequestBody CardDetailsData cardDetailsData, HttpServletRequest request){
         String accountId = currentAccountId(request);
@@ -691,14 +573,6 @@ public class ApplicationController {
         return ApiResponses.respond(appService.getStylerConnectStatus(stylerId));
     }
 
-    /** The logged-in stylist's own reviews (approved list plus a moderation count). */
-    @GetMapping("/styler/reviews")
-    public ResponseEntity<BaseResponse> stylerOwnReviews(HttpServletRequest request){
-        String stylerId = currentAccountId(request);
-        if(stylerId == null) return unauthorized();
-        return ApiResponses.respond(appService.getOwnStylerReviews(stylerId));
-    }
-
     /** Returns a Stripe SetupIntent clientSecret so the frontend can collect a card inside Elements. */
     @GetMapping("/card_setup_intent")
     public ResponseEntity<BaseResponse> cardSetupIntent(HttpServletRequest request){
@@ -728,21 +602,6 @@ public class ApplicationController {
         } catch(Exception ex){
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Webhook handling failed");
         }
-    }
-
-    @GetMapping("/admin/support_tickets")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminSupportTickets(HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        if(adminId == null) return unauthorized();
-        return ApiResponses.respond(appService.listAllSupportTickets());
-    }
-
-    @PostMapping("/admin/update_support_ticket")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminUpdateSupportTicket(@Valid @RequestBody SupportTicketActionData data, HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        return ApiResponses.respond(appService.updateSupportTicket(data, adminId));
     }
 
     @GetMapping("/admin/settings/commission")

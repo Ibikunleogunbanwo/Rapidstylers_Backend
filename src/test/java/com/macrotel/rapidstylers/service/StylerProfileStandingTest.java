@@ -1,9 +1,9 @@
 package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.entity.ReviewEntity;
+import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.repo.ReviewRepo;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

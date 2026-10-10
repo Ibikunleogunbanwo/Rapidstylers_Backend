@@ -13,7 +13,7 @@ import com.macrotel.rapidstylers.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
-import com.macrotel.rapidstylers.repo.NotificationRepo;
+import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.repo.SubServiceRepo;
