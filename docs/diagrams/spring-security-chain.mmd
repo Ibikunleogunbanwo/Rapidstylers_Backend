@@ -1,0 +1,18 @@
+flowchart TB
+    nginx["From Nginx<br/>a request for /rapid_stylers/..."]
+    subgraph chain["Spring Security chain: security/config/SecurityConfig"]
+        cors["1 · CORS: the doorman<br/>is this website allowed to send visitors?<br/>security/config/CorsConfig"]
+        jwt["2 · JwtAuthFilter: reads the ID card<br/>valid Bearer token? then sign the request in<br/>sets accountId and role · security/filter"]
+        rules["3 · Guest list check<br/>public? role matches? signed in at all?<br/>security/access/Routes"]
+    end
+    deny["JsonAuthErrorHandler<br/>401 {status: false, error: ...}<br/>security/handler"]:::danger
+    key["4 · ApiKeyFilter: the company pass<br/>x-api-key must match<br/>security/filter"]
+    ctrl["5 · Controller<br/>reads accountId from the request"]
+    nginx --> cors --> jwt --> rules
+    rules -->|"allowed"| key
+    rules -->|"no token, or wrong role"| deny
+    key -->|"key ok"| ctrl
+    key -->|"bad key: 401"| deny
+    jwtlib["security/jwt/JwtUtil<br/>makes and checks tokens"] -.-> jwt
+    verifiers["security/verifier<br/>Google sign-in · Turnstile bot check<br/>used by the sign-in controllers"] -.-> ctrl
+    classDef danger fill:#fde2e1,stroke:#c0392b,color:#7b1d14

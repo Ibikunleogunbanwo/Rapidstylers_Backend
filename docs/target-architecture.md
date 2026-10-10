@@ -78,7 +78,7 @@ Plain-text version:
 | Area | Today | Target |
 |---|---|---|
 | Edge | Cloudflare → Nginx → app; location from ip-api.com; Cloudflare IPs kept in two lists | Same hops. Location from Cloudflare's visitor-location headers. App trusts only Nginx; origin accepts only Cloudflare |
-| Security | `anyRequest().permitAll()` + hand-kept `ROLE_PATHS` map + `accountId` request attribute | Standard Spring Security: `anyRequest().authenticated()` with a short `permitAll()` list, so a forgotten path fails closed. Controllers read the principal. `x-api-key` stays for now |
+| Security | Done October 10: closed by default, rules in `security/access/Routes`, see [`spring-security.md`](./spring-security.md). Controllers still read the `accountId` request attribute | Standard Spring Security: `anyRequest().authenticated()` with a short `permitAll()` list, so a forgotten path fails closed. Controllers read the principal. `x-api-key` stays for now |
 | Controllers | `ApplicationController`, 1,288 lines, 117 routes | One controller per domain, same paths and `BaseResponse` shape |
 | Services | `AppService`, 5,534 lines, 46 dependencies | Seven domain services (below); no class over 800 lines |
 | Events | Outbox → Kafka (3 topics) → `NotificationEventConsumer` | Outbox → `OutboxPublisherJob` calls the notification handler in-process; `attempts`, `next_attempt_at` and `status=FAILED` replace the retry and DLQ topics |
@@ -112,3 +112,4 @@ Plain-text version:
 3. Services: security, auth, payments, booking, catalog, stylists and admin, engagement, controllers, then the Spring Boot 3 upgrade.
 
 How the edge works (Cloudflare, Nginx, client IPs): [`cloudflare.md`](./cloudflare.md).
+How the app decides who may do what (Spring Security): [`spring-security.md`](./spring-security.md).

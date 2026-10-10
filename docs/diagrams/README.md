@@ -8,6 +8,7 @@ in a mermaid block, which GitHub and most Markdown previews render. Render an
 |---|---|
 | `target-architecture.mmd` | `docs/target-architecture.md` — the target design (rendered inline by GitHub) |
 | `cloudflare-request-path.mmd` | `docs/cloudflare.md` — how a request reaches the app (rendered inline by GitHub) |
+| `spring-security-chain.mmd` | `docs/spring-security.md` — how the app decides who may do what (rendered inline by GitHub) |
 
 ## Workflow
 
