@@ -45,6 +45,9 @@ public class StylerEntity implements Serializable {
     private Double longitude;
     private String profileImageUrl;
     private String identificationImageUrl;
+    /** Wide banner on the public profile; separate from the profile photo. */
+    @Column(name = "cover_image_url", length = 500)
+    private String coverImageUrl;
     private String isOnline;
     private String insertedDt;
     private String status;

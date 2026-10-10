@@ -4,9 +4,13 @@ import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
 import com.macrotel.rapidstylers.styler.pojo.ServiceUpdateData;
+import com.macrotel.rapidstylers.styler.pojo.StylerBusinessInfoData;
 import com.macrotel.rapidstylers.styler.pojo.StylerData;
+import com.macrotel.rapidstylers.styler.pojo.StylerPersonalInfoData;
+import com.macrotel.rapidstylers.styler.pojo.StylerPhotosData;
 import com.macrotel.rapidstylers.styler.pojo.SubServiceData;
 import com.macrotel.rapidstylers.styler.pojo.VerificationActionData;
+import com.macrotel.rapidstylers.styler.service.StylerProfileService;
 import com.macrotel.rapidstylers.styler.service.StylerService;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
@@ -26,6 +30,37 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class StylerController {
     @Autowired
     StylerService stylerService;
+    @Autowired
+    StylerProfileService stylerProfileService;
+
+    /** The signed-in stylist's own editable profile. */
+    @GetMapping("/styler/profile")
+    public ResponseEntity<BaseResponse> ownProfile(HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(stylerProfileService.profile(accountId));
+    }
+
+    @PostMapping("/styler/update_personal_info")
+    public ResponseEntity<BaseResponse> updatePersonalInfo(@Valid @RequestBody StylerPersonalInfoData data, HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(stylerProfileService.updatePersonalInfo(accountId, data));
+    }
+
+    @PostMapping("/styler/update_business_info")
+    public ResponseEntity<BaseResponse> updateBusinessInfo(@Valid @RequestBody StylerBusinessInfoData data, HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(stylerProfileService.updateBusinessInfo(accountId, data));
+    }
+
+    @PostMapping("/styler/update_photos")
+    public ResponseEntity<BaseResponse> updatePhotos(@Valid @RequestBody StylerPhotosData data, HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(stylerProfileService.updatePhotos(accountId, data));
+    }
 
     @PostMapping("/create_styler")
     public ResponseEntity <BaseResponse> createStyler(@Valid @RequestBody StylerData stylerData){

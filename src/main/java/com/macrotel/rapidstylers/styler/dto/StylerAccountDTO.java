@@ -14,6 +14,7 @@ public class StylerAccountDTO {
     private String visibilityStatus;
     private String accountStatus;
     private String profileImageUrl;
+    private String coverImageUrl;
     private String businessName;
     private String businessAddress;
     private String province;

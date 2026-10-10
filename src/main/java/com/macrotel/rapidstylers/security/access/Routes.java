@@ -141,6 +141,10 @@ public final class Routes {
             "/rapid_stylers/add_availability_exception",
             "/rapid_stylers/delete_availability_exception",
             "/rapid_stylers/styler/travel_settings",
+            "/rapid_stylers/styler/profile",
+            "/rapid_stylers/styler/update_personal_info",
+            "/rapid_stylers/styler/update_business_info",
+            "/rapid_stylers/styler/update_photos",
             "/rapid_stylers/update_styler_travel_settings",
 
             // Appointments

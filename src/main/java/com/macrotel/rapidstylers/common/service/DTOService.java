@@ -87,6 +87,7 @@ public class DTOService {
         stylerAccountDTO.setAccountStatus(Objects.equals(stylerEntity.getStatus(),"0") ?"Active": "Inactive");
         stylerAccountDTO.setVisibilityStatus(Objects.equals(stylerEntity.getIsOnline(),"0")?"Online": "Offline");
         stylerAccountDTO.setProfileImageUrl(stylerEntity.getProfileImageUrl());
+        stylerAccountDTO.setCoverImageUrl(stylerEntity.getCoverImageUrl());
         stylerAccountDTO.setBusinessName(stylerEntity.getBusinessName());
         stylerAccountDTO.setBusinessAddress(stylerEntity.getBusinessAddress());
         stylerAccountDTO.setProvince(stylerEntity.getProvince());

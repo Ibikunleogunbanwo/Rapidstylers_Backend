@@ -68,6 +68,9 @@ public class VendorZoneBackfill implements CommandLineRunner {
                 if (styler.getLatitude() == null || styler.getLongitude() == null) {
                     continue; // nothing to resolve against
                 }
+                if (VendorZoneResolver.SOURCE_STYLIST.equals(styler.getTimeZoneSource())) {
+                    continue; // the stylist chose this zone themselves
+                }
                 if (VendorZoneResolver.isGoogleDerived(styler.getTimeZoneSource())) {
                     alreadyExact++;
                     continue; // already resolved from this address — never re-query

@@ -37,6 +37,7 @@ import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.engagement.service.ReviewService;
 import com.macrotel.rapidstylers.engagement.service.SupportService;
+import com.macrotel.rapidstylers.media.service.CloudinaryService;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.media.service.UploadOwnership;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
@@ -61,6 +62,7 @@ import com.macrotel.rapidstylers.styler.service.LocationService;
 import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
+import com.macrotel.rapidstylers.styler.service.StylerProfileService;
 import com.macrotel.rapidstylers.styler.service.StylerService;
 import com.macrotel.rapidstylers.styler.service.StylerSignupRetries;
 
@@ -96,6 +98,7 @@ public class TestServices {
     public BookAppointmentRepo bookAppointmentRepo;
     public BookingSlotLockRepo bookingSlotLockRepo;
     public CardDetailsRepo cardDetailsRepo;
+    public CloudinaryService cloudinaryService;
     public Long completionGraceMinutes;
     public DTOService dtoService;
     public EmailConfig emailConfig;
@@ -158,7 +161,8 @@ public class TestServices {
             BookingRetries.class,
             PayoutReleaseService.class,
             StylerSignupRetries.class,
-            UploadOwnership.class);
+            UploadOwnership.class,
+            StylerProfileService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 
@@ -252,6 +256,10 @@ public class TestServices {
 
     public UploadOwnership uploadOwnership() {
         return get(UploadOwnership.class);
+    }
+
+    public StylerProfileService stylerProfileService() {
+        return get(StylerProfileService.class);
     }
 
     private synchronized <T> T get(Class<T> type) {

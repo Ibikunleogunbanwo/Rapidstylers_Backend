@@ -34,6 +34,8 @@ public final class VendorZoneResolver {
      */
     public static final String SOURCE_GOOGLE = "google";
     public static final String SOURCE_PROVINCE = "province";
+    /** Picked by the stylist on their profile; never replaced by a lookup. */
+    public static final String SOURCE_STYLIST = "stylist";
 
     private static final Map<String, ZoneId> BY_PROVINCE = Map.ofEntries(
             // Province names exactly as the signup flow and address autocomplete write them.
