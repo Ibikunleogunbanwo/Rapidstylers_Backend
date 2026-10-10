@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.service;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
+import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.GoogleTokenVerifier;
 import com.macrotel.rapidstylers.entity.*;
@@ -160,6 +161,8 @@ public class AppService {
     // Global rate-limit budgets (shared across OTP generation, OTP verification
     // and login so failures on one surface lock out the others).
     private static final int AUTH_WINDOW_SECONDS = 900;   // 15 min
+    // Long enough to fill in the rest of the stylist sign-up after the email code.
+    private static final Duration SIGNUP_UPLOAD_TTL = Duration.ofHours(2);
     private static final int AUTH_MAX_FAILURES = 5;       // per email
     private static final int AUTH_IP_MAX_FAILURES = 20;   // per IP
     private static final int OTP_GEN_WINDOW_SECONDS = 900;
@@ -425,7 +428,15 @@ public class AppService {
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Account created successful");
-            response.setData(EMPTY_DATA);
+            // Signed in straight away, in the same shape /sign_in answers with, so the
+            // site needs no second sign-in call (which would need its own bot check).
+            Map<String, Object> session = new LinkedHashMap<>();
+            session.put("role", Roles.CUSTOMER);
+            session.put("account", dtoService.userAccountDTO(userEntity));
+            response.setToken(jwtUtil.generateToken(userId, Roles.CUSTOMER));
+            response.setRefreshToken(refreshTokenService.issue(userId, Roles.CUSTOMER));
+            response.setData(session);
+            recordLoginSuccess(Roles.CUSTOMER, userId, userData.getEmailAddress(), rateLimiterService.clientIp());
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -1440,6 +1451,9 @@ public class AppService {
             } else {
                 HashMap<String, String> otpValue = new HashMap<>();
                 otpValue.put("emailAddress", emailAddress);
+                // The stylist uploads their photos before the account exists; this
+                // pass is what lets them ask for an upload signature.
+                otpValue.put("uploadToken", jwtUtil.generateToken(emailAddress, Roles.SIGNUP_UPLOAD, SIGNUP_UPLOAD_TTL));
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Email Address Verified Successfully");
                 response.setData(otpValue);

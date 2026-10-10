@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Date;
 
 import static com.macrotel.rapidstylers.config.AppConstants.JWT_SECRET_PLACEHOLDER;
@@ -90,10 +91,15 @@ public class JwtUtil {
     }
 
     public String generateToken(String accountId, String role) {
+        return generateToken(accountId, role, Duration.ofMinutes(ttlMinutes));
+    }
+
+    /** A token with its own lifetime, for a pass that is not a sign-in (see Roles.SIGNUP_UPLOAD). */
+    public String generateToken(String subject, String role, Duration ttl) {
         Date now = new Date();
-        Date expiry = new Date(now.getTime() + ttlMinutes * 60_000L);
+        Date expiry = new Date(now.getTime() + ttl.toMillis());
         return Jwts.builder()
-                .setSubject(accountId)
+                .setSubject(subject)
                 .claim("role", role)
                 .setIssuedAt(now)
                 .setExpiration(expiry)

@@ -90,7 +90,7 @@ Spring MVC treats `/user_data` and `/user_data/` as the same route. A plain `ant
 
 | Before | After |
 |---|---|
-| `anyRequest().permitAll()`: Spring Security let everything through | `anyRequest().authenticated()` with explicit public and role lists |
+| `anyRequest().permitAll()`: Spring Security let everything through | `anyRequest().hasAnyRole(Roles.ACCOUNTS)` with explicit public and role lists |
 | `JwtAuthFilter` read tokens **and** enforced a hand-kept `ROLE_PATHS` map; it set `accountId` only for listed paths | `JwtAuthFilter` only reads tokens; `SecurityConfig` enforces the rules in `Routes` |
 | A route missing from the map was public and always answered 401 to signed-in users (`/styler/reviews`, `/auth/logout`) | A route missing from the lists needs any signed-in account and works for everyone signed in |
 | CORS ran three times; `JwtAuthFilter` was registered twice | Each runs once |
@@ -100,8 +100,15 @@ Every existing route keeps its access and the same 401 body. The one visible dif
 
 ## Left for later
 
-- **Bug 4:** `/user_sign_in` and `/styler_sign_in` are still in `Routes.PUBLIC`. They skip the Turnstile bot check and will be deleted.
-- **`/testing` and `/get_upload_signature` are public.** Confirm the frontend needs them anonymously; if not, move them to a role list.
+- **Bug 4, step 2:** `/styler_sign_in` is gone. `/user_sign_in` still skips the Turnstile bot check; the website stopped using it (sign-up now returns the session, and the customer forms use `/sign_in`), so it is deleted once that website version is live.
+- **`/get_upload_signature` is still public** for the same reason: the website now sends the stylist sign-up upload pass (role `SIGNUP_UPLOAD`, from `/styler_verify_otp`), and once that version is live the route moves to a list for `STYLER`, `ADMIN` and `SIGNUP_UPLOAD`.
+- **`/testing` is public.** Confirm nothing needs it; if not, delete it.
 - **`ApiKeyFilter` still exempts `/rapid_stylers/files/`**, a path no controller serves.
 - **Controllers read `accountId` from a request attribute.** The target is to read the signed-in account from Spring's principal; that happens when the controllers are split by domain.
 - **Spring Boot 3 renames:** `authorizeRequests` becomes `authorizeHttpRequests`, `mvcMatchers` and `antMatchers` become `requestMatchers`, `@EnableGlobalMethodSecurity` becomes `@EnableMethodSecurity`, and `javax.servlet` becomes `jakarta.servlet`.
+
+## The sign-up upload pass
+
+A new stylist uploads their profile and ID photos before their account exists, so they have no sign-in token. Verifying their email code (`/styler_verify_otp`) hands out a pass instead: a token whose subject is the email and whose role is `SIGNUP_UPLOAD`, valid for two hours.
+
+Picture a visitor badge printed at reception. It gets you to one room (the upload signature) and nowhere else: unlisted routes need a real account role (`Roles.ACCOUNTS`), so the badge cannot reach them, and `JwtAuthFilter` gives it no `accountId` and no session activity, because it is not an account.

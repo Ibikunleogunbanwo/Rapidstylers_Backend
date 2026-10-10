@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.security.config;
 
+import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.access.Routes;
 import com.macrotel.rapidstylers.security.filter.JwtAuthFilter;
 import com.macrotel.rapidstylers.security.handler.JsonAuthErrorHandler;
@@ -68,7 +69,8 @@ public class SecurityConfig {
                 .authenticationEntryPoint(authErrorHandler)
                 .accessDeniedHandler(authErrorHandler)
                 .and()
-            // Closed by default: a route missing from Routes needs a signed-in account.
+            // Closed by default: a route missing from Routes needs a signed-in account
+            // (a real account role, so the sign-up upload pass cannot reach it).
             // mvcMatchers match routes exactly the way the controllers do, so a
             // variant such as a trailing slash cannot slip past a role rule.
             .authorizeRequests()
@@ -79,7 +81,7 @@ public class SecurityConfig {
                 .mvcMatchers(Routes.STYLER).hasRole("STYLER")
                 .mvcMatchers(Routes.CUSTOMER).hasRole("CUSTOMER")
                 .mvcMatchers(Routes.ADMIN_OR_STYLER).hasAnyRole("ADMIN", "STYLER")
-                .anyRequest().authenticated()
+                .anyRequest().hasAnyRole(Roles.ACCOUNTS)
             .and()
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

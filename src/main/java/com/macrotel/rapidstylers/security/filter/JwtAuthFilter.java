@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.security.filter;
 
+import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
@@ -43,14 +44,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         Claims claims = bearerClaims(request);
         String role = (claims == null) ? null : claims.get("role", String.class);
         if (role != null) {
-            String accountId = claims.getSubject();
+            String subject = claims.getSubject();
             SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                    accountId, null, List.of(new SimpleGrantedAuthority("ROLE_" + role))));
-            request.setAttribute("accountId", accountId);
-            request.setAttribute("role", role);
-            if (!REFRESH_PATH.equals(request.getRequestURI())) {
-                // Best-effort Redis write; never fails the request.
-                sessionActivityService.touch(accountId, role);
+                    subject, null, List.of(new SimpleGrantedAuthority("ROLE_" + role))));
+            // The sign-up upload pass names an email, not an account: it gets no
+            // accountId for controllers to read and no session to keep alive.
+            if (!Roles.SIGNUP_UPLOAD.equals(role)) {
+                request.setAttribute("accountId", subject);
+                request.setAttribute("role", role);
+                if (!REFRESH_PATH.equals(request.getRequestURI())) {
+                    // Best-effort Redis write; never fails the request.
+                    sessionActivityService.touch(subject, role);
+                }
             }
         }
         filterChain.doFilter(request, response);

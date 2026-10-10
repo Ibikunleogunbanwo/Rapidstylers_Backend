@@ -10,10 +10,12 @@ import com.macrotel.rapidstylers.pojo.OTPData;
 import com.macrotel.rapidstylers.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
+import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Duration;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -73,6 +76,7 @@ class OtpSecurityTest {
         appService.emailConfig = emailConfig;
         appService.rateLimiterService = rateLimiterService;
         appService.appUtils = new AppUtils();
+        appService.jwtUtil = mock(JwtUtil.class);
 
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
         when(rateLimiterService.clientIp()).thenReturn("127.0.0.1");
@@ -198,6 +202,8 @@ class OtpSecurityTest {
 
         assertEquals("200", response.getStatusCode());
         assertEquals("Email Address Verified Successfully", response.getMessage());
+        // The upload pass for the sign-up photos: the email, a pass role, and a short life.
+        verify(appService.jwtUtil).generateToken(eq("vendor@example.com"), eq("SIGNUP_UPLOAD"), any(Duration.class));
         verify(otpRepo).save(argThat(otp -> otp.getIsUsed() != null && otp.getIsUsed().equals("0")));
         verify(rateLimiterService).clear("auth:vendor@example.com");
         verify(rateLimiterService).clear("auth_ip:127.0.0.1");

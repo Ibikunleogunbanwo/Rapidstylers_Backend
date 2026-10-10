@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
+
 import static com.macrotel.rapidstylers.config.AppConstants.JWT_SECRET_PLACEHOLDER;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -63,6 +65,18 @@ class JwtUtilTest {
         assertNotNull(claims, "A token this instance just signed must verify");
         assertEquals("acct-1", claims.getSubject());
         assertEquals("ADMIN", claims.get("role"));
+    }
+
+    @Test
+    void tokenWithItsOwnLifetimeExpiresWhenAsked() {
+        JwtUtil util = guarded(COMFORTABLY_LONG);
+
+        Claims pass = util.parseToken(util.generateToken("a@example.com", "SIGNUP_UPLOAD", Duration.ofHours(2)));
+        long lifetimeMinutes = (pass.getExpiration().getTime() - pass.getIssuedAt().getTime()) / 60_000L;
+
+        assertEquals(120, lifetimeMinutes);
+        assertNull(util.parseToken(util.generateToken("a@example.com", "SIGNUP_UPLOAD", Duration.ofSeconds(-1))),
+                "an expired pass must not verify");
     }
 
     @Test

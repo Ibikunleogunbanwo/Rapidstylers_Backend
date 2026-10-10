@@ -103,6 +103,19 @@ class JwtAuthFilterTest {
         verify(sessionActivityService, never()).touch(any(), any());
     }
 
+    @Test
+    void uploadPassIsNotAnAccount() throws ServletException, IOException {
+        tokenFor("upload-pass", "new.stylist@example.com", "SIGNUP_UPLOAD");
+        MockHttpServletRequest request = request("/rapid_stylers/get_upload_signature", "upload-pass");
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        assertEquals("ROLE_SIGNUP_UPLOAD",
+                SecurityContextHolder.getContext().getAuthentication().getAuthorities().iterator().next().getAuthority());
+        assertNull(request.getAttribute("accountId"), "controllers must not mistake the email for an account id");
+        verify(sessionActivityService, never()).touch(any(), any());
+    }
+
     private void tokenFor(String token, String accountId, String role) {
         Claims claims = Jwts.claims().setSubject(accountId);
         claims.put("role", role);

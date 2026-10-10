@@ -186,9 +186,12 @@ class RegistrationToBookingJourneyTest {
         userData.put("phoneNumber", "587555" + String.format("%04d", System.currentTimeMillis() % 10000));
         userData.put("password", "Test1234!");
         userData.put("agreeToTerms", true);
-        assertOk(apiPost("/create_user_account", userData, null));
-
-        String customerToken = signIn("/user_sign_in", custEmail, "Test1234!");
+        // Sign-up signs the customer straight in, in the same shape /sign_in answers with.
+        JsonNode signedUp = body(apiPost("/create_user_account", userData, null));
+        assertEquals("200", signedUp.get("statusCode").asText(), "sign-up failed: " + signedUp);
+        assertEquals("CUSTOMER", signedUp.get("data").get("role").asText());
+        assertFalse(signedUp.get("refreshToken").asText().isBlank(), "sign-up must return a refresh token");
+        String customerToken = signedUp.get("token").asText();
         customerUserId = userRepo.findByEmailAddress(custEmail).orElseThrow().getUserId();
         assertOk(apiGet("/user_data", customerToken)); // JWT-gated read works
 
@@ -199,7 +202,12 @@ class RegistrationToBookingJourneyTest {
         OTPEntity storedStylerOtp = otpRepo.findLatestUnusedByEmail(stylerEmail).orElseThrow();
         assertFalse(storedStylerOtp.getCode().equals(stylerOtp), "OTP must not be stored in plaintext");
         assertTrue(storedStylerOtp.getCode().startsWith("$2"), "OTP must be stored as a BCrypt hash");
-        assertOk(apiPost("/styler_verify_otp", Map.of("emailAddress", stylerEmail, "otpCode", stylerOtp), null));
+        JsonNode verified = body(apiPost("/styler_verify_otp", Map.of("emailAddress", stylerEmail, "otpCode", stylerOtp), null));
+        assertEquals("200", verified.get("statusCode").asText(), "styler OTP failed: " + verified);
+        // The upload pass is for photos during sign-up only, never an account.
+        String uploadPass = verified.get("data").get("uploadToken").asText();
+        assertFalse(uploadPass.isBlank(), "verifying the code must hand out an upload pass");
+        assertEquals(401, rawStatus(apiPost("/auth/logout", null, uploadPass)));
 
         String identificationId = firstListId("/list_identification");
         String serviceTypeId = firstListId("/list_service");

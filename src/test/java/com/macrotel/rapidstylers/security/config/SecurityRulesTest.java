@@ -57,7 +57,7 @@ class SecurityRulesTest {
 
     @BeforeEach
     void tokens() {
-        for (String role : new String[] {"CUSTOMER", "STYLER", "ADMIN"}) {
+        for (String role : new String[] {"CUSTOMER", "STYLER", "ADMIN", "SIGNUP_UPLOAD"}) {
             Claims claims = Jwts.claims().setSubject(role + "1");
             claims.put("role", role);
             when(jwtUtil.parseToken(role + "-token")).thenReturn(claims);
@@ -97,6 +97,11 @@ class SecurityRulesTest {
             "POST,   /rapid_stylers/auth/logout,                      ADMIN,    200",
             "POST,   /rapid_stylers/auth/logout,                      ,         401",
             "GET,    /rapid_stylers/some_new_route,                   ,         401",
+            // The sign-up upload pass is not an account, so it opens nothing beyond public routes
+            "POST,   /rapid_stylers/auth/logout,                      SIGNUP_UPLOAD, 401",
+            "GET,    /rapid_stylers/user_data,                        SIGNUP_UPLOAD, 401",
+            "POST,   /rapid_stylers/delete_cloudinary_image,          SIGNUP_UPLOAD, 401",
+            "GET,    /rapid_stylers/get_upload_signature,             SIGNUP_UPLOAD, 200",
             // A trailing slash must not slip past a role rule
             "GET,    /rapid_stylers/user_data/,                       STYLER,   401",
             "GET,    /rapid_stylers/admin/kpis/,                      CUSTOMER, 401",
