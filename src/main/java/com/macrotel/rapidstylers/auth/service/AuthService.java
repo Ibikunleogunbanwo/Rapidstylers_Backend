@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.auth.service;
 
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;

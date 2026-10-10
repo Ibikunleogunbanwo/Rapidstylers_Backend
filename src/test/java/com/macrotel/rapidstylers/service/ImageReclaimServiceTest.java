@@ -2,8 +2,8 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
-import com.macrotel.rapidstylers.repo.StylerPortfolioRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

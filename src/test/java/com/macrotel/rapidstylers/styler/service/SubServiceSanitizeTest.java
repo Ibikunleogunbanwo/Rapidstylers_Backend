@@ -1,0 +1,77 @@
+package com.macrotel.rapidstylers.styler.service;
+
+import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.support.TestServices;
+import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
+import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.styler.pojo.ServiceUpdateData;
+import com.macrotel.rapidstylers.styler.pojo.SubServiceData;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class SubServiceSanitizeTest {
+
+    private TestServices services;
+    private StylerRepo stylerRepo;
+    private SubServiceRepo subServiceRepo;
+
+    @BeforeEach
+    void setUp() {
+        services = new TestServices();
+        stylerRepo = mock(StylerRepo.class);
+        subServiceRepo = mock(SubServiceRepo.class);
+        services.stylerRepo = stylerRepo;
+        services.subServiceRepo = subServiceRepo;
+    }
+
+    @Test
+    void createSanitizesSubServiceName() {
+        when(stylerRepo.findByStylerId("S1")).thenReturn(Optional.of(new StylerEntity()));
+
+        SubServiceData data = new SubServiceData();
+        data.setStylerId("S1");
+        data.setName("Box Braids <script>alert(1)</script>");
+        data.setPrice("150.00");
+        data.setDurationMinutes(60);
+
+        BaseResponse response = services.stylerService().createSubService(data);
+
+        assertEquals("200", response.getStatusCode());
+        ArgumentCaptor<SubServiceEntity> captor = ArgumentCaptor.forClass(SubServiceEntity.class);
+        verify(subServiceRepo).save(captor.capture());
+        assertEquals("Box Braids", captor.getValue().getName());
+    }
+
+    @Test
+    void updateSanitizesSubServiceName() {
+        SubServiceEntity existing = new SubServiceEntity();
+        existing.setName("Old Name");
+        existing.setPrice("100.00");
+        when(subServiceRepo.isServiceExistById("S1", 5L)).thenReturn(Optional.of(existing));
+        services.dtoService = mock(DTOService.class);
+        when(services.dtoService.subServiceDTO(existing)).thenReturn(new SubServiceDTO());
+
+        ServiceUpdateData data = new ServiceUpdateData();
+        data.setId(5L);
+        data.setName("New <b>Name</b> <img src=x onerror=alert(1)>");
+        data.setPrice("120.00");
+        data.setDurationMinutes(60);
+
+        BaseResponse response = services.stylerService().updateSubService("S1", data);
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals("New Name", existing.getName());
+    }
+}

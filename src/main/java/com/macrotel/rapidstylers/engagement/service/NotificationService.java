@@ -1,5 +1,9 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import com.macrotel.rapidstylers.engagement.pojo.NotificationPreferencesData;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
@@ -9,7 +13,7 @@ import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.VendorZoneResolver;
+import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import java.util.*;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;

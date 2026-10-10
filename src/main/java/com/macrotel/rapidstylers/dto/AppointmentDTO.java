@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.dto;
 
+import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
+import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
 import lombok.Data;
 
 import java.time.LocalDateTime;

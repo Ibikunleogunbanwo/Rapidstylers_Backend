@@ -1,8 +1,8 @@
 package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.stripe.model.Account;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

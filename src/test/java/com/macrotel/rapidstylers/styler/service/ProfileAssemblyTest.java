@@ -1,0 +1,260 @@
+package com.macrotel.rapidstylers.styler.service;
+
+import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.support.TestServices;
+import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
+import com.macrotel.rapidstylers.styler.dto.StylerPortfolioDTO;
+import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
+import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
+import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
+import com.macrotel.rapidstylers.styler.entity.AvailabilityExceptionEntity;
+import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
+import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
+import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Locks in the Category B profile assembly: getStylerDetails reads every part
+ * through its cache, so a warm profile costs exactly one DB query (the styler
+ * row) and the response shape stays byte-identical to the pre-cache version.
+ */
+class ProfileAssemblyTest {
+
+    private TestServices services;
+    private StylerRepo stylerRepo;
+    private SubServiceRepo subServiceRepo;
+    private StylerPortfolioRepo stylerPortfolioRepo;
+    private ReviewRepo reviewRepo;
+    private BookAppointmentRepo bookAppointmentRepo;
+    private AvailabilityRepo availabilityRepo;
+    private AvailabilityExceptionRepo availabilityExceptionRepo;
+    private DTOService dtoService;
+    private ReadCacheService readCacheService;
+
+    @BeforeEach
+    void setUp() {
+        services = new TestServices();
+        stylerRepo = mock(StylerRepo.class);
+        subServiceRepo = mock(SubServiceRepo.class);
+        stylerPortfolioRepo = mock(StylerPortfolioRepo.class);
+        reviewRepo = mock(ReviewRepo.class);
+        bookAppointmentRepo = mock(BookAppointmentRepo.class);
+        availabilityRepo = mock(AvailabilityRepo.class);
+        availabilityExceptionRepo = mock(AvailabilityExceptionRepo.class);
+        dtoService = mock(DTOService.class);
+        readCacheService = mock(ReadCacheService.class);
+        services.stylerRepo = stylerRepo;
+        services.subServiceRepo = subServiceRepo;
+        services.stylerPortfolioRepo = stylerPortfolioRepo;
+        services.reviewRepo = reviewRepo;
+        services.bookAppointmentRepo = bookAppointmentRepo;
+        services.availabilityRepo = availabilityRepo;
+        services.availabilityExceptionRepo = availabilityExceptionRepo;
+        services.dtoService = dtoService;
+        services.readCacheService = readCacheService;
+    }
+
+    @Test
+    void warmCacheServesFullProfileWithoutTouchingChildRepos() {
+        StylerEntity styler = approvedStyler("S1");
+        when(stylerRepo.findByStylerId("S1")).thenReturn(Optional.of(styler));
+
+        List<Object> subs = Collections.singletonList(Collections.singletonMap("name", "Cut"));
+        List<Object> portfolio = Collections.singletonList(Collections.singletonMap("imageUrl", "u"));
+        List<Object> reviews = new ArrayList<>();
+        StylerReviewDTO r1 = new StylerReviewDTO();
+        r1.setRatingScore("5");
+        StylerReviewDTO r2 = new StylerReviewDTO();
+        r2.setRatingScore("5");
+        reviews.add(r1);
+        reviews.add(r2);
+        Map<String, Object> appointments = new HashMap<>();
+        appointments.put("appointmentCount", "3");
+        appointments.put("bookedSlots", Collections.singletonList(Collections.singletonMap("appointmentDate", "2030-01-01")));
+        List<Object> availability = Collections.singletonList(Collections.singletonMap("dayOfWeek", "1"));
+        List<Object> exceptions = Collections.singletonList(Collections.singletonMap("blockedDate", "2030-02-01"));
+        StylerAccountDTO dto = new StylerAccountDTO();
+        dto.setStylerId("S1");
+
+        when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any())).thenAnswer(inv -> {
+            String key = inv.getArgument(0);
+            if (key.startsWith(ReadCacheService.KEY_STYLER_DTO)) return dto;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_SUBSERVICES)) return subs;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_PORTFOLIO)) return portfolio;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_REVIEWS)) return reviews;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_APPOINTMENTS)) return appointments;
+            if (key.endsWith(":exceptions")) return exceptions;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_AVAILABILITY)) return availability;
+            return ((Supplier<?>) inv.getArgument(3)).get();
+        });
+
+        BaseResponse response = services.stylerService().getStylerDetails("S1");
+
+        assertEquals("200", response.getStatusCode());
+        Map<?, ?> data = (Map<?, ?>) response.getData();
+        assertEquals("S1", ((StylerAccountDTO) data.get("stylerInformation")).getStylerId());
+        assertEquals(subs, data.get("stylerSubService"));
+        assertEquals(portfolio, data.get("stylerPortfolio"));
+        assertEquals(reviews, data.get("stylerReviews"));
+        assertEquals("100", data.get("ratingPercentage"));
+        assertEquals("3", data.get("appointmentCount"));
+        assertEquals(availability, data.get("availability"));
+        assertEquals(exceptions, data.get("exceptions"));
+        assertNotNull(data.get("bookedSlots"));
+        // This cached summary predates the finished tally, so completion cannot
+        // be proven and no stage badge is claimed. Nothing false, just absent.
+        assertEquals(List.of(), data.get("badges"));
+
+        // Only the styler row is queried — every part comes from the cache.
+        verify(stylerRepo).findByStylerId("S1");
+        verify(subServiceRepo, never()).findByStylerId(anyString());
+        verify(stylerPortfolioRepo, never()).findByStylerId(anyString());
+        verify(reviewRepo, never()).findByStylerIdAndModerationStatus(anyString(), anyString());
+        verify(bookAppointmentRepo, never()).findByStylerId(anyString());
+        verify(availabilityRepo, never()).findByStylerId(anyString());
+        verify(availabilityExceptionRepo, never()).findByStylerId(anyString());
+    }
+
+    @Test
+    void coldCacheBuildsProfileFromReposWithIdenticalShape() {
+        StylerEntity styler = approvedStyler("S1");
+        when(stylerRepo.findByStylerId("S1")).thenReturn(Optional.of(styler));
+
+        SubServiceEntity sub = new SubServiceEntity();
+        when(subServiceRepo.findByStylerId("S1")).thenReturn(Collections.singletonList(sub));
+        StylerPortfolioEntity portfolio = new StylerPortfolioEntity();
+        when(stylerPortfolioRepo.findByStylerId("S1")).thenReturn(Collections.singletonList(portfolio));
+        ReviewEntity review = new ReviewEntity();
+        review.setStylerId("S1");
+        review.setRatingScore(5);
+        when(reviewRepo.findByStylerIdAndModerationStatus("S1", "APPROVED")).thenReturn(Collections.singletonList(review));
+        BookAppointmentEntity appointment = new BookAppointmentEntity();
+        appointment.setStatus("1");
+        when(bookAppointmentRepo.findByStylerId("S1")).thenReturn(Collections.singletonList(appointment));
+        AvailabilityEntity availability = new AvailabilityEntity();
+        availability.setDayOfWeek("1");
+        when(availabilityRepo.findByStylerId("S1")).thenReturn(Collections.singletonList(availability));
+        AvailabilityExceptionEntity exception = new AvailabilityExceptionEntity();
+        exception.setBlockedDate("2030-02-01");
+        when(availabilityExceptionRepo.findByStylerId("S1")).thenReturn(Collections.singletonList(exception));
+
+        StylerAccountDTO stylerDto = new StylerAccountDTO();
+        stylerDto.setStylerId("S1");
+        when(dtoService.stylerAccountDTO(styler)).thenReturn(stylerDto);
+        when(dtoService.subServiceDTO(any())).thenReturn(new SubServiceDTO());
+        when(dtoService.stylerPortfolioDTO(any())).thenReturn(new StylerPortfolioDTO());
+        when(dtoService.stylerReviewDTO(any())).thenAnswer(inv -> {
+            StylerReviewDTO r = new StylerReviewDTO();
+            r.setRatingScore(String.valueOf(((ReviewEntity) inv.getArgument(0)).getRatingScore()));
+            return r;
+        });
+        when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(3)).get());
+
+        BaseResponse response = services.stylerService().getStylerDetails("S1");
+
+        assertEquals("200", response.getStatusCode());
+        Map<?, ?> data = (Map<?, ?>) response.getData();
+        assertEquals("S1", ((StylerAccountDTO) data.get("stylerInformation")).getStylerId());
+        assertEquals(1, ((List<?>) data.get("stylerSubService")).size());
+        assertEquals(1, ((List<?>) data.get("stylerPortfolio")).size());
+        assertEquals(1, ((List<?>) data.get("stylerReviews")).size());
+        assertEquals("100", data.get("ratingPercentage"));
+        assertEquals("1", data.get("appointmentCount"));
+        assertEquals(1, ((List<?>) data.get("availability")).size());
+        assertEquals(1, ((List<?>) data.get("exceptions")).size());
+        assertEquals(1, ((List<?>) data.get("bookedSlots")).size());
+    }
+
+    @Test
+    void badgesFollowTheRulesAndTheFactsTheCacheHolds() {
+        StylerEntity styler = approvedStyler("S1");
+        when(stylerRepo.findByStylerId("S1")).thenReturn(Optional.of(styler));
+
+        StylerAccountDTO dto = new StylerAccountDTO();
+        dto.setStylerId("S1");
+        Map<String, Object> summary = new HashMap<>();
+        when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any())).thenAnswer(inv -> {
+            String key = inv.getArgument(0);
+            if (key.startsWith(ReadCacheService.KEY_STYLER_DTO)) return dto;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_APPOINTMENTS)) return summary;
+            return Collections.emptyList();
+        });
+
+        // A strong, well reviewed record.
+        dto.setReviewCount(12L);
+        dto.setAverageRating(4.8);
+        summary.put("appointmentCount", "12");
+        summary.put("completedCount", 12L);
+        assertEquals(List.of(ProfileBadgeRules.TOP_RATED), badgesOf("S1"));
+
+        // No reviews yet, but a job has been finished here.
+        dto.setReviewCount(0L);
+        dto.setAverageRating(0.0);
+        summary.put("appointmentCount", "2");
+        summary.put("completedCount", 2L);
+        assertEquals(List.of(ProfileBadgeRules.FIRST_BOOKING), badgesOf("S1"));
+
+        // Nothing has happened yet, and the account is inside the window.
+        dto.setDateRegistered(java.time.LocalDate.now().toString());
+        summary.put("appointmentCount", "0");
+        summary.put("completedCount", 0L);
+        assertEquals(List.of(ProfileBadgeRules.NEW), badgesOf("S1"));
+
+        // NEW needs no finished tally: a zero appointment count already implies
+        // that nothing has been finished, so the claim survives without it.
+        summary.remove("completedCount");
+        assertEquals(List.of(ProfileBadgeRules.NEW), badgesOf("S1"));
+
+        // Bookings on the record but a summary written before the finished tally
+        // existed. Completion cannot be proven from it, so no stage badge is
+        // claimed: absent, rather than guessed at.
+        summary.put("appointmentCount", "2");
+        assertEquals(List.of(), badgesOf("S1"));
+    }
+
+    private List<?> badgesOf(String stylerId){
+        Map<?, ?> data = (Map<?, ?>) services.stylerService().getStylerDetails(stylerId).getData();
+        return (List<?>) data.get("badges");
+    }
+
+    private StylerEntity approvedStyler(String id) {
+        StylerEntity styler = new StylerEntity();
+        styler.setStylerId(id);
+        styler.setVerificationStatus("APPROVED");
+        // A publicly reachable profile needs an address, which is part of the
+        // bookability gate the profile assembly reuses.
+        styler.setBusinessAddress("700 2 St SW, Calgary, Alberta");
+        return styler;
+    }
+}

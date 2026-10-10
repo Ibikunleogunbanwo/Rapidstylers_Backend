@@ -1,10 +1,10 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.entity.StylerPortfolioEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.repo.StylerPortfolioRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

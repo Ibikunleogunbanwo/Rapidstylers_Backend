@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.springframework.stereotype.Component;
 

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.styler.service.LocationCacheService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.entity.AdminAccountEntity;
@@ -9,15 +10,15 @@ import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
-import com.macrotel.rapidstylers.repo.AvailabilityRepo;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
-import com.macrotel.rapidstylers.repo.SubServiceRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

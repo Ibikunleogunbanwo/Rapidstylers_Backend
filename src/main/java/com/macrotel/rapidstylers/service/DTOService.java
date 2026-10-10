@@ -1,5 +1,13 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
+import com.macrotel.rapidstylers.styler.dto.StylerPortfolioDTO;
+import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
+import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.engagement.dto.FeedBackDTO;
 import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.engagement.entity.FeedbackEntity;

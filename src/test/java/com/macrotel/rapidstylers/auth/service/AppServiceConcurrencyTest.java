@@ -9,7 +9,7 @@ import com.macrotel.rapidstylers.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.auth.pojo.SignInData;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;

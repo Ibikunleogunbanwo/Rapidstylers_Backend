@@ -1,18 +1,18 @@
 package com.macrotel.rapidstylers.config;
 
-import com.macrotel.rapidstylers.entity.AvailabilityEntity;
+import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
-import com.macrotel.rapidstylers.repo.AvailabilityRepo;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
-import com.macrotel.rapidstylers.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

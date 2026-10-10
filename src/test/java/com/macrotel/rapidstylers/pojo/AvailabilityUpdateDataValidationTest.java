@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.pojo;
 
+import com.macrotel.rapidstylers.styler.pojo.AvailabilityData;
+import com.macrotel.rapidstylers.styler.pojo.AvailabilityUpdateData;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 

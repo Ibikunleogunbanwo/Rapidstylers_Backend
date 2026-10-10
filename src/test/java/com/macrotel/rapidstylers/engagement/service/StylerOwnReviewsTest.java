@@ -5,10 +5,10 @@ import com.macrotel.rapidstylers.service.ReadCacheService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
-import com.macrotel.rapidstylers.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

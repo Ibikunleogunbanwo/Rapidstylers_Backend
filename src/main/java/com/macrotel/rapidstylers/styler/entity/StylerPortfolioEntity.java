@@ -1,0 +1,39 @@
+package com.macrotel.rapidstylers.styler.entity;
+
+import com.macrotel.rapidstylers.styler.pojo.StylerPortfolioData;
+import lombok.Data;
+
+import javax.persistence.*;
+import java.io.Serializable;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+@Data
+@Entity
+@Table(name = "portfolios")
+public class StylerPortfolioEntity implements Serializable {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String stylerId;
+    private String imageUrl;
+    private String name;
+    private String status;
+    private String createdAt;
+    // Gallery category this work belongs to (e.g. braids, nail tech, makeup).
+    private String category;
+
+    public StylerPortfolioEntity() {
+    }
+
+    public StylerPortfolioEntity(StylerPortfolioData stylerPortfolioData) {
+        this.stylerId = stylerPortfolioData.getStylerId();
+        this.imageUrl = stylerPortfolioData.getImageUrl();
+        this.name = stylerPortfolioData.getName();
+        this.category = stylerPortfolioData.getCategory();
+        this.status = "0";
+        this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss"));
+
+    }
+
+}

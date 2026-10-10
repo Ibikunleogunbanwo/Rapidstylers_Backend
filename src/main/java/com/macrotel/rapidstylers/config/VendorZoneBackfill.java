@@ -1,9 +1,9 @@
 package com.macrotel.rapidstylers.config;
 
-import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.repo.StylerRepo;
-import com.macrotel.rapidstylers.service.GoogleTimezoneService;
-import com.macrotel.rapidstylers.service.VendorZoneResolver;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.GoogleTimezoneService;
+import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;

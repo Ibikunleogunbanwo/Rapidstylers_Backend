@@ -1,5 +1,9 @@
 package com.macrotel.rapidstylers.controller;
 
+import com.macrotel.rapidstylers.styler.service.AvailabilityService;
+import com.macrotel.rapidstylers.styler.service.PortfolioService;
+import com.macrotel.rapidstylers.styler.service.SearchService;
+import com.macrotel.rapidstylers.styler.service.StylerService;
 import com.macrotel.rapidstylers.engagement.service.FeedbackService;
 import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
@@ -10,7 +14,7 @@ import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.service.GalleryService;
-import com.macrotel.rapidstylers.service.GeocodingService;
+import com.macrotel.rapidstylers.styler.service.GeocodingService;
 import com.macrotel.rapidstylers.service.PaymentReconciliationService;
 import com.macrotel.rapidstylers.service.StepUpService;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,8 +45,6 @@ public class ApplicationController {
     AppService appService;
     @Autowired
     GalleryService galleryService;
-    @Autowired
-    GeocodingService geocodingService;
     @Autowired
     EncryptionConfig encryptionConfig;
     @Autowired
@@ -78,194 +80,6 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @PostMapping("/create_styler")
-    public ResponseEntity <BaseResponse> createStyler(@Valid @RequestBody StylerData stylerData){
-        BaseResponse baseResponse = appService.createStyler(stylerData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/list_all_stylers")
-    public ResponseEntity <BaseResponse> listAllStylers(){
-        BaseResponse baseResponse = appService.listAllStylers();
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/admin/styler_verification_queue")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity <BaseResponse> stylerVerificationQueue(){
-        BaseResponse baseResponse = appService.getStylerVerificationQueue();
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/admin/update_styler_verification")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity <BaseResponse> updateStylerVerification(@Valid @RequestBody VerificationActionData verificationActionData){
-        BaseResponse baseResponse = appService.updateStylerVerification(verificationActionData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/search_styler")
-    public ResponseEntity <BaseResponse> searchStyler(@RequestParam("businessName") String businessName){
-        BaseResponse baseResponse = appService.searchStyler(businessName);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/search_by_province")
-    public ResponseEntity <BaseResponse> searchByProvince(@RequestParam("province") String province){
-        BaseResponse baseResponse = appService.searchStylerByProvince(province);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/search_by_city")
-    public ResponseEntity <BaseResponse> searchByCity(@RequestParam("city") String city){
-        BaseResponse baseResponse = appService.searchStylerByCity(city);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/search_nearby")
-    public ResponseEntity <BaseResponse> searchNearby(@RequestBody SearchNearbyData data){
-        BaseResponse baseResponse = appService.searchNearby(data.getLng(), data.getLat(), data.getRadius(), data.getServiceTypeId(), data.getCity(), data.getRequestedDate(), data.getRequestedTime(), data.getDurationMinutes(), data.isOpenNow(), data.getPage(), data.getPageSize());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/place_autocomplete")
-    public ResponseEntity<BaseResponse> placeAutocomplete(@RequestParam("input") String input){
-        BaseResponse baseResponse = new BaseResponse();
-        baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-        baseResponse.setMessage(SUCCESS_MESSAGE);
-        baseResponse.setData(geocodingService.placeAutocomplete(input));
-        return ApiResponses.respond(baseResponse);
-    }
-    @GetMapping("/place_details")
-    public ResponseEntity<BaseResponse> placeDetails(@RequestParam("placeId") String placeId){
-        BaseResponse baseResponse = new BaseResponse();
-        Map<String, Object> data = geocodingService.geocodeByPlaceId(placeId);
-        if (data == null) {
-            baseResponse.setStatusCode(ERROR_STATUS_CODE);
-            baseResponse.setMessage("Place not found");
-            baseResponse.setData(java.util.Collections.emptyList());
-        } else {
-            baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
-            baseResponse.setMessage(SUCCESS_MESSAGE);
-            baseResponse.setData(data);
-        }
-        return ApiResponses.respond(baseResponse);
-    }
-    @GetMapping("/detect-location")
-    public ResponseEntity <BaseResponse> detectLocation(javax.servlet.http.HttpServletRequest request){
-        BaseResponse baseResponse = appService.detectLocation(request);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/reverse-geocode")
-    public ResponseEntity <BaseResponse> reverseGeocode(@RequestBody Map<String, Double> body){
-        double lat = body.getOrDefault("lat", 0.0);
-        double lng = body.getOrDefault("lng", 0.0);
-        BaseResponse baseResponse = appService.reverseGeocode(lat, lng);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/create_sub_service")
-    public ResponseEntity <BaseResponse> createSubService(@Valid @RequestBody SubServiceData subServiceData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        // The authenticated stylist owns the service; never trust the body stylerId.
-        subServiceData.setStylerId(accountId);
-        BaseResponse baseResponse = appService.createSubService(subServiceData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/styler_own_sub_services")
-    public ResponseEntity <BaseResponse> ownStylerSubServices(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.listOwnStylerSubService(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/update_sub_service")
-    public ResponseEntity <BaseResponse> updateSubService(@Valid @RequestBody ServiceUpdateData data, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.updateSubService(accountId, data));
-    }
-
-    @GetMapping("/list_sub_service")
-    public ResponseEntity <BaseResponse> listStylerSubService(@RequestParam("stylerId") String stylerId){
-        BaseResponse baseResponse = appService.listStylerSubService(stylerId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/create_portfolio")
-    public ResponseEntity <BaseResponse> createPortfolio(@Valid @RequestBody StylerPortfolioData stylerPortfolioData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        // The portfolio owner is the authenticated styler — never trust the body's stylerId.
-        stylerPortfolioData.setStylerId(accountId);
-        BaseResponse baseResponse = appService.createStylerPortfolio(stylerPortfolioData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/styler_own_portfolio")
-    public ResponseEntity <BaseResponse> stylerOwnPortfolio(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.listOwnStylerPortfolio(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/list_portfolio")
-    public ResponseEntity<BaseResponse> listStylerPortfolio(@RequestParam("stylerId") String stylerId){
-        BaseResponse baseResponse = appService.listStylerPortfolio(stylerId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/admin/all_portfolios")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> allPortfolios(){
-        BaseResponse baseResponse = appService.listAllPortfolios();
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/admin/delete_portfolio_image")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> deletePortfolioImage(@Valid @RequestBody PortfolioActionData portfolioActionData){
-        BaseResponse baseResponse = appService.adminDeletePortfolioImage(portfolioActionData.getPortfolioId());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    /** Stylist removes one of their own gallery images (ownership enforced from the token). */
-    @PostMapping("/delete_portfolio_image")
-    public ResponseEntity<BaseResponse> deleteOwnPortfolioImage(@Valid @RequestBody PortfolioActionData portfolioActionData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.deleteOwnPortfolioImage(accountId, portfolioActionData.getPortfolioId());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/single_styler")
-    public ResponseEntity<BaseResponse> singleStyler(@RequestParam("stylerId") String stylerId){
-        BaseResponse baseResponse = appService.getStylerDetails(stylerId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @GetMapping("/search_by_service")
-    public ResponseEntity<BaseResponse> stylerByService(@RequestParam("serviceTypeId") String serviceTypeId){
-        BaseResponse baseResponse = appService.getStylerByService(serviceTypeId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
     @PostMapping("/booking_estimate")
     public ResponseEntity<BaseResponse> bookingEstimate(@RequestBody BookAppointmentData bookAppointmentData){
         BaseResponse baseResponse = appService.estimateBooking(bookAppointmentData);
@@ -294,86 +108,6 @@ public class ApplicationController {
             return unauthorized();
         }
         BaseResponse baseResponse = appService.stylerAppointments(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/styler_availability")
-    public ResponseEntity<BaseResponse> stylerAvailability(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.stylerAvailability(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/update_styler_availability")
-    public ResponseEntity<BaseResponse> updateStylerAvailability(@Valid @RequestBody AvailabilityUpdateData availabilityData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.updateStylerAvailability(accountId, availabilityData.getSlots());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/styler/travel_settings")
-    public ResponseEntity<BaseResponse> stylerTravelSettings(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.stylerTravelSettings(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/update_styler_travel_settings")
-    public ResponseEntity<BaseResponse> updateStylerTravelSettings(@RequestBody Map<String, Object> body, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        Object included = body.get("includedTravelKm");
-        Double includedKm = included == null ? null : Double.valueOf(included.toString());
-        String fee = body.get("baseTravelFee") == null ? null : String.valueOf(body.get("baseTravelFee"));
-        BaseResponse baseResponse = appService.updateStylerTravelSettings(accountId, includedKm, fee);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/styler_availability_exceptions")
-    public ResponseEntity<BaseResponse> stylerAvailabilityExceptions(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.stylerAvailabilityExceptions(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/add_availability_exception")
-    public ResponseEntity<BaseResponse> addAvailabilityException(@Valid @RequestBody ExceptionData exceptionData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.addAvailabilityException(accountId, exceptionData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/delete_availability_exception")
-    public ResponseEntity<BaseResponse> deleteAvailabilityException(@RequestBody Map<String, Long> body, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.deleteAvailabilityException(accountId, body.get("exceptionId"));
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

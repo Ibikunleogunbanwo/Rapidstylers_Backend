@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.engagement.pojo.ReviewData;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;

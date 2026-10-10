@@ -2,12 +2,12 @@ package com.macrotel.rapidstylers.auth.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.macrotel.rapidstylers.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventType;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.auth.repo.RefreshTokenRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.macrotel.rapidstylers.security.verifier.GoogleTokenVerifier;

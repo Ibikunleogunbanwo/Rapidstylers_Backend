@@ -10,6 +10,12 @@ import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.engagement.repo.FeedBackRepo;
+import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;
+import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
+import com.macrotel.rapidstylers.engagement.repo.ReferralRepo;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
+import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
 import com.macrotel.rapidstylers.engagement.service.FeedbackService;
 import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
@@ -18,34 +24,33 @@ import com.macrotel.rapidstylers.engagement.service.SupportService;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
-import com.macrotel.rapidstylers.repo.AvailabilityExceptionRepo;
-import com.macrotel.rapidstylers.repo.AvailabilityRepo;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.repo.CardDetailsRepo;
-import com.macrotel.rapidstylers.engagement.repo.FeedBackRepo;
-import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;
-import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
-import com.macrotel.rapidstylers.engagement.repo.ReferralRepo;
-import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.repo.SavedStylistRepo;
-import com.macrotel.rapidstylers.repo.StylerPortfolioRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
-import com.macrotel.rapidstylers.repo.SubServiceRepo;
-import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.service.AuditService;
 import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.GeocodingService;
-import com.macrotel.rapidstylers.service.GoogleTimezoneService;
+import com.macrotel.rapidstylers.styler.service.GeocodingService;
+import com.macrotel.rapidstylers.styler.service.GoogleTimezoneService;
 import com.macrotel.rapidstylers.service.IdempotencyService;
 import com.macrotel.rapidstylers.service.ImageReclaimService;
-import com.macrotel.rapidstylers.service.LocationCacheService;
-import com.macrotel.rapidstylers.service.LocationService;
+import com.macrotel.rapidstylers.styler.service.LocationCacheService;
+import com.macrotel.rapidstylers.styler.service.LocationService;
 import com.macrotel.rapidstylers.service.PaymentOpsService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
 import com.macrotel.rapidstylers.service.StripeService;
+import com.macrotel.rapidstylers.styler.service.AvailabilityService;
+import com.macrotel.rapidstylers.styler.service.PortfolioService;
+import com.macrotel.rapidstylers.styler.service.SearchService;
+import com.macrotel.rapidstylers.styler.service.StylerEligibility;
+import com.macrotel.rapidstylers.styler.service.StylerService;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -120,7 +125,12 @@ public class TestServices {
             NotificationService.class,
             ReviewService.class,
             SupportService.class,
-            AppService.class);
+            AppService.class,
+            AvailabilityService.class,
+            PortfolioService.class,
+            SearchService.class,
+            StylerEligibility.class,
+            StylerService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 
@@ -150,6 +160,26 @@ public class TestServices {
 
     public AppService appService() {
         return get(AppService.class);
+    }
+
+    public AvailabilityService availabilityService() {
+        return get(AvailabilityService.class);
+    }
+
+    public PortfolioService portfolioService() {
+        return get(PortfolioService.class);
+    }
+
+    public SearchService searchService() {
+        return get(SearchService.class);
+    }
+
+    public StylerEligibility stylerEligibility() {
+        return get(StylerEligibility.class);
+    }
+
+    public StylerService stylerService() {
+        return get(StylerService.class);
     }
 
     private synchronized <T> T get(Class<T> type) {

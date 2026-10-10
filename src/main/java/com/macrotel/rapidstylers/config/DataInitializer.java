@@ -7,7 +7,7 @@ import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
-import com.macrotel.rapidstylers.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;

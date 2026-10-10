@@ -1,12 +1,13 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.entity.RefundEntity;
-import com.macrotel.rapidstylers.entity.StylerEntity;
-import com.macrotel.rapidstylers.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
@@ -15,8 +16,8 @@ import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.repo.PlatformSettingRepo;
 import com.macrotel.rapidstylers.repo.RefundRepo;
-import com.macrotel.rapidstylers.repo.StylerRepo;
-import com.macrotel.rapidstylers.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.stripe.model.Account;
 import com.stripe.model.Balance;
