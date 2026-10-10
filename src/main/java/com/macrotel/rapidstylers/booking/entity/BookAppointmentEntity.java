@@ -14,7 +14,8 @@ import lombok.Data;
 
 @Data
 @Entity
-@Table(name = "appointments")
+@Table(name = "appointments", uniqueConstraints = @UniqueConstraint(
+        name = "uk_appointments_idempotency_key", columnNames = "idempotency_key"))
 public class BookAppointmentEntity implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -52,6 +53,12 @@ public class BookAppointmentEntity implements Serializable {
     // Stripe payment: the authorized PaymentIntent id and its lifecycle state.
     // paymentStatus is null when payments are disabled (no STRIPE_SECRET_KEY).
     private String paymentIntentId;
+    // The client's Idempotency-Key for the request that created this booking, and
+    // a SHA-256 of what that request asked for. See BookingRetries.
+    @Column(name = "idempotency_key", length = 100)
+    private String idempotencyKey;
+    @Column(name = "idempotency_fingerprint", length = 64)
+    private String idempotencyFingerprint;
     private String paymentStatus;
     private String paymentAmount;
     // Payment is authorized only inside the configured Stripe-safe window.

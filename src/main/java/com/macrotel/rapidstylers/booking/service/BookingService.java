@@ -1,6 +1,5 @@
 package com.macrotel.rapidstylers.booking.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.entity.BookingSlotLockEntity;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
@@ -32,7 +31,6 @@ import com.stripe.model.Customer;
 import com.stripe.model.PaymentIntent;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -55,6 +53,8 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
  */
 @Service
 public class BookingService {
+    /** Also matched by the website, which treats it as "check again" rather than a failure. */
+    static final String ALREADY_SUBMITTED = "This booking request is already being processed or was already submitted";
     @Autowired
     DTOService dtoService;
     private static final Logger LOG = Logger.getLogger(BookingService.class.getName());
@@ -72,10 +72,6 @@ public class BookingService {
     BookingSlotLockRepo bookingSlotLockRepo;
     @Autowired
     StripeService stripeService;
-    @Autowired
-    IdempotencyService idempotencyService;
-    @Autowired
-    ObjectMapper objectMapper;
     @Autowired
     ReadCacheService readCacheService;
     // Payment domain ops (carved out of this class; see simplification-plan.md).
@@ -138,26 +134,28 @@ public class BookingService {
         return response;
     }
 
+    /** What a successful booking request answers, first time and on every replay. */
+    static BaseResponse bookedResponse(){
+        BaseResponse response = new BaseResponse(true);
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage("Appointment booked successfully");
+        response.setData(EMPTY_DATA);
+        return response;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public BaseResponse bookAppointment(BookAppointmentData bookAppointmentData){
+        return bookAppointment(bookAppointmentData, null);
+    }
+
+    /**
+     * Creates the booking. When the request carries an Idempotency-Key it is saved
+     * on the booking row with {@code fingerprint}; BookingRetries handles replays.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse bookAppointment(BookAppointmentData bookAppointmentData, String fingerprint){
         BaseResponse response = new BaseResponse(true);
-        IdempotencyService.Claim idempotencyClaim = null;
         try{
-            if (idempotencyService != null && bookAppointmentData.getIdempotencyKey() != null
-                    && !bookAppointmentData.getIdempotencyKey().trim().isEmpty()) {
-                idempotencyClaim = idempotencyService.claim("book-appointment", bookAppointmentData.getUserId(),
-                        bookAppointmentData.getIdempotencyKey(), Duration.ofHours(24));
-                if (idempotencyClaim.isDuplicate()) {
-                    // Check for a stored response from a previous successful booking
-                    String storedResponse = idempotencyService.getStoredResponse(
-                            "book-appointment", bookAppointmentData.getUserId(), bookAppointmentData.getIdempotencyKey());
-                    if (storedResponse != null) {
-                        LOG.info("Replaying stored idempotency response for booking");
-                        return new BaseResponse(); // The controller will deserialize the stored JSON
-                    }
-                    return Responses.errorResponse(response, "This booking request is already being processed or was already submitted");
-                }
-            }
             LocalDate appointmentDate = availabilityService.parseBookingDate(bookAppointmentData.getAppointmentDate());
             LocalTime appointmentStart = availabilityService.parseBookingTime(bookAppointmentData.getArrivalTime());
             if(appointmentDate.isBefore(LocalDate.now(applicationZone()))){
@@ -168,15 +166,24 @@ public class BookingService {
                 return Responses.errorResponse(response, "Arrival time must start on a 15-minute boundary");
             }
 
+            // This row lock serializes all booking attempts for one stylist before
+            // the availability/conflict read and the unique slot inserts. It is the
+            // first database read on purpose: MySQL fixes what a transaction can see
+            // at its first plain read, so every read below sees whatever a request
+            // that held this lock before us committed.
+            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerIdForUpdate(bookAppointmentData.getStylerId());
             Optional<UserEntity> isUserExist = userRepo.findByUserId(bookAppointmentData.getUserId());
             if(isUserExist.isEmpty()){
                 return Responses.errorResponse(response, "Invalid User Id, Kindly create account");
             }
-            // This row lock serializes all booking attempts for one stylist before
-            // the availability/conflict read and the unique slot inserts.
-            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerIdForUpdate(bookAppointmentData.getStylerId());
             if(isStylerExist.isEmpty()){
                 return Responses.errorResponse(response, "Invalid Styler Id");
+            }
+            // A twin request with the same key may have just booked while we waited
+            // for the lock. Stop before touching the card; BookingRetries replays it.
+            String idempotencyKey = bookAppointmentData.getIdempotencyKey();
+            if(idempotencyKey != null && bookAppointmentRepo.findByIdempotencyKey(idempotencyKey).isPresent()){
+                return Responses.errorResponse(response, ALREADY_SUBMITTED);
             }
             if(!stylerEligibility.isApprovedStyler(isStylerExist.get())){
                 return Responses.errorResponse(response, "This professional is not yet available for booking");
@@ -253,6 +260,8 @@ public class BookingService {
             // Snapshot the commission at booking time so the payout is deterministic
             // even if the admin later changes the platform rate.
             appointment.setCommissionPercent(paymentService.effectiveCommissionPercent());
+            appointment.setIdempotencyKey(idempotencyKey);
+            appointment.setIdempotencyFingerprint(idempotencyKey == null ? null : fingerprint);
 
             // Stripe: authorize near-term bookings immediately with the one-time
             // card the booking modal collected via Elements. We never persist the
@@ -350,32 +359,15 @@ public class BookingService {
 
             // The stylist's profile shows booked slots — refresh it for the next viewer.
             evict(ReadCacheService.KEY_STYLER_APPOINTMENTS + bookAppointmentData.getStylerId());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Appointment booked successfully");
-            response.setData(EMPTY_DATA);
-
-            // Store response for idempotency replay on duplicate requests
-            if (idempotencyClaim != null && idempotencyClaim.isAcquired() && idempotencyService != null
-                    && bookAppointmentData.getIdempotencyKey() != null) {
-                try {
-                    idempotencyService.storeResponse("book-appointment", bookAppointmentData.getUserId(),
-                            bookAppointmentData.getIdempotencyKey(), objectMapper.writeValueAsString(response));
-                } catch (Exception ignored) { }
-            }
+            response = bookedResponse();
         }
         catch(DataIntegrityViolationException ex){
             // Let the transactional proxy roll back the appointment and slot
             // rows together. The controller advice returns the conflict response.
             LOG.warning("Booking slot collision: " + ex.getMessage());
-            if (idempotencyClaim != null && idempotencyClaim.isAcquired() && idempotencyService != null) {
-                idempotencyService.release(idempotencyClaim);
-            }
             throw ex;
         }
         catch(DateTimeParseException ex){
-            if (idempotencyClaim != null && idempotencyClaim.isAcquired() && idempotencyService != null) {
-                idempotencyService.release(idempotencyClaim);
-            }
             return Responses.errorResponse(response, "Invalid appointment date or arrival time");
         }
         catch(IllegalArgumentException ex){

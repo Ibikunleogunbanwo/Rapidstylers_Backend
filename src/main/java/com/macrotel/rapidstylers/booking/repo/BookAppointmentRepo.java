@@ -27,6 +27,8 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
 
     Optional<BookAppointmentEntity> findByAppointmentId(String appointmentId);
 
+    Optional<BookAppointmentEntity> findByIdempotencyKey(String idempotencyKey);
+
     /**
      * Pessimistic write lock on the appointment row. Status transitions (and
      * the refunds they trigger) are serialized per appointment, so concurrent

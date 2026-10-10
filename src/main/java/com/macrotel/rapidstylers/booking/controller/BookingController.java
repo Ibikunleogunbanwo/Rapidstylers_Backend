@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.booking.controller;
 import com.macrotel.rapidstylers.booking.pojo.AppointmentActionData;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
+import com.macrotel.rapidstylers.booking.service.BookingRetries;
 import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -24,6 +25,8 @@ public class BookingController {
     BookingService bookingService;
     @Autowired
     AppointmentWorkflowService appointmentWorkflowService;
+    @Autowired
+    BookingRetries bookingRetries;
 
     @PostMapping("/booking_estimate")
     public ResponseEntity<BaseResponse> bookingEstimate(@RequestBody BookAppointmentData bookAppointmentData){
@@ -42,7 +45,7 @@ public class BookingController {
         bookAppointmentData.setUserId(accountId);
         String idempotencyKey = request.getHeader("Idempotency-Key");
         bookAppointmentData.setIdempotencyKey(idempotencyKey);
-        BaseResponse baseResponse = bookingService.bookAppointment(bookAppointmentData);
+        BaseResponse baseResponse = bookingRetries.book(bookAppointmentData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

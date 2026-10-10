@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
@@ -26,6 +27,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -34,6 +36,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -261,6 +264,72 @@ class ConcurrentTwoCustomerBookingTest {
 
         appointmentId = appointmentRepo.findByUserId(aWon ? customerUserIdA : customerUserIdB).stream()
                 .findFirst().map(a -> a.getAppointmentId()).orElse(null);
+    }
+
+    /**
+     * One customer whose answer got lost: the browser fires the same request with
+     * the same Idempotency-Key twice at once, then once more much later. Every
+     * attempt must report the one booking, the database must hold exactly one,
+     * and the key must not stretch to cover a different booking.
+     */
+    @Test
+    void oneCustomerRetryingWithTheSameKeyGetsOneBooking() throws Exception {
+        String[] cust = registerCustomer(custEmailA);
+        customerUserIdA = cust[1];
+        stylerId = registerStyler();
+        apiPost("/admin/update_styler_verification",
+                Map.of("stylerId", stylerId, "action", "APPROVE"), adminToken(), null);
+        appointmentRepo.findAll().stream()
+                .filter(a -> stylerId.equals(a.getStylerId()))
+                .forEach(a -> {
+                    slotLockRepo.deleteByAppointmentId(a.getAppointmentId());
+                    appointmentRepo.delete(a);
+                });
+        String stylerToken = signIn("/sign_in", stylerEmail, "Test1234!");
+        apiPost("/create_sub_service",
+                Map.of("name", "Race Braids", "price", "85.00", "durationMinutes", 60), stylerToken, null);
+        subServiceId = subServiceRepo.findByStylerId(stylerId).stream()
+                .filter(s -> "Race Braids".equals(s.getName()))
+                .findFirst().orElseThrow().getId();
+        apiPost("/update_styler_availability", Map.of("slots", List.of(
+                Map.of("dayOfWeek", "1", "startTime", "09:00", "endTime", "17:00"))), stylerToken, null);
+
+        LocalDate bookingDate = nextDateWithDow(1);
+        Map<String, Object> booking = bookingBody(bookingDate, String.valueOf(subServiceId));
+        String key = UUID.randomUUID().toString();
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<JsonNode> submit = () -> {
+            start.await();
+            return body(apiPost("/book_appointment", booking, cust[0], key));
+        };
+        Future<JsonNode> first = pool.submit(submit);
+        Future<JsonNode> second = pool.submit(submit);
+        start.countDown();
+        JsonNode resultA = first.get(30, TimeUnit.SECONDS);
+        JsonNode resultB = second.get(30, TimeUnit.SECONDS);
+        pool.shutdownNow();
+
+        assertTrue(isSuccess(resultA) && isSuccess(resultB),
+                "both copies of one request must report the booking: " + resultA + " || " + resultB);
+        // A late retry, after the first answer was lost, replays the same booking.
+        assertTrue(isSuccess(body(apiPost("/book_appointment", booking, cust[0], key))));
+
+        List<BookAppointmentEntity> booked = appointmentRepo.findAll().stream()
+                .filter(a -> stylerId.equals(a.getStylerId()))
+                .collect(Collectors.toList());
+        assertEquals(1, booked.size(), "one request must make one booking");
+        assertEquals(key, booked.get(0).getIdempotencyKey());
+        appointmentId = booked.get(0).getAppointmentId();
+
+        // The same key cannot be stretched over a different booking.
+        Map<String, Object> otherTime = new LinkedHashMap<>(booking);
+        otherTime.put("arrivalTime", "13:00");
+        MvcResult reused = apiPost("/book_appointment", otherTime, cust[0], key);
+        assertEquals(422, reused.getResponse().getStatus());
+        assertEquals(1, appointmentRepo.findAll().stream()
+                .filter(a -> stylerId.equals(a.getStylerId())).count());
     }
 
     // ---- helpers ---------------------------------------------------------------

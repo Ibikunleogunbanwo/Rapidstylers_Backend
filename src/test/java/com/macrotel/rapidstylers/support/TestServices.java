@@ -9,8 +9,8 @@ import com.macrotel.rapidstylers.auth.service.OtpService;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
+import com.macrotel.rapidstylers.booking.service.BookingRetries;
 import com.macrotel.rapidstylers.booking.service.BookingService;
-import com.macrotel.rapidstylers.booking.service.IdempotencyService;
 import com.macrotel.rapidstylers.booking.service.PaymentAuthorizationService;
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
@@ -97,7 +97,6 @@ public class TestServices {
     public FeedBackRepo feedBackRepo;
     public GeocodingService geocodingService;
     public GoogleTimezoneService googleTimezoneService = new GoogleTimezoneService();
-    public IdempotencyService idempotencyService;
     public IdentificationRepo identificationRepo;
     public ImageReclaimService imageReclaimService;
     public JwtUtil jwtUtil;
@@ -147,7 +146,8 @@ public class TestServices {
             StylerService.class,
             AppointmentWorkflowService.class,
             PaymentAuthorizationService.class,
-            OtpService.class);
+            OtpService.class,
+            BookingRetries.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 
@@ -225,6 +225,10 @@ public class TestServices {
 
     public OtpService otpService() {
         return get(OtpService.class);
+    }
+
+    public BookingRetries bookingRetries() {
+        return get(BookingRetries.class);
     }
 
     private synchronized <T> T get(Class<T> type) {

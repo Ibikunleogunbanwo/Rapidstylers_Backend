@@ -560,6 +560,9 @@ class BookingWorkflowTest {
         BookingController controller = new BookingController();
         BookingService service = mock(BookingService.class);
         ReflectionTestUtils.setField(controller, "bookingService", service);
+        BookingRetries retries = new BookingRetries();
+        ReflectionTestUtils.setField(retries, "bookingService", service);
+        ReflectionTestUtils.setField(controller, "bookingRetries", retries);
         PaymentController paymentController = new PaymentController();
         CardService cardService = mock(CardService.class);
         ReflectionTestUtils.setField(paymentController, "cardService", cardService);
@@ -662,6 +665,37 @@ class BookingWorkflowTest {
         assertEquals("400", response.getStatusCode());
         assertEquals("This professional's location isn't set, so home visits can't be priced yet", response.getMessage());
         verifyNoInteractions(geocoding);
+    }
+
+    @Test
+    void aBookingKeepsItsRetryKeyAndFingerprint() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("visitBarber");
+        data.setIdempotencyKey("retry-key-1");
+        stubBookableHomeVisit(approvedStyler());
+
+        BaseResponse response = services.bookingService().bookAppointment(data, "fp-1");
+
+        assertEquals("200", response.getStatusCode());
+        verify(appointmentRepo).saveAndFlush(argThat(appointment ->
+                "retry-key-1".equals(appointment.getIdempotencyKey())
+                        && "fp-1".equals(appointment.getIdempotencyFingerprint())));
+    }
+
+    @Test
+    void aTwinThatBookedWhileWeWaitedForTheLockStopsUsBeforeTheCard() throws Exception {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("visitBarber");
+        data.setIdempotencyKey("retry-key-1");
+        stubBookableHomeVisit(approvedStyler());
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(appointmentRepo.findByIdempotencyKey("retry-key-1")).thenReturn(Optional.of(appointment("1")));
+
+        BaseResponse response = services.bookingService().bookAppointment(data, "fp-1");
+
+        assertEquals(BookingService.ALREADY_SUBMITTED, response.getMessage());
+        verify(appointmentRepo, never()).saveAndFlush(any());
+        verify(stripeService, never()).authorizeBookingPayment(any(), any(), anyLong(), any(), any(), anyLong());
     }
 
     private StylerEntity homeVisitStyler() {

@@ -1,7 +1,6 @@
 package com.macrotel.rapidstylers.config;
 
 import com.macrotel.rapidstylers.auth.service.SessionActivityService;
-import com.macrotel.rapidstylers.booking.service.IdempotencyService;
 import com.macrotel.rapidstylers.outbox.NotificationDedupService;
 import com.macrotel.rapidstylers.styler.service.LocationCacheService;
 import java.io.BufferedReader;
@@ -9,7 +8,6 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -33,8 +31,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Live-Redis guard for the serializer rule that came out of the rate-limiter
- * post-mortem: keys holding plain strings (idempotency markers, session
- * activity timestamps, notification-dedup claims, geo members) must be stored
+ * post-mortem: keys holding plain strings (session activity timestamps,
+ * notification-dedup claims, geo members) must be stored
  * PLAIN on the wire. If any of these services is ever wired back to the
  * Jackson value serializer, values become JSON-quoted ("\"abc\"") and this
  * test fails — exactly the failure class that left rate-limit counters with no
@@ -52,8 +50,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class RedisPlainStringIntegrationTest {
 
     private static final String RUN = UUID.randomUUID().toString().substring(0, 8);
-    private static final String IDEM_SCOPE = "it";
-    private static final String IDEM_ACTOR = "plain" + RUN;
     private static final String SESSION_ACCOUNT = "acc-itplain" + RUN;
     private static final String DEDUP_EVENT = "event-itplain" + RUN;
     private static final String GEO_MEMBER = "ITPLAIN" + RUN;
@@ -64,7 +60,6 @@ class RedisPlainStringIntegrationTest {
     private static final List<String> trackedKeys = new ArrayList<>();
 
     // Services under test, wired with the string-serialized template like production.
-    private static IdempotencyService idempotency;
     private static SessionActivityService sessionActivity;
     private static NotificationDedupService notificationDedup;
     private static LocationCacheService locationCache;
@@ -96,7 +91,6 @@ class RedisPlainStringIntegrationTest {
         }
         connected = true;
 
-        idempotency = new IdempotencyService(redisTemplate);
         sessionActivity = new SessionActivityService(redisTemplate);
         notificationDedup = new NotificationDedupService(redisTemplate);
         locationCache = new LocationCacheService(redisTemplate);
@@ -133,28 +127,6 @@ class RedisPlainStringIntegrationTest {
         } catch (Exception e) {
             return false;
         }
-    }
-
-    // ── IdempotencyService ───────────────────────────────────────────
-
-    @Test
-    void idempotencyMarkerIsStoredPlainAndReleaseRemovesIt() {
-        String idemKey = "idempotency:" + IDEM_SCOPE + ":" + IDEM_ACTOR + ":k1";
-        track(idemKey);
-
-        IdempotencyService.Claim claim = idempotency.claim(IDEM_SCOPE, IDEM_ACTOR, "k1", Duration.ofHours(1));
-        assertTrue(claim.isAcquired());
-
-        String raw = rawString(idemKey);
-        assertNotNull(raw, "claim marker must exist");
-        assertTrue(raw.matches("[0-9a-f-]{36}"),
-                "marker must be a PLAIN unquoted UUID on the wire (JSON serializer would quote it): '" + raw + "'");
-
-        // Held claim → duplicate, not a second acquire.
-        assertTrue(idempotency.claim(IDEM_SCOPE, IDEM_ACTOR, "k1", Duration.ofHours(1)).isDuplicate());
-
-        idempotency.release(claim);
-        assertNull(rawString(idemKey), "release() must delete the claim (plain compare works only when stored plain)");
     }
 
     // ── SessionActivityService ───────────────────────────────────────
