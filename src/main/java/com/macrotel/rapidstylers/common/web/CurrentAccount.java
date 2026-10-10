@@ -1,6 +1,5 @@
 package com.macrotel.rapidstylers.common.web;
 
-import com.macrotel.rapidstylers.pojo.BaseResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 

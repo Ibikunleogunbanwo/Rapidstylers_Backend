@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.service.AuditService;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;

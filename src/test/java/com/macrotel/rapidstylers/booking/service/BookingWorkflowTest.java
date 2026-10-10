@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.booking.service;
 
-import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.support.TestServices;
@@ -18,7 +18,7 @@ import com.stripe.exception.CardException;
 import com.stripe.model.PaymentIntent;
 import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.payment.pojo.CardDetailsData;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
@@ -477,7 +477,7 @@ class BookingWorkflowTest {
 
     @Test
     void appointmentDtoIncludesTravelBreakdownForTechnicianAndClientDisclosure() {
-        com.macrotel.rapidstylers.service.DTOService dtoService = new com.macrotel.rapidstylers.service.DTOService();
+        com.macrotel.rapidstylers.common.service.DTOService dtoService = new com.macrotel.rapidstylers.common.service.DTOService();
         BookAppointmentEntity appointment = appointment("APPT-TRAVEL", "1");
         appointment.setServicePrice("100.00");
         appointment.setTravelFee("25.00");
@@ -554,7 +554,7 @@ class BookingWorkflowTest {
         assertNotNull(pending.getStylerNote());
         assertFalse(pending.getStylerNote().contains("<script>"));
 
-        assertEquals(pending.getStylerNote(), new com.macrotel.rapidstylers.service.DTOService().appointmentDTO(pending).getStylerNote());
+        assertEquals(pending.getStylerNote(), new com.macrotel.rapidstylers.common.service.DTOService().appointmentDTO(pending).getStylerNote());
     }
 
     @Test

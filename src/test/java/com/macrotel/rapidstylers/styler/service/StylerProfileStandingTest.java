@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import org.springframework.test.util.ReflectionTestUtils;
-import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;

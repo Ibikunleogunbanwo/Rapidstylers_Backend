@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.styler.service;
 
-import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.DTOService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;

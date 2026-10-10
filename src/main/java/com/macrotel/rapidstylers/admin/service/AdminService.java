@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.admin.service;
 
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
@@ -7,12 +9,9 @@ import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
-import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.AuditService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.AuditService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.stripe.model.Event;

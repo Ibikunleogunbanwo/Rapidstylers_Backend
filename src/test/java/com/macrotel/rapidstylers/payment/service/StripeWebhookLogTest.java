@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import org.springframework.test.util.ReflectionTestUtils;
-import com.macrotel.rapidstylers.service.AuditService;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.google.gson.JsonParser;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;

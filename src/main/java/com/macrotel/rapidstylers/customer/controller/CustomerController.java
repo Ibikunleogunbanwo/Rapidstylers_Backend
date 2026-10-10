@@ -1,10 +1,10 @@
 package com.macrotel.rapidstylers.customer.controller;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.pojo.UpdateData;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
-import com.macrotel.rapidstylers.controller.ApiResponses;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.customer.service.CustomerService;
-import com.macrotel.rapidstylers.pojo.*;
 import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;

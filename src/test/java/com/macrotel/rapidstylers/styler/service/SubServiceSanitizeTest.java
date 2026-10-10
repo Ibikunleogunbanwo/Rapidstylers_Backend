@@ -1,11 +1,11 @@
 package com.macrotel.rapidstylers.styler.service;
 
-import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.pojo.ServiceUpdateData;
 import com.macrotel.rapidstylers.styler.pojo.SubServiceData;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;

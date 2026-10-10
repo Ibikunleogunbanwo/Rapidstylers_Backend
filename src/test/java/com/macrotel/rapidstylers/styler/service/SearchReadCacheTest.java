@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.styler.service;
 
-import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.DTOService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;

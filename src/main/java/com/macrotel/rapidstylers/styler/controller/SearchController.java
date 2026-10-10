@@ -1,8 +1,8 @@
 package com.macrotel.rapidstylers.styler.controller;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.pojo.SearchNearbyData;
-import com.macrotel.rapidstylers.controller.ApiResponses;
-import com.macrotel.rapidstylers.pojo.*;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.styler.service.GeocodingService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import java.util.Map;

@@ -1,11 +1,11 @@
 package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;

@@ -1,17 +1,15 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
 import com.macrotel.rapidstylers.styler.pojo.StylerPortfolioData;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import java.util.*;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;

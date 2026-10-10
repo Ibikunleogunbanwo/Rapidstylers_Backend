@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.media.service;
 
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import org.springframework.beans.factory.annotation.Autowired;

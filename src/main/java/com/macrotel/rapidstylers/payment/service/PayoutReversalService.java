@@ -1,9 +1,9 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.AuditLogEntity;
+import com.macrotel.rapidstylers.common.entity.AuditLogEntity;
 import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
-import com.macrotel.rapidstylers.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

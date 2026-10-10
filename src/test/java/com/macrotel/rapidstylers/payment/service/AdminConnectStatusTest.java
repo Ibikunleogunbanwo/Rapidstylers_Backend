@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

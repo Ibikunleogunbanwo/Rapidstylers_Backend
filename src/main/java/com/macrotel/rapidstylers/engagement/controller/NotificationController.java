@@ -1,10 +1,10 @@
 package com.macrotel.rapidstylers.engagement.controller;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.engagement.pojo.NotificationPreferencesData;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
-import com.macrotel.rapidstylers.controller.ApiResponses;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
-import com.macrotel.rapidstylers.pojo.*;
 import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;

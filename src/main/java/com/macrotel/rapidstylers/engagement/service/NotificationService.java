@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.entity.SavedStylistEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
@@ -14,10 +15,7 @@ import com.macrotel.rapidstylers.engagement.pojo.NotificationPreferencesData;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
 import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import java.util.*;
 import java.util.logging.Logger;

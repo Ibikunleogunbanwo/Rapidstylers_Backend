@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.booking.service;
 
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.styler.service.LocationCacheService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,7 +15,7 @@ import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;

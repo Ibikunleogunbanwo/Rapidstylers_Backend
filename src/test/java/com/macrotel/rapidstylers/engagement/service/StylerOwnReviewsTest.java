@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.engagement.service;
 
-import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.DTOService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;

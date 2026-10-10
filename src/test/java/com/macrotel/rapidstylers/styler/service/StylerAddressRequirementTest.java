@@ -1,10 +1,10 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import org.springframework.test.util.ReflectionTestUtils;
-import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
-import com.macrotel.rapidstylers.service.RateLimiterService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
@@ -16,7 +16,7 @@ import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.styler.pojo.StylerData;
 import com.macrotel.rapidstylers.styler.pojo.VerificationActionData;

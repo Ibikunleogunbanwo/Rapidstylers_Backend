@@ -1,9 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Autowired;

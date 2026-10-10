@@ -1,11 +1,11 @@
 package com.macrotel.rapidstylers.booking.controller;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.booking.pojo.AppointmentActionData;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
-import com.macrotel.rapidstylers.controller.ApiResponses;
-import com.macrotel.rapidstylers.pojo.*;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;

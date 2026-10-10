@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
@@ -8,10 +9,7 @@ import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.engagement.entity.LoyaltyAccountEntity;
 import com.macrotel.rapidstylers.engagement.entity.ReferralEntity;
@@ -7,10 +8,7 @@ import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReferralRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.AuditService;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import java.util.*;
 import java.util.Locale;
 import java.util.logging.Logger;

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.auth.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.pojo.UserData;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
@@ -14,14 +15,11 @@ import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.pojo.OTPData;
 import com.macrotel.rapidstylers.auth.pojo.SignInData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
-import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.service.DTOService;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
 import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.GoogleTokenVerifier;

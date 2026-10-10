@@ -1,8 +1,5 @@
 package com.macrotel.rapidstylers.common.web;
 
-import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
 import java.util.*;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;

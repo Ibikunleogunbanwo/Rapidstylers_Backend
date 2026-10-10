@@ -1,8 +1,8 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.service.AuditService;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.payment.entity.PlatformSettingEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.payment.repo.PlatformSettingRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

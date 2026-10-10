@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.booking.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
@@ -12,18 +13,15 @@ import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
-import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.MoneyUtils;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.AuditService;
-import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.AuditService;
+import com.macrotel.rapidstylers.common.service.DTOService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;

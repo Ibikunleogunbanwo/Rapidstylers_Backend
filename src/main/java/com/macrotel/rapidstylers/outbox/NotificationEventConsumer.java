@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
-import com.macrotel.rapidstylers.service.NotificationDedupService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;

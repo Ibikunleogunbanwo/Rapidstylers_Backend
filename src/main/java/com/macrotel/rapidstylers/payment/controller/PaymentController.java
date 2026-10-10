@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.payment.controller;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.payment.pojo.CardDetailsData;
 import com.macrotel.rapidstylers.payment.pojo.RefundRequestData;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
-import com.macrotel.rapidstylers.controller.ApiResponses;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
-import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.payment.service.PaymentReconciliationService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.auth.service.StepUpService;

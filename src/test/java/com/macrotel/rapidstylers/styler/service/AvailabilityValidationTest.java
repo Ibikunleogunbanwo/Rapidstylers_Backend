@@ -4,7 +4,7 @@ import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.pojo.AvailabilityData;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import org.junit.jupiter.api.BeforeEach;

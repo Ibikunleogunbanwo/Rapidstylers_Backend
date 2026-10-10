@@ -1,6 +1,5 @@
 package com.macrotel.rapidstylers.payment.controller;
 
-import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;

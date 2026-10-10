@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
-import com.macrotel.rapidstylers.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
@@ -28,12 +29,9 @@ import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.engagement.service.ReviewService;
-import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.stripe.model.Account;
 import java.time.Duration;
 import java.util.*;

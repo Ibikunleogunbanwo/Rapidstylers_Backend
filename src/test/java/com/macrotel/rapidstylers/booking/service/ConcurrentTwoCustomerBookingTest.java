@@ -9,7 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;

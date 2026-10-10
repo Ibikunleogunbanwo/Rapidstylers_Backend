@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.common.controller;
 
-import com.macrotel.rapidstylers.controller.ApiResponses;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

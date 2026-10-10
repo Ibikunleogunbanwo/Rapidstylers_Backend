@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.media.controller;
 
-import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;

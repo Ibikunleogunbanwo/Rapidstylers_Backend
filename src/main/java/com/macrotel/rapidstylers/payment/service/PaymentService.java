@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.service.AuditService;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
@@ -11,7 +11,7 @@ import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.payment.pojo.RefundRequestData;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;

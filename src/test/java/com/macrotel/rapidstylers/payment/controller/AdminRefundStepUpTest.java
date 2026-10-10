@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.payment.controller;
 
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.payment.pojo.RefundRequestData;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.auth.service.StepUpService;

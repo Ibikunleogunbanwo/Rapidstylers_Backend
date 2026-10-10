@@ -1,10 +1,10 @@
 package com.macrotel.rapidstylers.styler.controller;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.pojo.PortfolioActionData;
 import com.macrotel.rapidstylers.styler.pojo.StylerPortfolioData;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
-import com.macrotel.rapidstylers.controller.ApiResponses;
-import com.macrotel.rapidstylers.pojo.*;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;

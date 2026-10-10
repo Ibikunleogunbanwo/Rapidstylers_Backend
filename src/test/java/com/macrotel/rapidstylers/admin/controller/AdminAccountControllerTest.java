@@ -3,7 +3,7 @@ package com.macrotel.rapidstylers.admin.controller;
 import com.macrotel.rapidstylers.config.AppConstants;
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.admin.pojo.AdminPasswordData;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
 import com.macrotel.rapidstylers.auth.service.StepUpService;

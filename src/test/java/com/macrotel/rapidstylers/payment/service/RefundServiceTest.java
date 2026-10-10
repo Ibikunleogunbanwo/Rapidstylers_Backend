@@ -1,15 +1,15 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import org.springframework.test.util.ReflectionTestUtils;
-import com.macrotel.rapidstylers.service.AuditService;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.payment.pojo.RefundRequestData;
-import com.macrotel.rapidstylers.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;

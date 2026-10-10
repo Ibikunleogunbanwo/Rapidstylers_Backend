@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
 import org.junit.jupiter.api.BeforeEach;

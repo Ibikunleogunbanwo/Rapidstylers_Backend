@@ -3,7 +3,7 @@ package com.macrotel.rapidstylers.engagement.service;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.engagement.entity.FeedbackEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.engagement.pojo.UserFeedbackData;
 import com.macrotel.rapidstylers.engagement.repo.FeedBackRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;

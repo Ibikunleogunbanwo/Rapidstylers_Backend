@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.customer.service;
 
-import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.DTOService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
@@ -13,7 +13,7 @@ import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

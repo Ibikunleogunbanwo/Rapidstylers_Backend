@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
@@ -12,10 +13,7 @@ import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
-import com.macrotel.rapidstylers.entity.*;
-import com.macrotel.rapidstylers.pojo.*;
-import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
