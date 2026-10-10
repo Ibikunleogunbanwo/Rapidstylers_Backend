@@ -6,10 +6,9 @@ GitHub's mermaid renderer.
 
 | File | Used by |
 |---|---|
-| `system-design.svg` / `.mmd` | `docs/duplication-guide.md` §0.1 — system at a glance |
-| `ci-cd-pipeline.svg` / `.mmd` | `docs/ci-cd.md` §2 — pipeline at a glance |
+| `system-design.svg` / `.mmd` | System at a glance (not embedded in a doc right now) |
+| `ci-cd-pipeline.svg` / `.mmd` | CI/CD pipeline at a glance (not embedded in a doc right now) |
 | `duplication-topology.svg` / `.mmd` | `deploy/README.md` — full duplication picture |
-| `ai-pipeline.svg` / `.mmd` | AI/LLM process flow — ingestion → embeddings → retrieval → LLM → response |
 
 ## Workflow
 

@@ -2,14 +2,11 @@
 
 _Current state as read from the code and configuration on `dev`, September 2026. This is a preview of the architecture as it stands, not a target design._
 
-> **Update — September 13, 2026 (simplification applied).** This document was the
-> input to the phased simplification review. That review's verdicts, evidence,
-> and what has since shipped live in [`./simplification-plan.md`](./simplification-plan.md):
-> schema authority is now **Flyway-only** (`V13` full baseline, `ddl-auto=validate`,
-> the three boot reconcilers deleted), the payment domain is **carved out of
-> `AppService`** into `PaymentOpsService` + the shared `AuditService`/`MoneyUtils`,
-> and the observability stack was verified as three distinct gated roles and kept.
-> The launch acceptance gate lives in [`./launch-gate-uat.md`](./launch-gate-uat.md).
+> **Update — September 13, 2026 (simplification applied).** Schema authority is now
+> **Flyway-only** (`V13` full baseline, `ddl-auto=validate`, the three boot reconcilers
+> deleted), the payment domain is **carved out of `AppService`** into `PaymentOpsService`
+> + the shared `AuditService`/`MoneyUtils`, and the observability stack was verified as
+> three distinct gated roles and kept.
 
 > **Reference architecture (October 10, 2026).** The target design every refactor
 > moves toward is in [§9](#9-reference-architecture-target-adopted-october-10-2026).
@@ -135,7 +132,7 @@ _(The three schema reconcilers that used to run on every boot — `InnoDbReconci
    on a fresh one it builds everything before Hibernate validates it. **Any future
    schema change ships as the next numbered migration.**
 
-2. **Kafka exists to send email.** The transactional-outbox → Kafka → consumer pipeline (8 files, 3 topics with retry + DLQ) exists so booking/notification emails are not lost on transaction failure. Nothing else consumes those domain events. This remains a deliberate carry: removing the broker would free roughly 1 GB of VPS memory but lose the tested retry/DLQ semantics — revisit when worker-splitting or a second consumer domain becomes real (see `simplification-plan.md` §4).
+2. **Kafka exists to send email.** The transactional-outbox → Kafka → consumer pipeline (8 files, 3 topics with retry + DLQ) exists so booking/notification emails are not lost on transaction failure. Nothing else consumes those domain events. This remains a deliberate carry: removing the broker would free roughly 1 GB of VPS memory but lose the tested retry/DLQ semantics. **Superseded October 10, 2026:** removal behind a switch was decided; see §9.
 
 ---
 
@@ -212,8 +209,6 @@ merge/push to main  → tests + gitleaks green → Deploy to VPS job:
 The frontend deploys independently on Vercel from its own repo; the only shared secret is the
 `x-api-key` (`APP_API_KEY` / `REACT_APP_API_KEY`). The VPS `.env` lives only on the host — rsync
 and the repo both exclude it, and gitleaks gates every push.
-
-> Full CI/CD design and rationale: [`docs/ci-cd.md`](./ci-cd.md).
 
 ## 8.5 Ops checklist (from README) — the non-negotiables each deploy
 
@@ -316,9 +311,4 @@ The outside of the system doesn't change: the same three hops, the same URLs, th
 
 ---
 
----_This document was the input to the phased simplification review — every subsystem
-got a keep / simplify / cut verdict, recorded with evidence in
-[`docs/simplification-plan.md`](./simplification-plan.md). The launch acceptance
-gate is [`docs/launch-gate-uat.md`](./launch-gate-uat.md). To stand up a working
-copy of this system from scratch (local dev, VPS, CI/CD), see
-[`docs/duplication-guide.md`](./duplication-guide.md)._
+_Sections 1 to 8 describe the system as it is; §9 is the target every refactor moves toward._
