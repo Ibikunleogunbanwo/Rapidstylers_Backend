@@ -132,6 +132,9 @@ services:
       # stylist per service type so public search is never all-empty on a
       # fresh/wiped database. Default off; real stylists are never touched.
       APP_DEMO_SEED: ${APP_DEMO_SEED:-false}
+      # API docs (/swagger-ui.html, /v3/api-docs). Off in production: the
+      # x-api-key ships in the website, so it would publish a map of every route.
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
       JWT_SECRET: ${JWT_SECRET}
       JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-15}
       ENCRYPT_KEY: ${ENCRYPT_KEY:-}

@@ -18,7 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * /v3/api-docs actually renders with the app title and a real endpoint, gated
  * by the shared x-api-key like every other call.
  */
-@SpringBootTest
+@SpringBootTest(properties = "API_DOCS_ENABLED=true")
 @AutoConfigureMockMvc
 class OpenApiDocsTest {
 
