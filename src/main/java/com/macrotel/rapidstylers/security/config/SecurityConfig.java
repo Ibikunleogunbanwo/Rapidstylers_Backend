@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.security.config;
 import com.macrotel.rapidstylers.security.access.Routes;
 import com.macrotel.rapidstylers.security.filter.JwtAuthFilter;
 import com.macrotel.rapidstylers.security.handler.JsonAuthErrorHandler;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -82,6 +83,18 @@ public class SecurityConfig {
             .and()
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * JwtAuthFilter is a @Component, so Spring Boot would also register it as a
+     * plain servlet filter outside the chain. It belongs only inside the chain
+     * (added above), so switch that second registration off.
+     */
+    @Bean
+    public FilterRegistrationBean<JwtAuthFilter> jwtAuthFilterServletRegistration(JwtAuthFilter filter) {
+        FilterRegistrationBean<JwtAuthFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     /**

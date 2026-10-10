@@ -34,7 +34,7 @@ class SecurityConfigTest {
     void corsConfigurationUsesConfiguredOriginsWithoutWildcard() throws ServletException, IOException {
         CorsConfig corsConfig = new CorsConfig();
         ReflectionTestUtils.setField(corsConfig, "allowedOrigins", "https://rapidstylers.ca,https://www.rapidstylers.ca");
-        CorsFilter filter = corsConfig.corsFilter();
+        CorsFilter filter = new CorsFilter(corsConfig.corsConfigurationSource());
 
         MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", "/rapid_stylers/list_service");
         request.addHeader("Origin", "https://rapidstylers.ca");

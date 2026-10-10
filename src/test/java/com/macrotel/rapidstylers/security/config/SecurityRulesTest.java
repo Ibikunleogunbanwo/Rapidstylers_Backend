@@ -25,6 +25,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -135,6 +136,26 @@ class SecurityRulesTest {
         mockMvc.perform(options("/rapid_stylers/user_data")
                         .header("Origin", "https://rapidstylers.ca")
                         .header("Access-Control-Request-Method", "GET"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://rapidstylers.ca"));
+    }
+
+    @Test
+    void rejectedCrossOriginRequestStillCarriesCorsHeaders() throws Exception {
+        // Without the header the browser hides the 401 from the frontend, which
+        // then cannot tell "sign in again" apart from a network error.
+        mockMvc.perform(request(HttpMethod.GET, "/rapid_stylers/user_data")
+                        .header("Origin", "https://rapidstylers.ca")
+                        .header("x-api-key", "test-key"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://rapidstylers.ca"));
+    }
+
+    @Test
+    void unknownOriginIsRefused() throws Exception {
+        mockMvc.perform(options("/rapid_stylers/list_service")
+                        .header("Origin", "https://evil.example")
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(status().isForbidden());
     }
 }
