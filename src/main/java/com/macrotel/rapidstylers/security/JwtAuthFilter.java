@@ -70,6 +70,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/styler/connect_status", "STYLER");
         allow("/rapid_stylers/styler/payouts", "STYLER");
         allow("/rapid_stylers/styler/business_summary", "STYLER");
+        allow("/rapid_stylers/styler/reviews", "STYLER");
 
         allow("/rapid_stylers/book_appointment", "CUSTOMER");
         allow("/rapid_stylers/cancel_appointment", "CUSTOMER");
@@ -131,6 +132,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         allow("/rapid_stylers/admin/refund", "ADMIN");
         allow("/rapid_stylers/admin/refunds", "ADMIN");
         allow("/rapid_stylers/admin/payment_reconciliation", "ADMIN");
+
+        // Any signed-in account: logout needs to know whose refresh tokens to revoke.
+        allow("/rapid_stylers/auth/logout", "CUSTOMER", "STYLER", "ADMIN");
 
         // Database-backed admin account management
         allow("/rapid_stylers/admin/accounts", "ADMIN");

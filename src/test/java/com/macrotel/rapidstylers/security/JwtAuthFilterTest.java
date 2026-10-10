@@ -261,4 +261,50 @@ class JwtAuthFilterTest {
 
         assertEquals(401, response.getStatus());
     }
+
+    @Test
+    void stylerReviewsResolvesTheStylistFromTheToken() throws ServletException, IOException {
+        // The controller reads accountId, which only this filter sets; an unlisted
+        // path left it null and the stylist always got 401.
+        Claims claims = Jwts.claims().setSubject("STYLER1");
+        claims.put("role", "STYLER");
+        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/styler/reviews");
+        request.addHeader("Authorization", "Bearer styler-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(200, response.getStatus());
+        assertEquals("STYLER1", request.getAttribute("accountId"));
+    }
+
+    @Test
+    void logoutResolvesTheAccountForEveryRole() throws ServletException, IOException {
+        for (String role : new String[] {"CUSTOMER", "STYLER", "ADMIN"}) {
+            Claims claims = Jwts.claims().setSubject(role + "1");
+            claims.put("role", role);
+            when(jwtUtil.parseToken(role + "-token")).thenReturn(claims);
+
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/auth/logout");
+            request.addHeader("Authorization", "Bearer " + role + "-token");
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            filter.doFilter(request, response, new MockFilterChain());
+
+            assertEquals(200, response.getStatus(), role);
+            assertEquals(role + "1", request.getAttribute("accountId"), role);
+        }
+    }
+
+    @Test
+    void logoutWithoutTokenIsRejected() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/auth/logout");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(401, response.getStatus());
+    }
 }
