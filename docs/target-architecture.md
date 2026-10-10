@@ -79,14 +79,30 @@ Plain-text version:
 |---|---|---|
 | Edge | Cloudflare → Nginx → app; location from ip-api.com; Cloudflare IPs kept in two lists | Same hops. Location from Cloudflare's visitor-location headers. App trusts only Nginx; origin accepts only Cloudflare |
 | Security | Done October 10: closed by default, rules in `security/access/Routes`, see [`spring-security.md`](./spring-security.md). Controllers still read the `accountId` request attribute | Standard Spring Security: `anyRequest().authenticated()` with a short `permitAll()` list, so a forgotten path fails closed. Controllers read the principal. `x-api-key` stays for now |
-| Controllers | `ApplicationController`, 1,288 lines, 117 routes | One controller per domain, same paths and `BaseResponse` shape |
-| Services | `AppService`, 5,534 lines, 46 dependencies | Seven domain services (below); no class over 800 lines |
+| Controllers | Done October 10: one or more controllers per domain package, same paths and `BaseResponse` shape. `ApplicationController` is gone | Controllers read the principal instead of the `accountId` attribute |
+| Services | Done October 10: `AppService` is gone; services live in their domain package and none is over 800 lines (largest: `StylerService`, 774) | Simplifications in the table below |
 | Events | Outbox → Kafka (3 topics) → `NotificationEventConsumer` | Outbox → `OutboxPublisherJob` calls the notification handler in-process; `attempts`, `next_attempt_at` and `status=FAILED` replace the retry and DLQ topics |
 | Redis | 7 uses, custom `ReadCacheService` | Kept; read cache becomes Spring `@Cacheable(sync = true)` |
 | Database | MySQL 8, Flyway V1 to V15 | Unchanged schema; no destructive migrations |
 | Framework | Spring Boot 2.7, Java 17, `javax.*` | Spring Boot 3, Java 21, `jakarta.*` (last step) |
 
-## Domain services
+## Folder layout (done October 10)
+
+Each business area is one package under `com.macrotel.rapidstylers`, with the same subfolders inside: `controller/`, `service/`, `repo/`, `entity/`, `pojo/` (request bodies) and `dto/` (response shapes). Think of each package as a department with its own front desk (controller), staff (services) and filing cabinet (repos and entities). Code every department uses lives in `common/`; `security/`, `config/` and `outbox/` are shared plumbing.
+
+| Package | Controllers | Services |
+|---|---|---|
+| `auth` | `AuthController` | `AuthService` (sign-in, sign-up, password), `OtpService` (email codes), `RefreshTokenService`, `SessionActivityService`, `LoginAttemptService`, `StepUpService` |
+| `booking` | `BookingController` | `BookingService` (estimate, book, list), `AppointmentWorkflowService` (accept, decline, complete, cancel), `PaymentAuthorizationService` (charges a booking when it comes due), `IdempotencyService` |
+| `payment` | `PaymentController`, `StripeWebhookController` | `PaymentService`, `StripeService`, `CardService`, `ConnectAccountService`, `PaymentReconciliationService`, `PayoutReversalService` |
+| `catalog` | `CatalogController` | `CatalogService` |
+| `styler` | `StylerController`, `AvailabilityController`, `PortfolioController`, `SearchController` | `StylerService`, `AvailabilityService`, `PortfolioService`, `SearchService`, location helpers |
+| `customer` | `CustomerController` | `CustomerService` |
+| `admin` | `AdminController`, `AdminAuthController`, `AdminAccountController` | `AdminService`, `SignupFollowUpService` |
+| `engagement` | `FeedbackController`, `LoyaltyController`, `NotificationController`, `ReviewController`, `SupportController` | one service each |
+| `media` | `CloudinaryController`, `GalleryController` | `CloudinaryService`, `GalleryService`, `ImageReclaimService` |
+
+## Domain services (remaining simplifications)
 
 | Service | Takes over from `AppService` | Simplification |
 |---|---|---|
@@ -103,13 +119,12 @@ Plain-text version:
 - **The tests are the floor.** `./mvn21 test` stays green after every step, and each new service gets its own tests.
 - **One change per branch.** Pure moves first, behaviour fixes in a separate change.
 - **No destructive migrations.** Unused columns and tables are dropped one release later, after a backup.
-- **Keep a delegating facade until the end.** `AppService` forwards to the new services until the controllers are split.
 
 ## Order
 
 1. Edge (done in code October 10; Nginx files still to be installed on the VPS): Cloudflare visitor-location headers, trust only Nginx in `RATE_LIMIT_TRUSTED_PROXIES`, Nginx refuses anything that skipped Cloudflare.
 2. Bugs: slot-race card hold, empty idempotent replay, unreleased idempotency claim, legacy sign-in endpoints, `/styler/reviews` 401.
-3. Services: security, auth, payments, booking, catalog, stylists and admin, engagement, controllers, then the Spring Boot 3 upgrade.
+3. Services: security, then the domain split (done October 10), then the simplifications above, then the Spring Boot 3 upgrade.
 
 How the edge works (Cloudflare, Nginx, client IPs): [`cloudflare.md`](./cloudflare.md).
 How the app decides who may do what (Spring Security): [`spring-security.md`](./spring-security.md).

@@ -43,7 +43,7 @@ Everything about "who are you and may you come in" lives in `src/main/java/com/m
 | `config/` | `SecurityConfig` | Wires the chain together: CORS, the JWT filter, the rules from `Routes`, the 401 handler, the security headers. Also provides the BCrypt `PasswordEncoder`. |
 | `config/` | `CorsConfig` | Which websites may call the API from a browser. |
 | `access/` | `Routes` | The guest list. Data only: public routes and the routes for each role. |
-| `filter/` | `JwtAuthFilter` | Reads the `Authorization: Bearer` token and signs the request in. Sets the `accountId` and `role` request attributes the controllers read. |
+| `filter/` | `JwtAuthFilter` | Reads the `Authorization: Bearer` token and signs the request in, unless the token was issued before the account's last sign-out. Sets the `accountId` and `role` request attributes the controllers read. |
 | `filter/` | `ApiKeyFilter` | Checks the shared `x-api-key`. |
 | `handler/` | `JsonAuthErrorHandler` | Writes the 401 JSON for "no token" and "wrong role". |
 | `jwt/` | `JwtUtil` | Makes and checks the signed tokens. |
@@ -101,8 +101,6 @@ Every existing route keeps its access and the same 401 body. The one visible dif
 
 ## Left for later
 
-- **`/testing` is public.** It returns a fixed text and touches no data. Confirm nothing needs it; if not, delete it.
-- **A revoked session keeps working for up to 15 minutes.** Signing out, a password change or disabling an admin burns the refresh tokens at once, but an access token already handed out stays valid until it expires (15 minutes). Closing that gap needs a server-side deny list; not worth it yet.
 - **Account ids are unique by checking before insert, not by the database.** Add a unique constraint once production is checked for existing duplicates.
 - **The booking's travel distance comes from the browser**, so the travel fee can be under-charged. That is a pricing fix for the bookings domain.
 - **No per-email cap on wrong OTP guesses** (there is a per-IP limit).
@@ -130,3 +128,15 @@ Every existing route keeps its access and the same 401 body. The one visible dif
 A new stylist uploads their profile and ID photos before their account exists, so they have no sign-in token. Verifying their email code (`/styler_verify_otp`) hands out a pass instead: a token whose subject is the email and whose role is `SIGNUP_UPLOAD`, valid for two hours.
 
 Picture a visitor badge printed at reception. It gets you to one room (`Routes.UPLOAD`: the upload signature and deleting an unused image) and nowhere else: unlisted routes need a real account role (`Roles.ACCOUNTS`), so the badge cannot reach them, and `JwtAuthFilter` gives it no `accountId` and no session activity, because it is not an account.
+
+## Signing out takes effect at once
+
+Picture the access token as a wristband handed out at the door. The door staff only check that the wristband is genuine, so before this change a wristband kept working until it expired (15 minutes), even after its owner signed out, changed their password or, for an admin, was disabled.
+
+Now every sign-out writes a note on the door: "account `C123`: wristbands handed out before 14:05:07.312 are void". That note is a Redis key, `rapidstylers:jwt:revoked-before:<role>:<accountId>`, and it lives only as long as a wristband can (token TTL plus a minute). `JwtAuthFilter` checks the note on every request and treats a void token as no token, so the route answers 401 like any signed-out call.
+
+- **Who writes the note:** `RefreshTokenService.revokeAllForAccount`, which logout, password reset and change, admin disable and the idle timeout already call. The class is `security/jwt/AccessTokenRevocations`.
+- **Fresh tokens still work.** Tokens carry their exact issue time in milliseconds (`iat_ms`), so a sign-in right after a sign-out, or the new token a password change hands back, is newer than the note.
+- **Fail-open.** If Redis is down the note can't be read and the token is accepted, the same choice the idle timeout makes. The refresh token is still deleted in MySQL, so the session ends at the next renewal anyway.
+
+`/rapid_stylers/testing` was also removed on October 10. It answered a fixed "API is working well" and nothing called it; health checks use `/actuator/health`.
