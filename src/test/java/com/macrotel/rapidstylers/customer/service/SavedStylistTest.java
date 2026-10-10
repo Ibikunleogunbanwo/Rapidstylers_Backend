@@ -1,16 +1,18 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.customer.service;
 
+import com.macrotel.rapidstylers.service.DTOService;
+import com.macrotel.rapidstylers.service.ReadCacheService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.entity.SavedStylistEntity;
+import com.macrotel.rapidstylers.customer.entity.SavedStylistEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
-import com.macrotel.rapidstylers.repo.SavedStylistRepo;
+import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -67,8 +69,8 @@ class SavedStylistTest {
         when(savedRepo.findByUserIdAndStylerId("USER1", "STYLER1"))
                 .thenReturn(Optional.empty(), Optional.of(new SavedStylistEntity("USER1", "STYLER1")));
 
-        BaseResponse first = services.appService().saveStylist("USER1", "STYLER1");
-        BaseResponse second = services.appService().saveStylist("USER1", "STYLER1");
+        BaseResponse first = services.customerService().saveStylist("USER1", "STYLER1");
+        BaseResponse second = services.customerService().saveStylist("USER1", "STYLER1");
 
         assertEquals("200", first.getStatusCode());
         assertEquals("200", second.getStatusCode());
@@ -80,7 +82,7 @@ class SavedStylistTest {
         when(userRepo.findByUserId("USER1")).thenReturn(Optional.of(new UserEntity()));
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist("REJECTED")));
 
-        BaseResponse response = services.appService().saveStylist("USER1", "STYLER1");
+        BaseResponse response = services.customerService().saveStylist("USER1", "STYLER1");
 
         assertEquals("400", response.getStatusCode());
         verify(savedRepo, never()).save(any(SavedStylistEntity.class));
@@ -99,7 +101,7 @@ class SavedStylistTest {
         dto.setStylerId("STYLER1");
         when(services.dtoService.stylerAccountDTO(any(StylerEntity.class))).thenReturn(dto);
 
-        BaseResponse response = services.appService().listSavedStylists("USER1");
+        BaseResponse response = services.customerService().listSavedStylists("USER1");
 
         assertEquals("200", response.getStatusCode());
         assertEquals(1, ((java.util.List<?>) response.getData()).size());

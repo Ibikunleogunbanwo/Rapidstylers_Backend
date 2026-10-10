@@ -3,7 +3,7 @@ package com.macrotel.rapidstylers.outbox;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;

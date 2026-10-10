@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.controller;
 
+import com.macrotel.rapidstylers.customer.service.CustomerService;
 import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
@@ -57,17 +58,6 @@ public class ApplicationController {
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
-    @GetMapping("/user_data")
-    public ResponseEntity<BaseResponse> singleUserData(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.singleUserData(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
     @GetMapping("/gallery")
     public ResponseEntity <BaseResponse> gallery(
             @RequestParam("category") String category,
@@ -75,52 +65,6 @@ public class ApplicationController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "query", defaultValue = "") String query){
         BaseResponse baseResponse = galleryService.searchGallery(category, perPage, page, query);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/saved_stylists")
-    public ResponseEntity<BaseResponse> savedStylists(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.listSavedStylists(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse, status);
-    }
-
-    @PostMapping("/save_stylist")
-    public ResponseEntity<BaseResponse> saveStylist(@RequestBody Map<String, String> body, HttpServletRequest request){
-        String stylerId = body.getOrDefault("stylerId", "");
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.saveStylist(accountId, stylerId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse, status);
-    }
-
-    @PostMapping("/remove_saved_stylist")
-    public ResponseEntity<BaseResponse> removeSavedStylist(@RequestBody Map<String, String> body, HttpServletRequest request){
-        String stylerId = body.getOrDefault("stylerId", "");
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.removeSavedStylist(accountId, stylerId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse, status);
-    }
-
-    @PostMapping("/update_user_data")
-    public ResponseEntity <BaseResponse> updateUserData(@Valid @RequestBody UpdateData updateData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.updateUserData(updateData, accountId);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

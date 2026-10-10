@@ -1,6 +1,6 @@
-package com.macrotel.rapidstylers.repo;
+package com.macrotel.rapidstylers.customer.repo;
 
-import com.macrotel.rapidstylers.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

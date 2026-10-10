@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.booking.service;
 
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.entity.BookingSlotLockEntity;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;

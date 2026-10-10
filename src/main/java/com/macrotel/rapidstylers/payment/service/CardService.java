@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.payment.service;
 
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.pojo.CardDetailsData;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;

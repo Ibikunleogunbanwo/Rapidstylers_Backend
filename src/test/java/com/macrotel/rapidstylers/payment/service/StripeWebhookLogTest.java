@@ -9,7 +9,7 @@ import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.stripe.model.Event;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

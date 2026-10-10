@@ -1,5 +1,9 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.customer.dto.UserAccountDTO;
+import com.macrotel.rapidstylers.customer.dto.UserDataDTO;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.payment.dto.CardDetailsDTO;
@@ -23,7 +27,6 @@ import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
-import com.macrotel.rapidstylers.dto.*;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.repo.*;
 import org.springframework.beans.factory.annotation.Autowired;

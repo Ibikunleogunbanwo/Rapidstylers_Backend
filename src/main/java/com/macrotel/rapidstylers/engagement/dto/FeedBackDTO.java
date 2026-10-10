@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.engagement.dto;
 
-import com.macrotel.rapidstylers.dto.UserAccountDTO;
+import com.macrotel.rapidstylers.customer.dto.UserAccountDTO;
 import lombok.Data;
 
 @Data

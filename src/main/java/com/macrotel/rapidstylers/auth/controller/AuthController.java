@@ -9,7 +9,7 @@ import com.macrotel.rapidstylers.auth.service.SessionActivityService;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
 import com.macrotel.rapidstylers.controller.ApiResponses;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.pojo.UserData;
+import com.macrotel.rapidstylers.customer.pojo.UserData;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.TurnstileVerifier;
 import com.macrotel.rapidstylers.service.RateLimiterService;

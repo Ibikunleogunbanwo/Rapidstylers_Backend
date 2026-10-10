@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.engagement.entity.LoyaltyAccountEntity;
 import com.macrotel.rapidstylers.engagement.entity.ReferralEntity;
 import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;

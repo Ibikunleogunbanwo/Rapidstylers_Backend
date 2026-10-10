@@ -1,7 +1,7 @@
-package com.macrotel.rapidstylers.entity;
+package com.macrotel.rapidstylers.customer.entity;
 
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.pojo.UserData;
+import com.macrotel.rapidstylers.customer.pojo.UserData;
 import lombok.Data;
 
 import javax.persistence.*;

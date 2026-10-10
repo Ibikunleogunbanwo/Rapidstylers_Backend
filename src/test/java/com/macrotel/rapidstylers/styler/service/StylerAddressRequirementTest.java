@@ -15,7 +15,7 @@ import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.styler.pojo.StylerData;
@@ -26,7 +26,7 @@ import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

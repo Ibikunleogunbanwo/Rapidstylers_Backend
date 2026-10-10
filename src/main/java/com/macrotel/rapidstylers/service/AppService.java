@@ -1,7 +1,8 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
@@ -10,11 +11,8 @@ import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
-import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
-import com.macrotel.rapidstylers.styler.service.StylerService;
-import com.stripe.model.Account;
 import com.stripe.model.Event;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -25,8 +23,6 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 @Service
 public class AppService {
-    @Autowired
-    DTOService dtoService;
     private static final Logger LOG = Logger.getLogger(AppService.class.getName());
     @Autowired
     OTPRepo otpRepo;
@@ -38,8 +34,6 @@ public class AppService {
     StylerRepo stylerRepo;
     @Autowired
     ReviewRepo reviewRepo;
-    @Autowired
-    SavedStylistRepo savedStylistRepo;
     @Autowired
     SupportTicketRepo supportTicketRepo;
     @Autowired
@@ -55,125 +49,12 @@ public class AppService {
     AuditService auditService = new AuditService();
     @Autowired
     StylerEligibility stylerEligibility;
-    @Autowired
-    StylerService stylerService;
 
     public BaseResponse testing(){
         BaseResponse response = new BaseResponse(true);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage("API is working well");
         response.setData(EMPTY_DATA);
-        return response;
-    }
-
-    public BaseResponse singleUserData(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
-            if(isUserExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid User Id, Kindly create account");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(dtoService.userDataDTO(userId));
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse updateUserData(UpdateData updateData, String accountId){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            // Ownership: the account being edited is the authenticated token subject, never the request body.
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(accountId);
-            if(isUserExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid User Id, Kindly create an account");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            UserEntity userEntity = isUserExist.get();
-            userEntity.setFirstname(updateData.getFirstname().isEmpty() ? userEntity.getFirstname() : updateData.getFirstname());
-            userEntity.setLastname(updateData.getLastname().isEmpty() ? userEntity.getLastname() : updateData.getLastname());
-            userEntity.setAddress(updateData.getAddress().isEmpty() ? userEntity.getAddress() : updateData.getAddress());
-            userEntity.setCountry(updateData.getCountry().isEmpty() ? userEntity.getCountry() : updateData.getCountry());
-            userEntity.setPhoneNumber(updateData.getPhoneNumber().isEmpty() ? userEntity.getPhoneNumber() : updateData.getPhoneNumber());
-            userEntity.setState(updateData.getState().isEmpty() ?  userEntity.getState() : updateData.getState());
-            userRepo.save(userEntity);
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Account Updated Successful");
-            response.setData(EMPTY_DATA);
-
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Saves an approved stylist for the authenticated customer. */
-    public BaseResponse saveStylist(String userId, String stylerId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(userRepo.findByUserId(userId).isEmpty()){
-                return Responses.errorResponse(response, "Invalid User Id");
-            }
-            Optional<StylerEntity> styler = stylerRepo.findByStylerId(stylerId);
-            if(styler.isEmpty() || !stylerEligibility.isBookableStyler(styler.get())){
-                return Responses.errorResponse(response, "This professional is not available");
-            }
-            if(savedStylistRepo.findByUserIdAndStylerId(userId, stylerId).isEmpty()){
-                savedStylistRepo.save(new SavedStylistEntity(userId, stylerId));
-            }
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Professional saved");
-            response.setData(Collections.singletonMap("saved", true));
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Removes a saved stylist only from the authenticated customer's collection. */
-    public BaseResponse removeSavedStylist(String userId, String stylerId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            savedStylistRepo.deleteByUserIdAndStylerId(userId, stylerId);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Professional removed from saved list");
-            response.setData(Collections.singletonMap("saved", false));
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Returns the authenticated customer's saved stylists with live profile DTOs. */
-    public BaseResponse listSavedStylists(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            if(userRepo.findByUserId(userId).isEmpty()){
-                return Responses.errorResponse(response, "Invalid User Id");
-            }
-            List<Object> result = new ArrayList<>();
-            for(SavedStylistEntity saved : savedStylistRepo.findByUserIdOrderByCreatedAtDesc(userId)){
-                stylerRepo.findByStylerId(saved.getStylerId())
-                        .filter(stylerEligibility::isBookableStyler)
-                        .ifPresent(styler -> result.add(stylerService.listRowWithHours(dtoService.stylerAccountDTO(styler), styler.getStylerId())));
-            }
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(result);
-        } catch (Exception ex) {
-            LOG.warning(ex.getMessage());
-        }
         return response;
     }
 

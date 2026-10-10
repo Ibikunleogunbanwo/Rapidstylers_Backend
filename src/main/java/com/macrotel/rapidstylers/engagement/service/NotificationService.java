@@ -1,5 +1,9 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.customer.entity.SavedStylistEntity;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;

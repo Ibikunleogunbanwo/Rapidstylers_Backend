@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.engagement.entity.SupportTicketEntity;
 import com.macrotel.rapidstylers.engagement.pojo.SupportTicketActionData;
 import com.macrotel.rapidstylers.engagement.pojo.SupportTicketData;
