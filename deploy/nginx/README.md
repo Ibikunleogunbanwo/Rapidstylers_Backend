@@ -2,7 +2,7 @@
 
 Templates, not live config: copy to the VPS, substitute your domain, verify, reload.
 
-**Role in the system design** (see `docs/architecture.md` §8): nginx is the only
+**Role in the system design** (see `docs/cloudflare.md`): nginx is the only
 host-level process in front of the API. It terminates TLS for `api.<domain>`
 and proxies to the loopback-published container port — Cloudflare talks to it,
 never directly to Docker. The real-IP snippet is what keeps per-user rate

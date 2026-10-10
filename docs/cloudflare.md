@@ -43,5 +43,5 @@ flowchart TB
 ## The three edge fixes
 
 1. **Read the location from Cloudflare (done, October 10).** `LocationService` used to call ip-api.com, which always fell back to Edmonton. It now reads Cloudflare's location headers.
-2. **The app trusts only Nginx.** `RATE_LIMIT_TRUSTED_PROXIES` in `docker-compose.prod.yml` lists Nginx (`127.0.0.1`, the Docker bridge) and every Cloudflare range. The app never talks to Cloudflare directly, and Nginx already checked those ranges, so the app's copy is a second list to keep in sync. The fix trims it to Nginx only.
-3. **Lock the back door.** Anyone who finds the VPS IP can skip Cloudflare and talk to Nginx directly. The fix is on the VPS, not in code: a firewall rule that only accepts ports 80 and 443 from Cloudflare's ranges, or Cloudflare's Authenticated Origin Pulls.
+2. **The app trusts only Nginx.** `RATE_LIMIT_TRUSTED_PROXIES` in `docker-compose.prod.yml` lists Nginx (`127.0.0.1`, the Docker bridge) and every Cloudflare range. The app never talks to Cloudflare directly, and Nginx already checked those ranges, so the app's copy is a second list to keep in sync. Fixed October 10: the list is now Nginx only.
+3. **Lock the back door.** Anyone who finds the VPS IP could skip Cloudflare and talk to Nginx directly. Fixed October 10 in `deploy/nginx`: `cloudflare-real-ip.conf` sets `$from_cloudflare`, and the site closes the connection for any other peer. A firewall rule allowing ports 80 and 443 only from Cloudflare's ranges is an optional second layer.

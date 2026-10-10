@@ -2,7 +2,7 @@
 
 _Adopted October 10, 2026._
 
-_This is the architecture every refactor PR moves toward. [`architecture.md`](./architecture.md) describes the system as it is today; this file describes where it ends up. The full plan, with bugs, line references and decisions, is the "RapidStylers backend simplification plan" doc: https://claude.ai/code/artifact/6042df98-2c80-4b42-925d-6dbce3ea8c27_
+_This is the architecture every refactor PR moves toward. This file describes where the system ends up; [`cloudflare.md`](./cloudflare.md) explains the edge as it runs today. The full plan, with bugs, line references and decisions, is the "RapidStylers backend simplification plan" doc: https://claude.ai/code/artifact/6042df98-2c80-4b42-925d-6dbce3ea8c27_
 
 The outside of the system doesn't change: the same three hops, the same URLs, the same database. The inside goes from one service to seven, each with its own tests. Notifications are delivered from the MySQL outbox instead of a round trip through Kafka.
 
@@ -107,7 +107,7 @@ Plain-text version:
 
 ## Order
 
-1. Edge: Cloudflare visitor-location headers (done on `fix/cloudflare-visitor-location`), trust only Nginx in `RATE_LIMIT_TRUSTED_PROXIES`, lock the origin to Cloudflare.
+1. Edge (done in code October 10; Nginx files still to be installed on the VPS): Cloudflare visitor-location headers, trust only Nginx in `RATE_LIMIT_TRUSTED_PROXIES`, Nginx refuses anything that skipped Cloudflare.
 2. Bugs: slot-race card hold, empty idempotent replay, unreleased idempotency claim, legacy sign-in endpoints, `/styler/reviews` 401.
 3. Services: security, auth, payments, booking, catalog, stylists and admin, engagement, controllers, then the Spring Boot 3 upgrade.
 

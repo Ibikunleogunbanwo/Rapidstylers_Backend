@@ -1,6 +1,6 @@
 # DNS records (Cloudflare)
 
-Production shape (see `docs/architecture.md` §8):
+Production shape (see `docs/cloudflare.md`):
 
 ```text
 rapidstylers.ca / www   -> Vercel frontend

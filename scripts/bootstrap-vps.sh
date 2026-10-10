@@ -6,7 +6,7 @@
 # deploy user, opens the firewall, syncs the backend repo, and starts the prod
 # compose stack (MySQL, Redis, Kafka, API), then waits for health.
 #
-# Target system design (docs/architecture.md §8, deploy/README.md):
+# Target system design (docs/cloudflare.md, deploy/README.md):
 #
 #   Browser → Vercel (frontend)         Cloudflare: DNS + TLS + proxy
 #              │

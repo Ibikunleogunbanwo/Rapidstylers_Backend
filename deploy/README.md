@@ -5,7 +5,7 @@ mirror `docs/duplication-guide.md` §3 and are **templates**: substitute your
 domain, verify with `nginx -t`, and never treat them as the live state on a host.## Where these files sit in the system design
 
 The app-side architecture (layered request gates, Redis runtime state, Kafka
-outbox) lives in `docs/architecture.md`; this folder is the **edge of that same
+outbox) lives in `docs/target-architecture.md` (target) and `docs/cloudflare.md` (edge); this folder is the **edge of that same
 design** — the only part that touches the public internet.
 
 **Full duplication picture** — everything this folder and `scripts/bootstrap-vps.sh` stand up:
