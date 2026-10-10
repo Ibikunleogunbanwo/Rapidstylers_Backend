@@ -104,6 +104,11 @@ services:
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       APP_API_KEY: ${APP_API_KEY}
+      # Hibernate only checks the schema against the entities; Flyway migrations
+      # are the only thing that changes it. The live schema was checked against
+      # validate on 2026-10-10 (see V16). Emergency escape hatch: set
+      # SPRING_JPA_HIBERNATE_DDL_AUTO=update in the VPS .env and redeploy.
+      SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-validate}
       # Browser origins allowed to call the API (comma-separated, exact match).
       # Defaults to the app's own list; set it to restrict or extend.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:9090,https://rapidstylers.ca,https://www.rapidstylers.ca}
