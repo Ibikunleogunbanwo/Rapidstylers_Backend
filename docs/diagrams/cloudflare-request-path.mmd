@@ -1,0 +1,13 @@
+flowchart TB
+    visitor["1 · Visitor's phone (say, Calgary)<br/>real IP 24.x.x.x"]
+    cf["2 · Cloudflare — the reception desk<br/>HTTPS padlock · blocks bots<br/>adds headers: CF-Connecting-IP = 24.x.x.x, cf-ipcity = Calgary"]
+    nginx["3 · Nginx on the VPS — the office door<br/>trusts Cloudflare's IP ranges (cloudflare-real-ip.conf)<br/>uses CF-Connecting-IP, passes X-Forwarded-For"]
+    app["4 · Spring Boot app — you at your desk<br/>RateLimiterService.clientIp(): believes X-Forwarded-For only from a trusted proxy<br/>LocationService: reads the cf-ip* location headers"]
+    data[("5 · MySQL and Redis")]
+    backdoor["Back door<br/>anyone who knows the VPS IP"]:::danger
+    visitor -->|"DNS points at Cloudflare, not the VPS"| cf
+    cf -->|"sent from Cloudflare's own IP, 104.x / 172.x"| nginx
+    nginx -->|"sent from 127.0.0.1 / Docker bridge"| app
+    app --> data
+    backdoor -.->|"skips Cloudflare (fix 3 closes this)"| nginx
+    classDef danger fill:#fde2e1,stroke:#c0392b,color:#7b1d14

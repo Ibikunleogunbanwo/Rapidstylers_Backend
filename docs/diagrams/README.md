@@ -9,6 +9,8 @@ GitHub's mermaid renderer.
 | `system-design.svg` / `.mmd` | System at a glance (not embedded in a doc right now) |
 | `ci-cd-pipeline.svg` / `.mmd` | CI/CD pipeline at a glance (not embedded in a doc right now) |
 | `duplication-topology.svg` / `.mmd` | `deploy/README.md` — full duplication picture |
+| `target-architecture.mmd` | `docs/target-architecture.md` — the target design (rendered inline by GitHub) |
+| `cloudflare-request-path.mmd` | `docs/cloudflare.md` — how a request reaches the app (rendered inline by GitHub) |
 
 ## Workflow
 

@@ -1,0 +1,25 @@
+flowchart TB
+    web["React web app<br/>(unchanged)"] --> cf["Cloudflare<br/>DNS · TLS · proxy"]
+    cf --> nginx["Nginx on the VPS<br/>TLS origin · reverse proxy"]
+    nginx --> sec
+    subgraph app["Spring Boot app — one jar on one VPS, Java 21, Boot 3"]
+        sec["Spring Security<br/>closed by default, short public list"] --> ctrl["One controller per domain<br/>same /rapid_stylers paths"]
+        ctrl --> domain
+        subgraph domain["Domain services that replace AppService"]
+            auth["Auth<br/>sign-in · OTP · reset"]
+            booking["Booking<br/>slots · pricing · flow"]
+            payments["Payments<br/>Stripe · refunds"]
+            catalog["Catalog & search<br/>services · portfolio"]
+            admin["Stylists & admin<br/>verification · KPIs · audit"]
+            engage["Engagement<br/>reviews · support · loyalty"]
+            notify["Notifications<br/>outbox handler · MySQL retries"]
+        end
+        platform["Platform services<br/>rate limits · idempotency · Spring Cache"]
+        jobs["Scheduled jobs<br/>payment auth · reconcile · outbox delivery"]
+    end
+    domain --> mysql[("MySQL 8<br/>same schema · Flyway<br/>outbox holds retries")]
+    platform --> redis[("Redis (kept)<br/>limits · idempotency · sessions · cache")]
+    jobs --> mysql
+    domain --> ext["External services (unchanged)<br/>Stripe · Cloudinary · Google · Resend · Turnstile · Sentry · BetterStack"]
+    kafka["Kafka — removed<br/>frees ~1 GB on the VPS"]:::removed
+    classDef removed stroke-dasharray: 5 5,color:#888,fill:#f6f6f6
