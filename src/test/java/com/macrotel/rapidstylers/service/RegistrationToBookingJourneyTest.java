@@ -91,6 +91,7 @@ class RegistrationToBookingJourneyTest {
     @Autowired LocationCacheService locationCacheService;
     @Autowired IdentificationRepo identificationRepo;
     @Autowired ServiceRepo serviceRepo;
+    @Autowired ReadCacheService readCacheService;
 
     @Value("${app.api.key}") String apiKey;
     @Value("${app.admin.email}") String adminEmail;
@@ -129,6 +130,11 @@ class RegistrationToBookingJourneyTest {
                     return serviceRepo.save(e);
                 });
         serviceTypeId = svcType.getId();
+        // The rows above go straight into the database, but /list_identification
+        // and /list_service read through the Redis catalog cache, which the cache
+        // warmer may have filled with an empty list at startup. Evict it, as the
+        // admin create endpoints do, so the journey sees the seeded rows.
+        readCacheService.evict(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS, ReadCacheService.KEY_CATALOG_SERVICES);
     }
 
     @AfterEach
