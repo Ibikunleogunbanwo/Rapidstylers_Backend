@@ -163,6 +163,18 @@ class RateLimiterServiceTest {
     }
 
     @Test
+    void nginxOnlyTrustListIgnoresClientSuppliedXffBehindCloudflare() {
+        // Cloudflare appends the visitor to any X-Forwarded-For the client sent,
+        // and Nginx (real_ip from CF-Connecting-IP) appends that visitor again.
+        // Trusting only Nginx is enough: the rightmost entry is the real client.
+        rateLimiterService.trustedProxies = RateLimiterService.parseTrustedProxies("127.0.0.1/32,172.18.0.1/32");
+
+        setRequest("172.18.0.1", "6.6.6.6, 203.0.113.42, 203.0.113.42");
+        assertEquals("203.0.113.42", rateLimiterService.clientIp(),
+                "A spoofed leftmost X-Forwarded-For entry must not become the client");
+    }
+
+    @Test
     void chainOfOnlyTrustedProxiesFallsBackToPeer() {
         rateLimiterService.trustedProxies = RateLimiterService.parseTrustedProxies("1.1.1.1, 10.0.0.0/8");
 
