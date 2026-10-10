@@ -53,6 +53,7 @@ public class NotificationService {
     public void sendAppointmentNotification(BookAppointmentEntity appointment, String eventLabel,
                                              String customerHeadline, String customerDetail,
                                              String stylerHeadline, String stylerDetail){
+        recordBookingInApp(appointment, customerHeadline, customerDetail);
         try{
             if(outboxEventService != null){
                 outboxEventService.appointmentNotification(appointment, eventLabel, customerHeadline,
@@ -119,6 +120,56 @@ public class NotificationService {
         catch (Exception ex){
             LOG.warning("Appointment notification mail failed: " + ex.getMessage());
         }
+    }
+
+    /**
+     * Puts the customer's side of a booking event in their in-app inbox, next
+     * to the email. Never blocks the booking: a failure here is only logged.
+     */
+    void recordBookingInApp(BookAppointmentEntity appointment, String headline, String detail){
+        if(notificationRepo == null || appointment == null || appointment.getUserId() == null) return;
+        try{
+            String when = appointment.getAppointmentDate() == null || appointment.getAppointmentDate().isBlank() ? ""
+                    : " Appointment: " + appointment.getAppointmentDate()
+                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank() ? "" : " at " + appointment.getArrivalTime()) + ".";
+            String message = (detail == null ? "" : detail) + when;
+            if(message.length() > 1000) message = message.substring(0, 1000);
+            notificationRepo.save(new NotificationEntity(appointment.getUserId(),
+                    appointment.getStylerId() == null ? "" : appointment.getStylerId(), "BOOKING", headline, message));
+        } catch (Exception ex){
+            LOG.warning("In-app booking notification failed: " + ex.getMessage());
+        }
+    }
+
+    /** Deletes one notification, only if it belongs to the authenticated customer. */
+    public BaseResponse deleteNotification(String userId, Long notificationId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<NotificationEntity> notification = notificationId == null ? Optional.empty()
+                    : notificationRepo.findByIdAndUserId(notificationId, userId);
+            if(notification.isEmpty()) return Responses.errorResponse(response, "Notification not found");
+            notificationRepo.delete(notification.get());
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Notification deleted");
+            response.setData(Collections.emptyMap());
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Deletes every notification of the authenticated customer. */
+    public BaseResponse deleteAllNotifications(String userId){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            notificationRepo.deleteAll(notificationRepo.findByUserIdOrderByCreatedAtDesc(userId));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Notifications deleted");
+            response.setData(Collections.emptyMap());
+        } catch (Exception ex) {
+            LOG.warning(ex.getMessage());
+        }
+        return response;
     }
 
     /** Returns customer notifications and the unread count for the authenticated account. */

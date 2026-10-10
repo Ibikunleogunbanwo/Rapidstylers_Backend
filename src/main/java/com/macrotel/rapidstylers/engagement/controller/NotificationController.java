@@ -44,6 +44,20 @@ public class NotificationController {
         return ApiResponses.respond(baseResponse);
     }
 
+    @PostMapping("/notifications/delete")
+    public ResponseEntity<BaseResponse> deleteNotification(@RequestBody Map<String, Long> body, HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(notificationService.deleteNotification(accountId, body.get("notificationId")));
+    }
+
+    @PostMapping("/notifications/delete_all")
+    public ResponseEntity<BaseResponse> deleteAllNotifications(HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(notificationService.deleteAllNotifications(accountId));
+    }
+
     @GetMapping("/notification_preferences")
     public ResponseEntity<BaseResponse> notificationPreferences(HttpServletRequest request){
         String accountId = CurrentAccount.id(request);

@@ -188,6 +188,8 @@ public final class Routes {
             "/rapid_stylers/notifications",
             "/rapid_stylers/notifications/read",
             "/rapid_stylers/notifications/read_all",
+            "/rapid_stylers/notifications/delete",
+            "/rapid_stylers/notifications/delete_all",
             "/rapid_stylers/notification_preferences",
             "/rapid_stylers/support_tickets",
             "/rapid_stylers/loyalty_account",
