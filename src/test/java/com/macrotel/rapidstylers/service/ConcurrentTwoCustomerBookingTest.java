@@ -202,7 +202,7 @@ class ConcurrentTwoCustomerBookingTest {
                     appointmentRepo.delete(a);
                 });
 
-        String stylerToken = signIn("/styler_sign_in", stylerEmail, "Test1234!");
+        String stylerToken = signIn("/sign_in", stylerEmail, "Test1234!");
         apiPost("/create_sub_service",
                 Map.of("name", "Race Braids", "price", "85.00", "durationMinutes", 60), stylerToken, null);
         subServiceId = subServiceRepo.findByStylerId(stylerId).stream()

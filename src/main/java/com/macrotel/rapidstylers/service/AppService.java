@@ -1591,69 +1591,6 @@ public class AppService {
         }
         return response;
     }
-    public BaseResponse stylerLogin(SignInData signInData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            String emailAddress = signInData.getEmailAddress();
-            String password = signInData.getPassword();
-            String ip = rateLimiterService.clientIp();
-            // Global lockout: failed logins/verifies (email or IP) block sign-in.
-            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
-                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Too many failed attempts. Please try again later.");
-                response.setData(EMPTY_DATA);
-                recordLoginFailure("STYLER", null, emailAddress, ip, "LOCKED_OUT");
-                return response;
-            }
-            Optional<StylerEntity> stylerSignIn = stylerRepo.findByEmailAddress(emailAddress);
-            if(stylerSignIn.isEmpty()
-                    || !appUtils.passwordMatches(password, stylerSignIn.get().getPassword())){
-                rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
-                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
-                recordLoginFailure("STYLER", stylerSignIn.map(StylerEntity::getStylerId).orElse(null),
-                        emailAddress, ip, "INVALID_CREDENTIALS");
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Email Address or Password");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            StylerEntity stylerEntity = stylerSignIn.get();
-            // Verification gate — rejected/suspended professionals cannot sign in.
-            if(VERIFICATION_REJECTED.equals(stylerEntity.getVerificationStatus())){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Your professional account was not approved. Please contact support.");
-                response.setData(EMPTY_DATA);
-                recordLoginFailure("STYLER", stylerEntity.getStylerId(), emailAddress, ip, "ACCOUNT_REJECTED");
-                return response;
-            }
-            if(VERIFICATION_SUSPENDED.equals(stylerEntity.getVerificationStatus())){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Your professional account is suspended. Please contact support.");
-                response.setData(EMPTY_DATA);
-                recordLoginFailure("STYLER", stylerEntity.getStylerId(), emailAddress, ip, "ACCOUNT_SUSPENDED");
-                return response;
-            }
-            // Upgrade a legacy MD5 hash to BCrypt on first successful login
-            if(stylerEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
-                stylerEntity.setPassword(appUtils.encryptPassword(password));
-                stylerRepo.save(stylerEntity);
-            }
-            stylerEntity.setIsOnline("0");
-            stylerRepo.save(stylerEntity);
-            rateLimiterService.clear("auth:" + emailAddress);
-            rateLimiterService.clear("auth_ip:" + ip);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setToken(jwtUtil.generateToken(stylerEntity.getStylerId(), "STYLER"));
-            response.setData(dtoService.stylerAccountDTO(stylerEntity));
-            recordLoginSuccess("STYLER", stylerEntity.getStylerId(), emailAddress, ip);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
     public BaseResponse stylerLogOut(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try{

@@ -36,7 +36,6 @@ public final class Routes {
             "/rapid_stylers/create_styler",
             "/rapid_stylers/sign_in",
             "/rapid_stylers/user_sign_in",
-            "/rapid_stylers/styler_sign_in",
             "/rapid_stylers/google_sign_in",
             "/rapid_stylers/admin_sign_in",
             "/rapid_stylers/auth/refresh",

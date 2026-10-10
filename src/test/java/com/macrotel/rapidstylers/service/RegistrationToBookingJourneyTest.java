@@ -246,7 +246,7 @@ class RegistrationToBookingJourneyTest {
                 stylerRepo.findByEmailAddress(stylerEmail).orElseThrow().getVerificationStatus());
 
         // ---- 5. Styler signs in, adds a service and availability -------------------
-        String stylerToken = signIn("/styler_sign_in", stylerEmail, stylerPassword);
+        String stylerToken = signIn("/sign_in", stylerEmail, stylerPassword);
         assertOk(apiGet("/styler_own_sub_services", stylerToken));
 
         assertOk(apiPost("/create_sub_service",

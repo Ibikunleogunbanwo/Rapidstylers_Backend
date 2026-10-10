@@ -324,18 +324,6 @@ public class ApplicationController {
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
-    /**
-     * Not bot-gated: no client in this repository calls it (styler sign-in goes
-     * through the unified /sign_in), so enabling the challenge here would risk
-     * breaking an unknown legacy client to protect an endpoint nothing uses.
-     * Listed as an open action in docs/pre-launch-security-audit.md.
-     */
-    @PostMapping("/styler_sign_in")
-    public ResponseEntity <BaseResponse> stylerSignIn(@Valid @RequestBody SignInData signInData){
-        BaseResponse baseResponse = appService.stylerLogin(signInData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
     @GetMapping("/list_all_stylers")
     public ResponseEntity <BaseResponse> listAllStylers(){
         BaseResponse baseResponse = appService.listAllStylers();
