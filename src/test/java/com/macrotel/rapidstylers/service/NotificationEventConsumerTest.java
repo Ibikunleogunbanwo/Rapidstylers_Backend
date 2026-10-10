@@ -107,6 +107,78 @@ class NotificationEventConsumerTest {
     }
 
     @Test
+    void bookingEmailsNameTheStylistsTimeZone() {
+        // An appointment's times are written on the stylist's clock. A customer
+        // in another province reading a bare "9:30 AM" cannot tell whose 9:30
+        // that is, so both parties are told which clock it is.
+        stylerWith(null, "America/Edmonton");
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        consumer.handleBookingNotification(payload(), "1", "event-zone", "BOOKING_REQUESTED", null, ack);
+
+        verify(emailConfig).sendSimpleMail(eq("customer@example.com"), contains("Appointment Request"),
+                contains("Arrival time:</strong> 9:30 AM (Mountain Time)"));
+        verify(emailConfig).sendSimpleMail(eq("styler@example.com"), contains("Appointment Request"),
+                contains("Arrival time:</strong> 9:30 AM (Mountain Time)"));
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    void aStylistWithoutAStoredZoneIsLabelledFromTheirProvince() {
+        stylerWith("Ontario", null);
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        consumer.handleBookingNotification(payload(), "1", "event-province", "BOOKING_REQUESTED", null, ack);
+
+        verify(emailConfig).sendSimpleMail(eq("customer@example.com"), contains("Appointment Request"),
+                contains("Arrival time:</strong> 9:30 AM (Eastern Time)"));
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    void aStylistWithNoClockDataGetsABareTimeRatherThanAGuess() {
+        // No stored zone and no province: the clock is unknown. Printing
+        // "Mountain Time" here would state something the row never declared.
+        stylerWith(null, null);
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        consumer.handleBookingNotification(payload(), "1", "event-noclock", "BOOKING_REQUESTED", null, ack);
+
+        verify(emailConfig).sendSimpleMail(eq("customer@example.com"), contains("Appointment Request"),
+                contains("Arrival time:</strong> 9:30 AM</p>"));
+        verify(ack).acknowledge();
+    }
+
+    @Test
+    void paymentReceiptsNameTheZoneToo() {
+        stylerWith("America/Edmonton", null);
+        Acknowledgment ack = mock(Acknowledgment.class);
+
+        consumer.handleBookingNotification(paymentPayload(), "1", "event-paid-zone", "PAYMENT_SUCCEEDED", null, ack);
+
+        verify(emailConfig).sendSimpleMail(eq("customer@example.com"), contains("Payment receipt"),
+                contains("Arrival time:</strong> 9:30 AM (Mountain Time)"));
+        verify(ack).acknowledge();
+    }
+
+    /** The shared parties for a notification event, with the clock the stylist declares. */
+    private void stylerWith(String province, String timeZone) {
+        UserEntity user = new UserEntity();
+        user.setUserId("USER1");
+        user.setEmailAddress("customer@example.com");
+        StylerEntity styler = new StylerEntity();
+        styler.setStylerId("STYLER1");
+        styler.setEmailAddress("styler@example.com");
+        styler.setProvince(province);
+        styler.setTimeZone(timeZone);
+        SubServiceEntity service = new SubServiceEntity();
+        service.setName("Braids");
+        when(userRepo.findByUserId("USER1")).thenReturn(Optional.of(user));
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service));
+    }
+
+    @Test
     void redeliveredEventIsSkippedWithoutSendingEmails() {
         UserEntity user = new UserEntity();
         user.setUserId("USER1");

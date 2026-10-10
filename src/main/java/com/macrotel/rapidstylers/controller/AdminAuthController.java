@@ -5,6 +5,7 @@ import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.SignInData;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.security.JwtUtil;
+import com.macrotel.rapidstylers.security.TurnstileVerifier;
 import com.macrotel.rapidstylers.service.LoginAttemptService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
 import com.macrotel.rapidstylers.service.RefreshTokenService;
@@ -53,6 +54,9 @@ public class AdminAuthController {
     @Autowired
     private RefreshTokenService refreshTokenService;
 
+    @Autowired
+    private TurnstileVerifier turnstileVerifier;
+
     private static final int AUTH_WINDOW_SECONDS = 900;   // 15 min
     private static final int AUTH_MAX_FAILURES = 5;       // per email
     private static final int AUTH_IP_MAX_FAILURES = 20;   // per IP
@@ -62,6 +66,15 @@ public class AdminAuthController {
         BaseResponse response = new BaseResponse();
         String emailAddress = signInData.getEmailAddress();
         String ip = rateLimiterService.clientIp();
+        // Bot protection first: the admin console is the highest-value target,
+        // and the challenge keeps automated attempts from spending the lockout
+        // budget below. A no-op unless TURNSTILE_SECRET_KEY is configured.
+        if (!turnstileVerifier.verify(signInData.getCaptchaToken(), ip)) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Please complete the verification challenge and try again.");
+            response.setData(new Object[0]);
+            return ApiResponses.respond(response);
+        }
         // Shared global lockout — failed logins anywhere count against this email/IP.
         if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
                 || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {

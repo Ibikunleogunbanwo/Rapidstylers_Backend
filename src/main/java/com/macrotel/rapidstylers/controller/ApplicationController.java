@@ -6,10 +6,12 @@ import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.service.GalleryService;
 import com.macrotel.rapidstylers.service.GeocodingService;
 import com.macrotel.rapidstylers.service.PaymentReconciliationService;
+import com.macrotel.rapidstylers.service.RateLimiterService;
 import com.macrotel.rapidstylers.service.RefreshTokenService;
 import com.macrotel.rapidstylers.service.SessionActivityService;
 import com.macrotel.rapidstylers.service.StepUpService;
 import com.macrotel.rapidstylers.security.JwtUtil;
+import com.macrotel.rapidstylers.security.TurnstileVerifier;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -24,12 +26,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.logging.Logger;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 @RestController
 @RequestMapping("/rapid_stylers")
 public class ApplicationController {
+    /** Only the webhook endpoint logs here: every other method answers through AppService. */
+    private static final Logger LOG = Logger.getLogger(ApplicationController.class.getName());
+
     @Autowired
     AppService appService;
     @Autowired
@@ -48,6 +54,30 @@ public class ApplicationController {
     PaymentReconciliationService paymentReconciliationService;
     @Autowired
     JwtUtil jwtUtil;
+    @Autowired
+    TurnstileVerifier turnstileVerifier;
+    @Autowired
+    RateLimiterService rateLimiterService;
+
+    /**
+     * Bot-protection gate shared by every sign-in endpoint. Returns null when
+     * the request may proceed, or the rejection to send back when the Turnstile
+     * challenge failed. Centralised deliberately: a new sign-in endpoint should
+     * look wrong without it, rather than silently skipping bot protection.
+     *
+     * A no-op when TURNSTILE_SECRET_KEY is unset — see TurnstileVerifier for why
+     * enforcement is configuration-driven rather than a boot guard.
+     */
+    private ResponseEntity<BaseResponse> botCheckRejection(String captchaToken) {
+        if (turnstileVerifier.verify(captchaToken, rateLimiterService.clientIp())) {
+            return null;
+        }
+        BaseResponse rejected = new BaseResponse();
+        rejected.setStatusCode(ERROR_STATUS_CODE);
+        rejected.setMessage("Please complete the verification challenge and try again.");
+        rejected.setData(EMPTY_DATA);
+        return new ResponseEntity<>(rejected, HttpStatus.BAD_REQUEST);
+    }
 
     @GetMapping("/testing")
     public ResponseEntity <BaseResponse> testing(){
@@ -77,14 +107,34 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    /**
+     * Not bot-gated, deliberately. Besides the hero sign-in form, this endpoint
+     * is the automatic sign-in that immediately follows account creation in the
+     * signup journey, the secure-account step and the booking flow — none of
+     * which has a form on which a challenge could be rendered. Adding the gate
+     * here would break real signups while the equivalent credential check is
+     * still reachable, so it is left to rate limiting plus per-account lockout.
+     * Closing that properly needs a server-issued single-use auto-login ticket
+     * for the post-signup case; it is recorded as an open action in
+     * docs/pre-launch-security-audit.md rather than half-done here.
+     */
     @PostMapping("/user_sign_in")
     public ResponseEntity <BaseResponse> userSignIn(@Valid @RequestBody SignInData signInData){
         BaseResponse baseResponse = appService.userSignIn(signInData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
+    /**
+     * The unified sign-in used by the site's login page for all three roles —
+     * the endpoint a credential-stuffing bot actually reaches — so it carries
+     * the bot-protection gate, paired with the Turnstile widget on that page.
+     */
     @PostMapping("/sign_in")
     public ResponseEntity <BaseResponse> signIn(@Valid @RequestBody SignInData signInData){
+        ResponseEntity<BaseResponse> rejected = botCheckRejection(signInData.getCaptchaToken());
+        if (rejected != null) {
+            return rejected;
+        }
         BaseResponse baseResponse = appService.signIn(signInData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
@@ -99,6 +149,11 @@ public class ApplicationController {
             bad.setData(EMPTY_DATA);
             return new ResponseEntity<>(bad, HttpStatus.BAD_REQUEST);
         }
+        // Deliberately NOT bot-gated. This path requires a Google ID token whose
+        // signature, issuer, audience and email_verified are verified in
+        // GoogleTokenVerifier, so the caller is already cryptographically
+        // attested — a challenge here would add friction to real sign-ins
+        // without removing any bot traffic that password guessing represents.
         BaseResponse baseResponse = appService.signInWithGoogle(idToken);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
@@ -269,6 +324,12 @@ public class ApplicationController {
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
+    /**
+     * Not bot-gated: no client in this repository calls it (styler sign-in goes
+     * through the unified /sign_in), so enabling the challenge here would risk
+     * breaking an unknown legacy client to protect an endpoint nothing uses.
+     * Listed as an open action in docs/pre-launch-security-audit.md.
+     */
     @PostMapping("/styler_sign_in")
     public ResponseEntity <BaseResponse> stylerSignIn(@Valid @RequestBody SignInData signInData){
         BaseResponse baseResponse = appService.stylerLogin(signInData);
@@ -314,6 +375,12 @@ public class ApplicationController {
     @GetMapping("/search_by_province")
     public ResponseEntity <BaseResponse> searchByProvince(@RequestParam("province") String province){
         BaseResponse baseResponse = appService.searchStylerByProvince(province);
+        HttpStatus status = ApiResponses.httpStatus(baseResponse);
+        return new ResponseEntity<>(baseResponse,status);
+    }
+    @GetMapping("/search_by_city")
+    public ResponseEntity <BaseResponse> searchByCity(@RequestParam("city") String city){
+        BaseResponse baseResponse = appService.searchStylerByCity(city);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -891,6 +958,14 @@ public class ApplicationController {
         return ApiResponses.respond(appService.getStylerConnectStatus(stylerId));
     }
 
+    /** The logged-in stylist's own reviews (approved list plus a moderation count). */
+    @GetMapping("/styler/reviews")
+    public ResponseEntity<BaseResponse> stylerOwnReviews(HttpServletRequest request){
+        String stylerId = currentAccountId(request);
+        if(stylerId == null) return unauthorized();
+        return ApiResponses.respond(appService.getOwnStylerReviews(stylerId));
+    }
+
     /** Returns a Stripe SetupIntent clientSecret so the frontend can collect a card inside Elements. */
     @GetMapping("/card_setup_intent")
     public ResponseEntity<BaseResponse> cardSetupIntent(HttpServletRequest request){
@@ -906,6 +981,10 @@ public class ApplicationController {
     public ResponseEntity<String> stripeWebhook(@RequestBody String payload,
                                                 @RequestHeader(value = "Stripe-Signature", required = false) String signature){
         if(signature == null || signature.isEmpty()){
+            // A delivery with no signature has no event id to name, and it is the
+            // one rejection the service never sees. Logged here so the app log
+            // shows every hit on this endpoint, whoever made it.
+            LOG.warning("Stripe webhook rejected: id=unknown type=unknown reason=missing Stripe-Signature header");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Missing Stripe-Signature header");
         }
         try {

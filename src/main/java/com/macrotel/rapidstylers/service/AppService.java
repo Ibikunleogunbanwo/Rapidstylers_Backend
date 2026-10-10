@@ -49,6 +49,8 @@ public class AppService {
     AppUtils appUtils = new AppUtils();
     @Autowired
     DTOService dtoService;
+    @Autowired
+    ImageReclaimService imageReclaimService;
     private static final Logger LOG = Logger.getLogger(AppService.class.getName());
     @Autowired
     OTPRepo otpRepo;
@@ -106,6 +108,10 @@ public class AppService {
     private volatile Double cachedCommissionPercent;
     @Autowired
     GeocodingService geocodingService;
+    // Initialized inline so bare construction (unit tests) behaves as a
+    // no-op (null key → null zone); Spring replaces it with the context bean.
+    @Autowired
+    GoogleTimezoneService googleTimezoneService = new GoogleTimezoneService();
     @Autowired
     LocationCacheService locationCacheService;
     @Autowired
@@ -1107,11 +1113,16 @@ public class AppService {
                 return response;
             }
             ServiceEntity serviceEntity = isServiceExist.get();
+            String previousImageUrl = serviceEntity.getServiceImageUrl();
             serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
             serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
             evict(ReadCacheService.KEY_CATALOG_SERVICES);
+            // Replacing a picture leaves the old one behind unless it is handed back.
+            if(previousImageUrl != null && !previousImageUrl.equals(serviceEntity.getServiceImageUrl())){
+                imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
+            }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Service Updated Successful");
@@ -1133,8 +1144,12 @@ public class AppService {
                 return response;
             }
             ServiceEntity serviceEntity = getService.get();
+            String previousImageUrl = serviceEntity.getServiceImageUrl();
             serviceRepo.delete(serviceEntity);
             evict(ReadCacheService.KEY_CATALOG_SERVICES);
+            // The row that held this picture is gone, so unless another row still
+            // refers to it, the asset has nothing left to belong to.
+            imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Service deleted successful");
             response.setData(EMPTY_DATA);
@@ -1238,6 +1253,7 @@ public class AppService {
                 return response;
             }
             BlogPostEntity post = isPostExist.get();
+            String previousImageUrl = post.getImageUrl();
             post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
             post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
             post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
@@ -1247,6 +1263,10 @@ public class AppService {
             }
             blogPostRepo.save(post);
             evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + blogPostData.getId());
+            // A new cover leaves the previous one unused, so it goes back.
+            if(previousImageUrl != null && !previousImageUrl.equals(post.getImageUrl())){
+                imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
+            }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article updated successfully");
@@ -1267,8 +1287,12 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            blogPostRepo.delete(getPost.get());
+            BlogPostEntity deletedPost = getPost.get();
+            String coverImageUrl = deletedPost.getImageUrl();
+            blogPostRepo.delete(deletedPost);
             evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + id);
+            // The cover is only kept if some other article still uses the same URL.
+            imageReclaimService.reclaimIfUnreferenced(coverImageUrl);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article deleted successfully");
             response.setData(EMPTY_DATA);
@@ -1432,7 +1456,27 @@ public class AppService {
         return response;
     }
 
+    /**
+     * Creates a professional account, and gives the images back if it cannot.
+     *
+     * Both files were already uploaded to Cloudinary by the browser, because image
+     * bytes never pass through this server. That makes this call the first moment
+     * anything here learns their names, and therefore the only place that can
+     * discard them when the account is not created: a duplicate email, a rejected
+     * password or a missing field would otherwise leave two images in the bucket
+     * that no record will ever point at. No authorization question arises, because
+     * reclaiming only ever destroys an asset that nothing references.
+     */
     public BaseResponse createStyler(StylerData stylerData){
+        BaseResponse response = createStylerAccount(stylerData);
+        if(!SUCCESS_STATUS_CODE.equals(response.getStatusCode())){
+            imageReclaimService.reclaimIfUnreferenced(stylerData.getProfileImageUrl());
+            imageReclaimService.reclaimIfUnreferenced(stylerData.getIdentificationImageUrl());
+        }
+        return response;
+    }
+
+    private BaseResponse createStylerAccount(StylerData stylerData){
         BaseResponse response = new BaseResponse(true);
         try{
             if (!stylerData.isAgreeToTerms()) {
@@ -1490,6 +1534,17 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            // A street address is what makes the profile bookable at all: the
+            // default delivery is a visit, and the bookability gate keeps an
+            // address-less professional out of search and off their own
+            // profile, while approvals refuse them outright. Reject at signup
+            // so nobody completes onboarding into an invisible account.
+            if(!isPresentText(stylerData.getStreetAddress()) && !isPresentText(stylerData.getBusinessAddress())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Business address is required. Clients travel to it when they book a visit, so it has to be the place they come to.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             StylerEntity stylerEntity = new StylerEntity(stylerData);
 
             // Geocode address → lat/lng if not already provided
@@ -1503,6 +1558,21 @@ public class AppService {
                         stylerEntity.setCity((String) geo.getOrDefault("city", ""));
                     }
                 }
+            }
+
+            // Derive the vendor's time zone from their address so their weekly
+            // hours are always read on their own clock. Geocode-derived wins;
+            // fall back to the province map, then leave NULL (= app default).
+            if(stylerEntity.getLatitude() != null && stylerEntity.getLongitude() != null){
+                String derived = googleTimezoneService.timeZoneId(stylerEntity.getLatitude(), stylerEntity.getLongitude());
+                stylerEntity.setTimeZone(derived != null ? derived : VendorZoneResolver.zoneForProvince(stylerEntity.getProvince()).getId());
+                // Record which answer this was: an exact lookup, or a province
+                // guess worth retrying. The startup backfill reads this marker.
+                stylerEntity.setTimeZoneSource(derived != null
+                        ? VendorZoneResolver.SOURCE_GOOGLE : VendorZoneResolver.SOURCE_PROVINCE);
+            } else if (stylerEntity.getTimeZone() == null || stylerEntity.getTimeZone().isBlank()) {
+                stylerEntity.setTimeZone(VendorZoneResolver.zoneForProvince(stylerEntity.getProvince()).getId());
+                stylerEntity.setTimeZoneSource(VendorZoneResolver.SOURCE_PROVINCE);
             }
 
             stylerRepo.save(stylerEntity);
@@ -1613,6 +1683,54 @@ public class AppService {
         return VERIFICATION_APPROVED.equals(styler.getVerificationStatus());
     }
 
+    /**
+     * True when Stripe payments are live. Null-safe so unit tests that build
+     * AppService without its collaborators treat payments as off (dev mode).
+     */
+    private boolean isStripePaymentsLive(){
+        return stripeService != null && stripeService.isConfigured();
+    }
+
+    /**
+     * True when a styler may appear to CUSTOMERS: approved, reachable at a
+     * street address, and — when payments are live — Connect onboarding
+     * complete, i.e. a profile a customer can actually book end to end. Every
+     * customer-facing surface (category tabs, name/province/city/nearby search,
+     * the public profile page and the saved list) filters on this rather than
+     * approval alone: showing an approved stylist whom booking then rejects is a
+     * service failure, not a detail. Admin surfaces (verification queue,
+     * approval counts) keep approval-only semantics via
+     * {@link #isApprovedStyler}, and approval itself is refused without an
+     * address so the queue can never produce a listed-but-unbookable profile.
+     */
+    private boolean isBookableStyler(StylerEntity styler){
+        if(!isApprovedStyler(styler)){
+            return false;
+        }
+        // Visiting the stylist is the default way a booking is delivered, so a
+        // profile with nowhere to go cannot be booked. Without this a customer
+        // could pay for an appointment and be handed no destination.
+        if(!hasStreetAddress(styler)){
+            return false;
+        }
+        return !isStripePaymentsLive() || "COMPLETE".equals(styler.getConnectOnboardingStatus());
+    }
+
+    /**
+     * Whether a professional's profile says where a customer actually goes.
+     * Either address field counts: signup writes the Google-formatted address
+     * into {@code businessAddress}, and the structured registration also keeps
+     * {@code streetAddress}.
+     */
+    static boolean hasStreetAddress(StylerEntity styler){
+        if(styler == null) return false;
+        return isPresentText(styler.getBusinessAddress()) || isPresentText(styler.getStreetAddress());
+    }
+
+    private static boolean isPresentText(String value){
+        return value != null && !value.trim().isEmpty();
+    }
+
     private String stylerServiceName(String serviceTypeId){
         if(serviceTypeId == null || serviceTypeId.isEmpty()) return "";
         try{
@@ -1641,6 +1759,10 @@ public class AppService {
                 entry.put("serviceTypeName", stylerServiceName(styler.getServiceTypeId()));
                 entry.put("city", styler.getCity());
                 entry.put("province", styler.getProvince());
+                // Approval is refused without a street address, so the reviewer
+                // has to be able to see whether there is one.
+                entry.put("businessAddress", styler.getBusinessAddress());
+                entry.put("addressOnFile", hasStreetAddress(styler));
                 entry.put("identificationId", styler.getIdentificationId());
                 entry.put("identificationImageUrl", styler.getIdentificationImageUrl());
                 entry.put("profileImageUrl", styler.getProfileImageUrl());
@@ -1686,6 +1808,16 @@ public class AppService {
             }
             String pastTense = action.equals(VERIFICATION_APPROVED) ? "approved" : action.equals(VERIFICATION_REJECTED) ? "rejected" : "suspended";
             StylerEntity styler = stylerOpt.get();
+            // Approving a professional with no street address would publish
+            // nothing: the bookability gate keeps them out of search and off
+            // their own profile. Better to refuse and say what is missing than
+            // to complete an approval that silently does not list them.
+            if(VERIFICATION_APPROVED.equals(action) && !hasStreetAddress(styler)){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This professional has no business address on file, so approving them would leave them unlisted and unbookable. Ask them to add their address first.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             String previousStatus = styler.getVerificationStatus();
             styler.setVerificationStatus(action);
             stylerRepo.save(styler);
@@ -1711,8 +1843,11 @@ public class AppService {
             List<StylerEntity> getAllStylers = stylerRepo.findAll();
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getAllStylers){
-                if(isApprovedStyler(stylerEntity)){
-                    result.add(cachedStylerAccountDTO(stylerEntity));
+                // A public list is a customer-facing surface, so it uses the
+                // same gate as search: approval alone would advertise a profile
+                // that cannot be booked.
+                if(isBookableStyler(stylerEntity)){
+                    result.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                 }
             }
             Collections.reverse(result);
@@ -1732,8 +1867,8 @@ public class AppService {
             List<StylerEntity> getStylerByName = stylerRepo.searchStyler(businessName);
             List<Object> result = new ArrayList<>();
             for(StylerEntity stylerEntity : getStylerByName){
-                if(isApprovedStyler(stylerEntity)){
-                    result.add(cachedStylerAccountDTO(stylerEntity));
+                if(isBookableStyler(stylerEntity)){
+                    result.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                 }
             }
             Collections.reverse(result);
@@ -1760,8 +1895,8 @@ public class AppService {
                         List<StylerEntity> getStylerByProvince = stylerRepo.findByProvinceIgnoreCase(provinceKey);
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : getStylerByProvince){
-                            if(isApprovedStyler(stylerEntity)){
-                                built.add(cachedStylerAccountDTO(stylerEntity));
+                            if(isBookableStyler(stylerEntity)){
+                                built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                             }
                         }
                         Collections.reverse(built);
@@ -1770,6 +1905,79 @@ public class AppService {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * City search for the results page. When the city has no professionals, the
+     * search widens to the city's province so the page never shows an empty
+     * grid it could have filled; the "widened" data flag lets the frontend say
+     * so honestly instead of quietly relabelling the results.
+     */
+    public BaseResponse searchStylerByCity(String city){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            // Trim defensively so padded values (" Calgary ") still match and
+            // whitespace-only payloads return an empty list, not every styler.
+            city = city == null ? "" : city.trim();
+            final String cityKey = city;
+            List<Object> cityResult = readCacheService.getOrLoad(
+                    ReadCacheService.KEY_SEARCH_CITY + cityKey,
+                    ReadCacheService.SEARCH_LIST_TTL, ReadCacheService.SEARCH_LIST_JITTER,
+                    () -> {
+                        List<StylerEntity> cityStylers = cityKey.isEmpty()
+                                ? new ArrayList<>()
+                                : stylerRepo.findByCityIgnoreCase(cityKey);
+                        List<Object> built = new ArrayList<>();
+                        for(StylerEntity stylerEntity : cityStylers){
+                            if(isBookableStyler(stylerEntity)){
+                                built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
+                            }
+                        }
+                        Collections.reverse(built);
+                        return built;
+                    });
+            if(cityResult == null || cityResult.isEmpty()){
+                // Widen: same query but for the city's province, when known.
+                String province = cityKey.isEmpty() ? null : stylerRepo.findByCityIgnoreCase(cityKey).stream()
+                        .map(StylerEntity::getProvince)
+                        .filter(p -> p != null && !p.isBlank())
+                        .findFirst()
+                        .orElse(null);
+                if(province != null){
+                    List<Object> widened = readCacheService.getOrLoad(
+                            ReadCacheService.KEY_SEARCH_PROVINCE + province,
+                            ReadCacheService.SEARCH_LIST_TTL, ReadCacheService.SEARCH_LIST_JITTER,
+                            () -> {
+                                List<StylerEntity> provinceStylers = stylerRepo.findByProvinceIgnoreCase(province);
+                                List<Object> built = new ArrayList<>();
+                                for(StylerEntity stylerEntity : provinceStylers){
+                                    if(isBookableStyler(stylerEntity)){
+                                        built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
+                                    }
+                                }
+                                Collections.reverse(built);
+                                return built;
+                            });
+                    // Same envelope shape as the paginated nearby search: a map
+                    // with "items", so clients unwrap one of two known shapes.
+                    Map<String, Object> payload = new LinkedHashMap<>();
+                    payload.put("items", widened);
+                    payload.put("widened", true);
+                    payload.put("widenedProvince", province);
+                    response.setStatusCode(SUCCESS_STATUS_CODE);
+                    response.setMessage(SUCCESS_MESSAGE);
+                    response.setData(payload);
+                    return response;
+                }
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(cityResult == null ? EMPTY_DATA : cityResult);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -1868,7 +2076,23 @@ public class AppService {
         return response;
     }
 
+    /**
+     * Stores one portfolio photo, and hands the image back if it is refused.
+     *
+     * The browser uploaded it before asking, so a refusal here (an unknown
+     * category, the size cap, a duplicate, a database failure) is the moment to
+     * discard it. Only an image no row references can be destroyed, so a URL that
+     * already belongs to a stored photo is never taken from it.
+     */
     public BaseResponse createStylerPortfolio(StylerPortfolioData stylerPortfolioData){
+        BaseResponse response = createStylerPortfolioRow(stylerPortfolioData);
+        if(!SUCCESS_STATUS_CODE.equals(response.getStatusCode())){
+            imageReclaimService.reclaimIfUnreferenced(stylerPortfolioData.getImageUrl());
+        }
+        return response;
+    }
+
+    private BaseResponse createStylerPortfolioRow(StylerPortfolioData stylerPortfolioData){
         BaseResponse response = new BaseResponse(true);
         try{
             //Check if styler account
@@ -2032,8 +2256,12 @@ public class AppService {
                 stylerName = (stylerOpt.get().getFirstname() + " " + stylerOpt.get().getLastname()).trim();
             }
             String category = item.getCategory() == null ? "" : item.getCategory();
+            String imageUrl = item.getImageUrl();
             stylerPortfolioRepo.delete(item);
             evict(ReadCacheService.KEY_STYLER_PORTFOLIO + item.getStylerId());
+            // Moderation takes the row away, so the asset goes with it unless the
+            // same URL is still somebody else's image.
+            imageReclaimService.reclaimIfUnreferenced(imageUrl);
             // Notify the stylist their work was removed (best effort — never fail the delete on mail).
             if(stylerEmail != null && !stylerEmail.isBlank()){
                 try{
@@ -2081,8 +2309,12 @@ public class AppService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            String imageUrl = item.getImageUrl();
             stylerPortfolioRepo.delete(item);
             evict(ReadCacheService.KEY_STYLER_PORTFOLIO + stylerId);
+            // Removing a photo from a portfolio is the row going away, so the asset
+            // is only kept when another row still points at the same URL.
+            imageReclaimService.reclaimIfUnreferenced(imageUrl);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Photo removed from your portfolio");
             response.setData(EMPTY_DATA);
@@ -2116,8 +2348,16 @@ public class AppService {
                     }
                 } catch (Exception ignored){}
             }
+            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
+            // The appointment's times live on the stylist's clock, so the email
+            // names the zone rather than leaving a cross-province reader to
+            // guess whose 2:00 PM this is.
+            String zoneSuffix = VendorZoneResolver.timeSuffixForStyler(
+                    stylerOpt.map(StylerEntity::getTimeZone).orElse(null),
+                    stylerOpt.map(StylerEntity::getProvince).orElse(null));
             String when = (appointment.getAppointmentDate() == null ? "" : appointment.getAppointmentDate())
-                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank() ? "" : " at " + appointment.getArrivalTime());
+                    + (appointment.getArrivalTime() == null || appointment.getArrivalTime().isBlank()
+                            ? "" : " at " + appointment.getArrivalTime() + zoneSuffix);
             String price = appointment.getPrice() == null ? "" : appointment.getPrice();
             String servicePrice = appointment.getServicePrice() == null ? price : appointment.getServicePrice();
             String travelFee = appointment.getTravelFee() == null ? "0.00" : appointment.getTravelFee();
@@ -2129,7 +2369,6 @@ public class AppService {
                 if(customerName.isBlank()) customerName = "there";
             }
             String stylistName = "Stylist";
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
             if(stylerOpt.isPresent()){
                 stylistName = (stylerOpt.get().getFirstname() + " " + stylerOpt.get().getLastname()).trim();
                 if(stylistName.isBlank()) stylistName = stylerOpt.get().getBusinessName();
@@ -2303,6 +2542,68 @@ public class AppService {
         return response;
     }
 
+    /**
+     * The logged-in professional's own reviews. This is deliberately not just
+     * the public list: an approved review is what clients see, and a count of
+     * what is still in moderation stops a review the stylist was told about
+     * from looking lost. The average covers approved rows only, so it matches
+     * the number the public profile shows.
+     */
+    public BaseResponse getOwnStylerReviews(String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            if(stylerRepo.findByStylerId(stylerId).isEmpty()){
+                return errorResponse(response, "Invalid Styler Id");
+            }
+            List<Object> approved = cachedReviews(stylerId);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("reviews", approved);
+            data.put("reviewCount", approved.size());
+            data.put("averageRating", averageReviewRating(approved));
+            data.put("pendingCount", pendingReviewCount(stylerId));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        }
+        catch (Exception ex){
+            LOG.warning("Own reviews failed: " + ex.getMessage());
+            return errorResponse(response, "Could not load reviews");
+        }
+        return response;
+    }
+
+    /**
+     * Rounded to one decimal, matching how the public profile reports a rating
+     * (see DTOService), so the stylist and their clients read the same number.
+     */
+    static Double averageReviewRating(List<Object> reviews){
+        double total = 0;
+        int scored = 0;
+        for(Object row : reviews){
+            if(!(row instanceof StylerReviewDTO dto) || dto.getRatingScore() == null) continue;
+            try{
+                total += Double.parseDouble(dto.getRatingScore().trim());
+                scored++;
+            }
+            catch (NumberFormatException ignored){
+                // A malformed score is left out rather than dragging the average down.
+            }
+        }
+        if(scored == 0) return null;
+        return Math.round((total / scored) * 10.0) / 10.0;
+    }
+
+    /** How many of this stylist's reviews are waiting on moderation. */
+    private int pendingReviewCount(String stylerId){
+        List<ReviewEntity> rows = reviewRepo.findByStylerId(stylerId);
+        if(rows == null) return 0;
+        int pending = 0;
+        for(ReviewEntity row : rows){
+            if("PENDING".equalsIgnoreCase(row.getModerationStatus())) pending++;
+        }
+        return pending;
+    }
+
     /** True when no active booking overlaps the requested service duration. */
     private boolean isWindowFree(String stylerId, String appointmentDate, String arrivalTime, int requestedDurationMinutes){
         final LocalDate requestedDate;
@@ -2342,12 +2643,41 @@ public class AppService {
             }
             int bookingDuration = booking.getDurationMinutes() == null
                     ? DEFAULT_SERVICE_DURATION_MINUTES : booking.getDurationMinutes();
-            LocalTime end = start.plusMinutes(bookingDuration);
-            if(proposed.isBefore(end) && proposed.plusMinutes(requestedDurationMinutes).isAfter(start)){
+            // Minute-of-day arithmetic, not LocalTime.plusMinutes: LocalTime wraps
+            // at midnight, so a 23:30 booking "ended" at 00:30 and looked like it
+            // finished before a 09:00 proposal instead of running into the night.
+            int bookedStart = minuteOfDay(start);
+            int bookedEnd = bookedStart + bookingDuration;
+            int proposedStart = minuteOfDay(proposed);
+            int proposedEnd = proposedStart + requestedDurationMinutes;
+            if(proposedStart < bookedEnd && proposedEnd > bookedStart){
                 return false;
             }
         }
         return true;
+    }
+
+    /** Minutes from midnight. LocalTime's own plusMinutes wraps at midnight; this never does. */
+    private static int minuteOfDay(LocalTime time){
+        return time.getHour() * 60 + time.getMinute();
+    }
+
+    /**
+     * True when a service of {@code durationMinutes} starting at
+     * {@code startMinutes} fits entirely inside a weekly window.
+     *
+     * Weekly windows are same-day shifts, so a window whose end is not after its
+     * start is malformed rather than an overnight one, and a start whose duration
+     * would cross midnight is out of hours. The old check used
+     * LocalTime.plusMinutes, which wraps: 23:50 + 30 landed at 00:20, "before" a
+     * 17:00 close, so a vendor who closed at 17:00 read open every night after
+     * 23:30. Minute-of-day arithmetic cannot wrap, so that false positive is gone.
+     */
+    private static boolean windowFits(LocalTime windowStart, LocalTime windowEnd, int startMinutes, int durationMinutes){
+        int open = minuteOfDay(windowStart);
+        int close = minuteOfDay(windowEnd);
+        if(close <= open) return false;
+        return startMinutes >= open && startMinutes + durationMinutes <= close;
     }
 
     /** True when the complete requested service fits inside weekly hours. */
@@ -2364,8 +2694,7 @@ public class AppService {
                 if(targetDay.equals(row.getDayOfWeek())){
                     LocalTime start = parseAvailabilityTime(row.getStartTime());
                     LocalTime end = parseAvailabilityTime(row.getEndTime());
-                    if(!start.isBefore(end)) return false;
-                    if(!requested.isBefore(start) && requested.plusMinutes(requestedDurationMinutes).compareTo(end) <= 0){
+                    if(windowFits(start, end, minuteOfDay(requested), requestedDurationMinutes)){
                         return true;
                     }
                 }
@@ -2688,6 +3017,71 @@ public class AppService {
                 () -> dtoService.stylerAccountDTO(styler));
     }
 
+    /**
+     * A list row carrying the professional's trading hours and the blocked dates
+     * still ahead of them, read through the same per-styler caches the profile
+     * uses. That is what lets a search result or a featured card say "Open now,
+     * closes 5:00 PM" or "Closed, opens Saturday 9:00 AM" on the professional's
+     * own clock instead of falling back to a bare presence badge.
+     *
+     * Two deliberate choices here:
+     *
+     *   - The DTO is **copied** rather than decorated in place. The instance
+     *     coming out of the read cache is shared by every surface, and writing
+     *     hours onto it would put one professional's schedule into a cache entry
+     *     other callers reuse.
+     *   - The open state itself is **not** computed here. Whether a professional
+     *     is open depends on "now", and this response is cached for minutes; a
+     *     frozen boolean could sit in a card claiming "Open now" long after
+     *     closing. The client computes it from these two lists every render, and
+     *     it is the same implementation the profile and the Open now filter use,
+     *     so the surfaces cannot disagree.
+     */
+    private StylerAccountDTO listRowWithHours(StylerAccountDTO dto, String stylerId){
+        if(dto == null || stylerId == null){
+            return dto;
+        }
+        StylerAccountDTO row = objectMapper.convertValue(dto, StylerAccountDTO.class);
+        attachHours(row, stylerId);
+        return row;
+    }
+
+    /**
+     * Stamps the trading hours onto a DTO the caller has already copied, for the
+     * endpoints that make their own copy (the nearby search stamps a distance on
+     * one). Keeping the write separate from the copy is what stops a shared
+     * cached instance ever being modified.
+     */
+    private void attachHours(StylerAccountDTO row, String stylerId){
+        if(row == null || stylerId == null){
+            return;
+        }
+        row.setAvailability(cachedAvailabilitySlots(stylerId));
+        row.setExceptions(upcomingExceptions(stylerId));
+    }
+
+    /**
+     * The blocked dates that can still affect a booking decision.
+     *
+     * A professional's exception history grows for years while only the days
+     * ahead of them matter to a card, so the rest is left out of list responses
+     * rather than shipped to every visitor in every search. A day of margin is
+     * kept because a Canadian professional's date can be one behind the server's
+     * UTC date.
+     */
+    private List<Object> upcomingExceptions(String stylerId){
+        String keepFrom = LocalDate.now().minusDays(1).toString();
+        List<Object> upcoming = new ArrayList<>();
+        for(Object slot : cachedExceptionSlots(stylerId)){
+            if(!(slot instanceof Map)) continue;
+            Object blockedDate = ((Map<?, ?>) slot).get("blockedDate");
+            if(blockedDate != null && String.valueOf(blockedDate).compareTo(keepFrom) >= 0){
+                upcoming.add(slot);
+            }
+        }
+        return upcoming;
+    }
+
     /** Sub-service list through the read cache; evicted on sub-service writes. */
     private List<Object> cachedSubServices(String stylerId){
         return readCacheService.getOrLoad(
@@ -2752,7 +3146,11 @@ public class AppService {
                 () -> exceptionSlots(stylerId));
     }
 
-    /** Appointment count + active booked slots; evicted on every booking-lifecycle write. */
+    /**
+     * Appointment count, finished count + active booked slots; evicted on every
+     * booking-lifecycle write. The finished count rides along on the rows already
+     * loaded here, so the profile's badges cost no extra query.
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Object> cachedAppointmentSummary(String stylerId){
         return readCacheService.getOrLoad(
@@ -2763,8 +3161,11 @@ public class AppService {
                     Map<String, Object> payload = new LinkedHashMap<>();
                     payload.put("appointmentCount", String.valueOf(rows == null ? 0 : rows.size()));
                     List<Object> bookedSlots = new ArrayList<>();
+                    long completedCount = 0;
                     if(rows != null){
                         for(BookAppointmentEntity appointment : rows){
+                            // Status 0 is a finished job; the profile's badges use the tally.
+                            if("0".equals(appointment.getStatus())) completedCount++;
                             // Cancelled (4) and rejected (2) appointments free the slot.
                             if("2".equals(appointment.getStatus()) || "4".equals(appointment.getStatus())) continue;
                             HashMap<String, String> slot = new HashMap<>();
@@ -2776,6 +3177,7 @@ public class AppService {
                             bookedSlots.add(slot);
                         }
                     }
+                    payload.put("completedCount", completedCount);
                     payload.put("bookedSlots", bookedSlots);
                     return payload;
                 });
@@ -2928,7 +3330,7 @@ public class AppService {
                 return response;
             }
             // Only approved professionals are publicly visible
-            if(!isApprovedStyler(isStylerExist.get())){
+            if(!isBookableStyler(isStylerExist.get())){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("This professional is not yet available");
                 response.setData(EMPTY_DATA);
@@ -2953,8 +3355,9 @@ public class AppService {
                 }
             }
             ratingPercentage = ratingCount == 0 ? 0 : (int) ((totalRating/(ratingCount * 5)) *100);
+            StylerAccountDTO stylerAccount = cachedStylerAccountDTO(stylerEntity);
             HashMap<String, Object> stylerInformationMap = new HashMap<>();
-            stylerInformationMap.put("stylerInformation", cachedStylerAccountDTO(stylerEntity));
+            stylerInformationMap.put("stylerInformation", stylerAccount);
             stylerInformationMap.put("stylerSubService" , subServiceResult);
             stylerInformationMap.put("stylerPortfolio" , stylerPortfolioResult);
             stylerInformationMap.put("stylerReviews" , stylerReviewResult);
@@ -2962,6 +3365,16 @@ public class AppService {
             // Real appointment tally + active booked slots (cached, evicted on booking writes).
             Map<String, Object> appointmentSummary = cachedAppointmentSummary(stylerId);
             stylerInformationMap.put("appointmentCount", appointmentSummary.get("appointmentCount"));
+            // What this profile has earned, decided in one place (ProfileBadgeRules).
+            // The finished tally comes from the same cached summary; if a cached
+            // entry predates it, the stage badges stay off rather than guessing.
+            stylerInformationMap.put("badges", ProfileBadgeRules.earned(
+                    stylerAccount == null ? null : stylerAccount.getReviewCount(),
+                    stylerAccount == null ? null : stylerAccount.getAverageRating(),
+                    parseCount(appointmentSummary.get("appointmentCount")),
+                    appointmentSummary.get("completedCount") instanceof Number
+                            ? ((Number) appointmentSummary.get("completedCount")).longValue() : null,
+                    stylerAccount == null ? null : stylerAccount.getDateRegistered()));
             // Weekly availability + date-based exceptions so the booking modal can
             // show real working hours and gray out blocked/taken windows.
             stylerInformationMap.put("availability", cachedAvailabilitySlots(stylerId));
@@ -2977,6 +3390,22 @@ public class AppService {
         return response;
     }
 
+    /** A count the payload may carry as text; anything unreadable is unknown, not zero. */
+    private static Long parseCount(Object value){
+        if(value == null){
+            return null;
+        }
+        if(value instanceof Number){
+            return ((Number) value).longValue();
+        }
+        try{
+            return Long.parseLong(String.valueOf(value).trim());
+        }
+        catch(NumberFormatException ex){
+            return null;
+        }
+    }
+
     /** Saves an approved stylist for the authenticated customer. */
     public BaseResponse saveStylist(String userId, String stylerId){
         BaseResponse response = new BaseResponse(true);
@@ -2985,7 +3414,7 @@ public class AppService {
                 return errorResponse(response, "Invalid User Id");
             }
             Optional<StylerEntity> styler = stylerRepo.findByStylerId(stylerId);
-            if(styler.isEmpty() || !isApprovedStyler(styler.get())){
+            if(styler.isEmpty() || !isBookableStyler(styler.get())){
                 return errorResponse(response, "This professional is not available");
             }
             if(savedStylistRepo.findByUserIdAndStylerId(userId, stylerId).isEmpty()){
@@ -3024,8 +3453,8 @@ public class AppService {
             List<Object> result = new ArrayList<>();
             for(SavedStylistEntity saved : savedStylistRepo.findByUserIdOrderByCreatedAtDesc(userId)){
                 stylerRepo.findByStylerId(saved.getStylerId())
-                        .filter(this::isApprovedStyler)
-                        .ifPresent(styler -> result.add(dtoService.stylerAccountDTO(styler)));
+                        .filter(this::isBookableStyler)
+                        .ifPresent(styler -> result.add(listRowWithHours(dtoService.stylerAccountDTO(styler), styler.getStylerId())));
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
@@ -3379,8 +3808,8 @@ public class AppService {
                         List<StylerEntity> getStylerData = stylerRepo.findByServiceTypeId(serviceId);
                         List<Object> built = new ArrayList<>();
                         for(StylerEntity stylerEntity : getStylerData){
-                            if(isApprovedStyler(stylerEntity)){
-                                built.add(cachedStylerAccountDTO(stylerEntity));
+                            if(isBookableStyler(stylerEntity)){
+                                built.add(listRowWithHours(cachedStylerAccountDTO(stylerEntity), stylerEntity.getStylerId()));
                             }
                         }
                         return built;
@@ -3465,6 +3894,14 @@ public class AppService {
             }
             if(!isApprovedStyler(isStylerExist.get())){
                 return errorResponse(response, "This professional is not yet available for booking");
+            }
+            // Visiting the professional is the default delivery, and a customer
+            // with no destination cannot travel. Approval already refuses an
+            // address-less profile, so this only catches legacy rows approved
+            // before that rule — but a booking must not be creatable against a
+            // profile the customer could never reach.
+            if(!hasStreetAddress(isStylerExist.get())){
+                return errorResponse(response, "This professional has no address published, so a visit cannot be booked with them yet");
             }
             // With payments live, a stylist must have finished Connect onboarding
             // to receive payouts — the marketplace blocks booking until then.
@@ -4647,6 +5084,11 @@ public class AppService {
         data.put("finished", finished);
         data.put("cancelled", cancelled);
         data.put("totalRevenue", money(grossRevenue));
+        // Listing health, so the dashboard can explain a profile that is not
+        // reachable instead of leaving the professional to guess why nobody
+        // books. `bookable` is the same gate public search uses.
+        data.put("addressOnFile", hasStreetAddress(styler));
+        data.put("bookable", isBookableStyler(styler));
         data.put("totalCommission", money(commission));
         data.put("netRevenue", money(netRevenue));
         data.put("popularServices", popularServices);
@@ -4838,11 +5280,19 @@ public class AppService {
                 if(!(item instanceof StylerAccountDTO)) continue;
                 StylerAccountDTO dto = (StylerAccountDTO) item;
                 Optional<StylerEntity> styler = stylerRepo.findByStylerId(dto.getStylerId());
-                if(styler.isEmpty() || !isApprovedStyler(styler.get())) continue;
+                if(styler.isEmpty() || !isBookableStyler(styler.get())) continue;
                 if(requested != null && requestedStart != null && (!isDateNotException(dto.getStylerId(), requested.toString())
                         || !timeWithinAvailability(dto.getStylerId(), requested.toString(), requestedStart.toString(), duration)
                         || !isWindowFree(dto.getStylerId(), requested.toString(), requestedStart.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)), duration))) continue;
-                if(openNow && !isOpenAt(dto.getStylerId(), ZonedDateTime.now(applicationZone()).toLocalDate(), ZonedDateTime.now(applicationZone()).toLocalTime(), 30)) continue;
+                // "Open now" means the vendor's own clock: their hours live in
+                // their business-address zone, so a Toronto vendor must read
+                // open while the Edmonton server clock says otherwise. The
+                // stored zone wins; the province map covers rows without one.
+                String storedZone = styler.get().getTimeZone();
+                ZoneId vendorZone = (storedZone != null && !storedZone.isBlank())
+                        ? ZoneId.of(storedZone)
+                        : VendorZoneResolver.zoneForProvince(styler.get().getProvince());
+                if(openNow && !isOpenAt(dto.getStylerId(), ZonedDateTime.now(vendorZone).toLocalDate(), ZonedDateTime.now(vendorZone).toLocalTime(), 30)) continue;
                 candidates.add(dto);
             }
             candidates.sort((left, right) -> Double.compare(searchScore(right), searchScore(left)));
@@ -4892,7 +5342,7 @@ public class AppService {
                     cityStylers = stylerRepo.findByCityIgnoreCase(city);
                 }
                 for(StylerEntity styler : cityStylers){
-                    if(!isApprovedStyler(styler)) continue;
+                    if(!isBookableStyler(styler)) continue;
                     if(!seenIds.contains(styler.getStylerId())){
                         // Compute Haversine distance for DB results
                         double dist = haversine(latitude, longitude, styler.getLatitude(), styler.getLongitude());
@@ -4929,7 +5379,7 @@ public class AppService {
                 double distKm = entry.getValue();
                 StylerEntity styler = stylersById.get(stylerId);
                 if(styler == null) continue;
-                if(!isApprovedStyler(styler)) continue;
+                if(!isBookableStyler(styler)) continue;
                 if(serviceTypeId != null && !serviceTypeId.isEmpty()){
                     if(!serviceTypeId.equals(styler.getServiceTypeId())) continue;
                 }
@@ -4937,6 +5387,9 @@ public class AppService {
                 // distance so concurrent searches never corrupt each other.
                 StylerAccountDTO dto = objectMapper.convertValue(cachedStylerAccountDTO(styler), StylerAccountDTO.class);
                 dto.setDistanceKm(Math.round(distKm * 10.0) / 10.0);
+                // Same copy carries the trading hours, so a nearby result states
+                // real opening hours rather than a bare presence badge.
+                attachHours(dto, stylerId);
                 result.add(dto);
             }
 
@@ -4955,11 +5408,12 @@ public class AppService {
         List<AvailabilityEntity> rows = availabilityRepo.findByStylerId(stylerId);
         if(rows == null || rows.isEmpty()) return false;
         int weekday = date.getDayOfWeek().getValue() % 7;
+        int nowMinutes = minuteOfDay(time);
         return rows.stream().filter(row -> Integer.toString(weekday).equals(row.getDayOfWeek())).anyMatch(row -> {
             try {
                 LocalTime start = parseAvailabilityTime(row.getStartTime());
                 LocalTime end = parseAvailabilityTime(row.getEndTime());
-                return !time.isBefore(start) && !time.plusMinutes(durationMinutes).isAfter(end)
+                return windowFits(start, end, nowMinutes, durationMinutes)
                         && isWindowFree(stylerId, date.toString(), time.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)), durationMinutes);
             } catch(Exception ex){ return false; }
         });

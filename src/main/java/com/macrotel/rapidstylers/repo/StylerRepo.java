@@ -30,6 +30,11 @@ public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
 
     Optional<StylerEntity> findByStripeConnectAccountId(String stripeConnectAccountId);
 
+    /** How many stylist records hold this exact image URL (used before destroying an asset). */
+    long countByProfileImageUrl(String profileImageUrl);
+
+    long countByIdentificationImageUrl(String identificationImageUrl);
+
     Optional<StylerEntity> findByPhoneNumber(String phoneNumber);
 
     @Query(value ="SELECT * FROM stylers WHERE business_name LIKE %:businessName%", nativeQuery = true)

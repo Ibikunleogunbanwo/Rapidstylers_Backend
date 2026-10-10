@@ -36,9 +36,13 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
  * Issues Cloudinary signed-upload credentials so the frontend can upload
  * images DIRECTLY to Cloudinary (never proxying bytes through this server).
  *
- * The client then POSTs multipart (file, api_key, timestamp, folder,
- * signature) to https://api.cloudinary.com/v1_1/{cloudName}/image/upload
- * and receives the secure CDN URL, which it saves on the entity.
+ * The client then POSTs multipart — the `params` map below verbatim, plus the
+ * file — to https://api.cloudinary.com/v1_1/{cloudName}/image/upload and
+ * receives the secure CDN URL, which it saves on the entity.
+ *
+ * `params` is the signed parameter set: it carries the folder, the allowed
+ * formats and the size ceiling, so the client cannot widen any of them without
+ * breaking the signature.
  *
  * Accepts an optional folderPrefix to partition uploads:
  *   ?folderPrefix=profile   → rapid_stylers/profile
@@ -61,6 +65,12 @@ public class CloudinaryController {
 
     @Value("${cloudinary.allowed-folder-prefixes:profile,id,store,portfolio}")
     private String allowedFolderPrefixes;
+
+    @Value("${cloudinary.allowed-formats:jpg,jpeg,png,webp,gif}")
+    private String allowedFormats;
+
+    @Value("${cloudinary.max-file-size-bytes:5242880}")
+    private long maxFileSizeBytes;
 
     @Autowired
     private RateLimiterService rateLimiterService;
@@ -92,17 +102,39 @@ public class CloudinaryController {
             }
             String folder = sanitizedPrefix.isBlank() ? baseFolder : baseFolder + "/" + sanitizedPrefix;
 
+            // The upload constraints are part of the SIGNED parameter set, so
+            // Cloudinary enforces them itself: a client that drops them,
+            // loosens them, or sends a disallowed type/size fails signature
+            // verification or is rejected outright. Until this change the only
+            // enforcement lived in a Cloudinary console upload preset, which is
+            // invisible from this repository — a check that silently "passes"
+            // review because nothing here can see it (audit check 16).
+            String formats = normalizedFormats();
+
             // Cloudinary signs the exact params sent with the upload, sorted
             // alphabetically, with the API secret appended, then SHA-1 hashed.
-            String toSign = "folder=" + folder + "&timestamp=" + timestamp + apiSecret;
+            String toSign = "allowed_formats=" + formats
+                    + "&folder=" + folder
+                    + "&max_file_size=" + maxFileSizeBytes
+                    + "&timestamp=" + timestamp + apiSecret;
             String signature = sha1(toSign);
+
+            // Returned ready to send as multipart fields. The client forwards
+            // this map verbatim, so a constraint added here cannot drift from
+            // what was signed.
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("api_key", apiKey);
+            params.put("timestamp", String.valueOf(timestamp));
+            params.put("folder", folder);
+            params.put("allowed_formats", formats);
+            params.put("max_file_size", String.valueOf(maxFileSizeBytes));
+            params.put("signature", signature);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("cloudName", cloudName);
-            data.put("apiKey", apiKey);
-            data.put("timestamp", String.valueOf(timestamp));
-            data.put("folder", folder);
-            data.put("signature", signature);
+            data.put("params", params);
+            data.put("allowedFormats", formats);
+            data.put("maxFileSize", String.valueOf(maxFileSizeBytes));
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Successful");
@@ -125,6 +157,21 @@ public class CloudinaryController {
                 .map(String::trim)
                 .filter(prefix -> !prefix.isBlank())
                 .collect(Collectors.toSet());
+    }
+
+    /**
+     * Cloudinary expects a space-free, comma-separated format list, and the
+     * value must be byte-identical to what the client sends or the signature
+     * will not verify — so it is normalised once, here, and both signed and
+     * returned from this single result.
+     */
+    private String normalizedFormats() {
+        String formats = Arrays.stream(allowedFormats.split(","))
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .filter(format -> !format.isBlank())
+                .collect(Collectors.joining(","));
+        return formats.isBlank() ? "jpg,jpeg,png,webp,gif" : formats;
     }
 
     /**

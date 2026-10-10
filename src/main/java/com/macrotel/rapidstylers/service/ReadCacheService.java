@@ -50,6 +50,7 @@ public class ReadCacheService {
     public static final String KEY_STYLER_AVAILABILITY = "styler:availability:";
     public static final String KEY_STYLER_APPOINTMENTS = "styler:appointments:";
     public static final String KEY_SEARCH_PROVINCE = "search:province:";
+    public static final String KEY_SEARCH_CITY = "search:city:";
     public static final String KEY_SEARCH_SERVICE = "search:service:";
     public static final String KEY_CATALOG_SERVICES = "catalog:services";
     public static final String KEY_CATALOG_IDENTIFICATIONS = "catalog:identifications";

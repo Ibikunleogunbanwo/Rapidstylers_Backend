@@ -131,6 +131,31 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} \
             'bash -s -- "" /tmp/rapidstylers-compose.yml' < scripts/check-required-env.sh
 
+      # Keep the demo-seed flag reconciled with the repository secret, as the
+      # owner set it (gh secret set APP_DEMO_SEED). The .env is rapiddeploy-only
+      # (0600), so this pipeline is the sanctioned write path; unset secret means
+      # the flag on the box stays as it is. Runs before the rsync + restart so
+      # the value lands before the app next boots.
+      - name: Reconcile APP_DEMO_SEED from the repository secret
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'rapiddeploy' }}
+          APP_DEMO_SEED_SECRET: ${{ secrets.APP_DEMO_SEED }}
+        run: |
+          umask 077
+          if [ -z "$APP_DEMO_SEED_SECRET" ]; then
+            echo "::notice::Repository secret APP_DEMO_SEED is not set — leaving the VPS flag unchanged."
+            exit 0
+          fi
+          FLAG_FILE="$(mktemp)"
+          trap 'rm -f "$FLAG_FILE"' EXIT
+          printf '%s' "$APP_DEMO_SEED_SECRET" > "$FLAG_FILE"
+          scp -q -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key \
+            "$FLAG_FILE" ${VPS_USER}@${VPS_HOST}:/tmp/rapidstylers-demo-seed
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} \
+            'APP_DEMO_SEED_SECRET_FILE=/tmp/rapidstylers-demo-seed bash -s; rc=$?; rm -f /tmp/rapidstylers-demo-seed; exit $rc' \
+            < scripts/reconcile-demo-seed.sh
+
       - name: Rsync tested commit to VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}

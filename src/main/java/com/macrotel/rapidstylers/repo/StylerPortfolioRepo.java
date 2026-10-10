@@ -15,4 +15,7 @@ public interface StylerPortfolioRepo extends JpaRepository<StylerPortfolioEntity
     List<StylerPortfolioEntity> findByStylerId(String stylerId);
 
     List<StylerPortfolioEntity> findByCategory(String category);
+
+    /** How many portfolio rows hold this exact image URL (used before destroying an asset). */
+    long countByImageUrl(String imageUrl);
 }

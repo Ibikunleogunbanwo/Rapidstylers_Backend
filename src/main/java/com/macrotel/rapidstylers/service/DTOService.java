@@ -66,6 +66,7 @@ public class DTOService {
         stylerAccountDTO.setBusinessName(stylerEntity.getBusinessName());
         stylerAccountDTO.setBusinessAddress(stylerEntity.getBusinessAddress());
         stylerAccountDTO.setProvince(stylerEntity.getProvince());
+        stylerAccountDTO.setTimeZone(stylerEntity.getTimeZone());
         stylerAccountDTO.setStreetAddress(stylerEntity.getStreetAddress());
         stylerAccountDTO.setUnit(stylerEntity.getUnit());
         stylerAccountDTO.setCity(stylerEntity.getCity());
@@ -78,6 +79,7 @@ public class DTOService {
         stylerAccountDTO.setPhoneNumber(stylerEntity.getPhoneNumber());
         stylerAccountDTO.setDescription(stylerEntity.getDescription());
         stylerAccountDTO.setVerificationStatus(stylerEntity.getVerificationStatus());
+        stylerAccountDTO.setDateRegistered(stylerEntity.getInsertedDt());
         // Marketplace payout flag: a stylist can receive money only when Connect
         // onboarding is COMPLETE — or when payments aren't configured at all
         // (dev mode), in which case nothing blocks the flow.
