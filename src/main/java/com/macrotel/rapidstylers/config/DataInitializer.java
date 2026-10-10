@@ -1,11 +1,11 @@
 package com.macrotel.rapidstylers.config;
 
 import com.macrotel.rapidstylers.catalog.entity.BlogPostEntity;
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
-import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;

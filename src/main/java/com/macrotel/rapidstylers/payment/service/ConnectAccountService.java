@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.payment.service;
 
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.pojo.*;

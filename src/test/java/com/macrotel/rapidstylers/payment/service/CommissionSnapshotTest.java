@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.fasterxml.jackson.databind.ObjectMapper;

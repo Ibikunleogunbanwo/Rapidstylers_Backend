@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
+import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
@@ -23,22 +24,22 @@ import com.macrotel.rapidstylers.engagement.service.ReviewService;
 import com.macrotel.rapidstylers.engagement.service.SupportService;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
+import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
+import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
-import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
-import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.service.AuditService;
 import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.service.IdempotencyService;
+import com.macrotel.rapidstylers.booking.service.IdempotencyService;
 import com.macrotel.rapidstylers.service.ImageReclaimService;
-import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
-import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
@@ -121,6 +122,7 @@ public class TestServices {
     public Boolean warmReadCachesEnabled;
 
     private static final List<Class<?>> SERVICES = List.of(
+            BookingService.class,
             CatalogService.class,
             FeedbackService.class,
             LoyaltyService.class,
@@ -137,6 +139,10 @@ public class TestServices {
             StylerService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
+
+    public BookingService bookingService() {
+        return get(BookingService.class);
+    }
 
     public CatalogService catalogService() {
         return get(CatalogService.class);

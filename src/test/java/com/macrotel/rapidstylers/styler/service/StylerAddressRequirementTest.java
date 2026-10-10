@@ -9,7 +9,7 @@ import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
@@ -17,10 +17,10 @@ import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.pojo.BookAppointmentData;
+import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.styler.pojo.StylerData;
 import com.macrotel.rapidstylers.styler.pojo.VerificationActionData;
-import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
@@ -272,7 +272,7 @@ class StylerAddressRequirementTest {
         when(stylerRepo.findByStylerIdForUpdate("ADDR5"))
                 .thenReturn(Optional.of(approvedStyler("ADDR5", null)));
 
-        BaseResponse response = services.appService().bookAppointment(booking("ADDR5"));
+        BaseResponse response = services.bookingService().bookAppointment(booking("ADDR5"));
 
         assertEquals("400", response.getStatusCode());
         assertTrue(messageOf(response).contains("address"),
@@ -287,7 +287,7 @@ class StylerAddressRequirementTest {
         when(userRepo.findByUserId("U1")).thenReturn(Optional.of(new UserEntity()));
         when(stylerRepo.findByStylerIdForUpdate("ADDR6")).thenReturn(Optional.of(pending));
 
-        BaseResponse response = services.appService().bookAppointment(booking("ADDR6"));
+        BaseResponse response = services.bookingService().bookAppointment(booking("ADDR6"));
 
         assertEquals("400", response.getStatusCode());
         assertFalse(messageOf(response).contains("address"),

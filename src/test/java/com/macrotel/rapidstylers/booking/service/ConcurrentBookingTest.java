@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.booking.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

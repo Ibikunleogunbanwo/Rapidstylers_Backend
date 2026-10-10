@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.dto.AppointmentDTO;
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;
 import org.junit.jupiter.api.Test;

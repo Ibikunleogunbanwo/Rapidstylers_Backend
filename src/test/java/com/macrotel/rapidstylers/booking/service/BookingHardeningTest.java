@@ -1,11 +1,11 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.booking.service;
 
 import com.macrotel.rapidstylers.support.TestServices;
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
-import com.macrotel.rapidstylers.pojo.BookAppointmentData;
-import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
+import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -73,7 +73,7 @@ class BookingHardeningTest {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "3");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
-        BaseResponse response = services.appService().completeAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.bookingService().completeAppointment("STYLER1", "APPT1");
 
         assertEquals("400", response.getStatusCode());
         assertTrue(response.getMessage().contains("after its scheduled start"));
@@ -85,8 +85,8 @@ class BookingHardeningTest {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "1");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
-        BaseResponse stylistAttemptToCancel = services.appService().cancelAppointment("STYLER1", "APPT1");
-        BaseResponse customerAttemptToAccept = services.appService().acceptAppointment("CUSTOMER1", "APPT1");
+        BaseResponse stylistAttemptToCancel = services.bookingService().cancelAppointment("STYLER1", "APPT1");
+        BaseResponse customerAttemptToAccept = services.bookingService().acceptAppointment("CUSTOMER1", "APPT1");
 
         assertEquals("400", stylistAttemptToCancel.getStatusCode());
         assertEquals("400", customerAttemptToAccept.getStatusCode());

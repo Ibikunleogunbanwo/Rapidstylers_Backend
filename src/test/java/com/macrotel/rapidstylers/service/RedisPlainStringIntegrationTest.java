@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.booking.service.IdempotencyService;
 import com.macrotel.rapidstylers.styler.service.LocationCacheService;
 import com.macrotel.rapidstylers.auth.service.SessionActivityService;
 import org.junit.jupiter.api.AfterAll;

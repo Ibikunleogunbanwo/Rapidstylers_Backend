@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.controller;
 
+import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
@@ -78,113 +79,6 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @PostMapping("/booking_estimate")
-    public ResponseEntity<BaseResponse> bookingEstimate(@RequestBody BookAppointmentData bookAppointmentData){
-        BaseResponse baseResponse = appService.estimateBooking(bookAppointmentData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    @PostMapping("/book_appointment")
-    public ResponseEntity <BaseResponse> bookAppointment(@Valid @RequestBody BookAppointmentData bookAppointmentData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        // The booking owner is the authenticated account — never trust the body's userId.
-        bookAppointmentData.setUserId(accountId);
-        String idempotencyKey = request.getHeader("Idempotency-Key");
-        bookAppointmentData.setIdempotencyKey(idempotencyKey);
-        BaseResponse baseResponse = appService.bookAppointment(bookAppointmentData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/styler_appointments")
-    public ResponseEntity<BaseResponse> stylerAppointments(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.stylerAppointments(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/accept_appointment")
-    public ResponseEntity <BaseResponse> acceptAppointment(@Valid @RequestBody AppointmentActionData appointmentActionData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.acceptAppointment(accountId, appointmentActionData.getAppointmentId(),
-                appointmentActionData.getDecisionNote());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/decline_appointment")
-    public ResponseEntity <BaseResponse> declineAppointment(@Valid @RequestBody AppointmentActionData appointmentActionData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.declineAppointment(accountId, appointmentActionData.getAppointmentId(),
-                appointmentActionData.getDecisionNote());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/complete_appointment")
-    public ResponseEntity <BaseResponse> completeAppointment(@Valid @RequestBody AppointmentActionData appointmentActionData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.completeAppointment(accountId, appointmentActionData.getAppointmentId());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/retry_appointment_payment")
-    public ResponseEntity<BaseResponse> retryAppointmentPayment(@Valid @RequestBody AppointmentActionData action, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        return ApiResponses.respond(appService.retryAppointmentPayment(accountId, action.getAppointmentId()));
-    }
-
-    @PostMapping("/cancel_appointment")
-    public ResponseEntity <BaseResponse> cancelAppointment(@Valid @RequestBody AppointmentActionData appointmentActionData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.cancelAppointment(accountId, appointmentActionData.getAppointmentId());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @PostMapping("/styler_cancel_appointment")
-    public ResponseEntity <BaseResponse> stylerCancelAppointment(@Valid @RequestBody AppointmentActionData appointmentActionData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.stylerCancelAppointment(accountId, appointmentActionData.getAppointmentId());
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/user_appointments")
-    public ResponseEntity<BaseResponse> userAppointments(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.listUserAppointment(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
     @GetMapping("/saved_stylists")
     public ResponseEntity<BaseResponse> savedStylists(HttpServletRequest request){
         String accountId = currentAccountId(request);
@@ -220,16 +114,6 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse, status);
     }
 
-    @GetMapping("/user_pending_appointments")
-    public ResponseEntity<BaseResponse> userPendingAppointments(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        BaseResponse baseResponse = appService.listUserPendingAppointment(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
     @PostMapping("/update_user_data")
     public ResponseEntity <BaseResponse> updateUserData(@Valid @RequestBody UpdateData updateData, HttpServletRequest request){
         String accountId = currentAccountId(request);

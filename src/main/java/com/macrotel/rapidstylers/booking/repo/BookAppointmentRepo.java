@@ -1,6 +1,6 @@
-package com.macrotel.rapidstylers.repo;
+package com.macrotel.rapidstylers.booking.repo;
 
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;

@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventEntity;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;

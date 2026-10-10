@@ -1,9 +1,9 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
-import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.stripe.model.PaymentIntent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

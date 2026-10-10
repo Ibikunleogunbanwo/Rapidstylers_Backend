@@ -1,7 +1,7 @@
-package com.macrotel.rapidstylers.entity;
+package com.macrotel.rapidstylers.booking.entity;
 
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.pojo.BookAppointmentData;
+import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import lombok.Data;
 
 import javax.persistence.*;

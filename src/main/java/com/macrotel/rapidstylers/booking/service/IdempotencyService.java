@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.booking.service;
 
 import com.macrotel.rapidstylers.config.ThrottledLog;
 import org.springframework.data.redis.core.StringRedisTemplate;
