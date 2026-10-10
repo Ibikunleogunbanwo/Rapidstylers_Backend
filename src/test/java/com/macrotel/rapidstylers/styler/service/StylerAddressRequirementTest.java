@@ -5,7 +5,7 @@ import com.macrotel.rapidstylers.service.DTOService;
 import com.macrotel.rapidstylers.service.ImageReclaimService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
-import com.macrotel.rapidstylers.service.StripeService;
+import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
@@ -313,7 +313,7 @@ class StylerAddressRequirementTest {
         when(stylerRepo.findByStylerId("ADDR7")).thenReturn(Optional.of(approvedStyler("ADDR7", null)));
         when(bookAppointmentRepo.findByStylerId("ADDR7")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = services.appService().getStylerBusinessSummary("ADDR7");
+        BaseResponse response = services.connectAccountService().getStylerBusinessSummary("ADDR7");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals(Boolean.FALSE, data.get("addressOnFile"));
@@ -327,7 +327,7 @@ class StylerAddressRequirementTest {
         when(stylerRepo.findByStylerId("ADDR8")).thenReturn(Optional.of(approvedStyler("ADDR8", "700 2 St SW")));
         when(bookAppointmentRepo.findByStylerId("ADDR8")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = services.appService().getStylerBusinessSummary("ADDR8");
+        BaseResponse response = services.connectAccountService().getStylerBusinessSummary("ADDR8");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals(Boolean.TRUE, data.get("addressOnFile"));

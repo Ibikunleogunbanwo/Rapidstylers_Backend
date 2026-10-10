@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.controller;
 
+import com.macrotel.rapidstylers.payment.service.CardService;
+import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
 import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
@@ -15,8 +17,8 @@ import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.service.GalleryService;
 import com.macrotel.rapidstylers.styler.service.GeocodingService;
-import com.macrotel.rapidstylers.service.PaymentReconciliationService;
-import com.macrotel.rapidstylers.service.StepUpService;
+import com.macrotel.rapidstylers.payment.service.PaymentReconciliationService;
+import com.macrotel.rapidstylers.auth.service.StepUpService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -47,10 +49,6 @@ public class ApplicationController {
     GalleryService galleryService;
     @Autowired
     EncryptionConfig encryptionConfig;
-    @Autowired
-    StepUpService stepUpService;
-    @Autowired
-    PaymentReconciliationService paymentReconciliationService;
 
     @GetMapping("/testing")
     public ResponseEntity <BaseResponse> testing(){
@@ -243,126 +241,6 @@ public class ApplicationController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
-    @PostMapping("/update_card_details")
-    public ResponseEntity<BaseResponse> updateCardDetails(@Valid @RequestBody CardDetailsData cardDetailsData, HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null){
-            return unauthorized();
-        }
-        // Card details are attached to the authenticated account.
-        cardDetailsData.setUserId(accountId);
-        BaseResponse baseResponse = appService.updateUserCardDetails(cardDetailsData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    /** Stripe Connect Express onboarding: creates/reuses the stylist account and returns the hosted onboarding link. */
-    @PostMapping("/styler/connect_account")
-    public ResponseEntity<BaseResponse> stylerConnectAccount(@RequestBody Map<String, String> body, HttpServletRequest request){
-        String stylerId = currentAccountId(request);
-        if(stylerId == null) return unauthorized();
-        String fallback = request.getScheme() + "://" + request.getServerName()
-                + (request.getServerPort() == 80 || request.getServerPort() == 443 ? "" : ":" + request.getServerPort())
-                + "/styler-dashboard";
-        String returnUrl = body.getOrDefault("returnUrl", fallback);
-        String refreshUrl = body.getOrDefault("refreshUrl", fallback);
-        BaseResponse baseResponse = appService.createStylerConnectAccount(stylerId, returnUrl, refreshUrl);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/admin/styler_business_summaries")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminStylerBusinessSummaries(HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        if(adminId == null) return unauthorized();
-        return ApiResponses.respond(appService.getAdminStylerBusinessSummaries());
-    }
-
-    @GetMapping("/admin/styler_connect_statuses")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity <BaseResponse> adminStylerConnectStatuses(){
-        BaseResponse baseResponse = appService.getAdminStylerConnectStatuses();
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    @GetMapping("/styler/payouts")
-    public ResponseEntity<BaseResponse> stylerPayouts(HttpServletRequest request){
-        String stylerId = currentAccountId(request);
-        if(stylerId == null) return unauthorized();
-        return ApiResponses.respond(appService.getStylerPayouts(stylerId));
-    }
-
-    @GetMapping("/styler/business_summary")
-    public ResponseEntity<BaseResponse> stylerBusinessSummary(HttpServletRequest request){
-        String stylerId = currentAccountId(request);
-        if(stylerId == null) return unauthorized();
-        return ApiResponses.respond(appService.getStylerBusinessSummary(stylerId));
-    }
-
-    @GetMapping("/styler/connect_status")
-    public ResponseEntity<BaseResponse> stylerConnectStatus(HttpServletRequest request){
-        String stylerId = currentAccountId(request);
-        if(stylerId == null) return unauthorized();
-        return ApiResponses.respond(appService.getStylerConnectStatus(stylerId));
-    }
-
-    /** Returns a Stripe SetupIntent clientSecret so the frontend can collect a card inside Elements. */
-    @GetMapping("/card_setup_intent")
-    public ResponseEntity<BaseResponse> cardSetupIntent(HttpServletRequest request){
-        String accountId = currentAccountId(request);
-        if(accountId == null) return unauthorized();
-        BaseResponse baseResponse = appService.getCardSetupIntent(accountId);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
-    /** Stripe webhook (signature-verified). Public: no API key or JWT required. */
-    @PostMapping("/stripe/webhook")
-    public ResponseEntity<String> stripeWebhook(@RequestBody String payload,
-                                                @RequestHeader(value = "Stripe-Signature", required = false) String signature){
-        if(signature == null || signature.isEmpty()){
-            // A delivery with no signature has no event id to name, and it is the
-            // one rejection the service never sees. Logged here so the app log
-            // shows every hit on this endpoint, whoever made it.
-            LOG.warning("Stripe webhook rejected: id=unknown type=unknown reason=missing Stripe-Signature header");
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Missing Stripe-Signature header");
-        }
-        try {
-            appService.handleStripeWebhook(payload, signature);
-            return ResponseEntity.ok("ok");
-        } catch(IllegalArgumentException ex){
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid signature");
-        } catch(Exception ex){
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Webhook handling failed");
-        }
-    }
-
-    @GetMapping("/admin/settings/commission")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminCommissionSetting(HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        if(adminId == null) return unauthorized();
-        return ApiResponses.respond(appService.getCommissionSetting(adminId));
-    }
-
-    @PostMapping("/admin/settings/commission")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminUpdateCommissionSetting(@RequestBody Map<String, Object> body, HttpServletRequest request){
-        String adminId = currentAccountId(request);
-        if(adminId == null) return unauthorized();
-        double percent = 0;
-        Object value = body.get("commissionPercent");
-        if(value instanceof Number){
-            percent = ((Number) value).doubleValue();
-        } else if(value instanceof String){
-            try { percent = Double.parseDouble((String) value); } catch(NumberFormatException ignored){}
-        }
-        BaseResponse baseResponse = appService.updateCommissionSetting(adminId, percent);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-
     @GetMapping("/admin/recovery_campaigns")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminRecoveryCampaigns(HttpServletRequest request){
@@ -457,35 +335,6 @@ public class ApplicationController {
         return ApiResponses.respond(appService.retryFailedOutboxEvent(id, adminId));
     }
 
-    @PostMapping("/admin/refund")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminRefund(@RequestBody RefundRequestData data, HttpServletRequest request) {
-        String adminId = requireAdmin(request);
-        if (adminId == null) return unauthorized();
-        // Step-up: refunds move real money, so the acting admin must re-prove their
-        // password (X-Step-Up-Password), not just present a valid session token.
-        if (!stepUpService.verify(adminId, request.getHeader("X-Step-Up-Password"))) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(stepUpRequired());
-        }
-        return ApiResponses.respond(appService.adminRefund(adminId, data));
-    }
-
-    @GetMapping("/admin/refunds")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminRefunds(HttpServletRequest request) {
-        String adminId = requireAdmin(request);
-        if (adminId == null) return unauthorized();
-        return ApiResponses.respond(appService.adminRefunds(adminId));
-    }
-
-    @GetMapping("/admin/payment_reconciliation")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminPaymentReconciliation(HttpServletRequest request) {
-        String adminId = requireAdmin(request);
-        if (adminId == null) return unauthorized();
-        return ApiResponses.respond(paymentReconciliationService.runReconciliation());
-    }
-
     /** Returns the authenticated account id set by JwtAuthFilter, or null when the request has no valid token. */
     private String currentAccountId(HttpServletRequest request){
         Object accountId = request.getAttribute("accountId");
@@ -510,14 +359,6 @@ public class ApplicationController {
         baseResponse.setMessage("Authentication required");
         baseResponse.setData(EMPTY_DATA);
         return new ResponseEntity<>(baseResponse, HttpStatus.UNAUTHORIZED);
-    }
-
-    private BaseResponse stepUpRequired(){
-        BaseResponse baseResponse = new BaseResponse();
-        baseResponse.setStatusCode("403");
-        baseResponse.setMessage("Re-authentication required. Please re-enter your admin password.");
-        baseResponse.setData(EMPTY_DATA);
-        return baseResponse;
     }
 
     @ResponseStatus(HttpStatus.BAD_REQUEST)

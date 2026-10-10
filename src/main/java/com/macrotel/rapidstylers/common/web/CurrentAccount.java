@@ -29,6 +29,12 @@ public final class CurrentAccount {
         return (role == null) ? null : String.valueOf(role);
     }
 
+    /** The account id only when the token's role is ADMIN; otherwise null. */
+    public static String adminId(HttpServletRequest request) {
+        if (!"ADMIN".equals(role(request))) return null;
+        return id(request);
+    }
+
     /** The 401 answer for a request with no signed-in account. */
     public static ResponseEntity<BaseResponse> unauthorized() {
         BaseResponse baseResponse = new BaseResponse();

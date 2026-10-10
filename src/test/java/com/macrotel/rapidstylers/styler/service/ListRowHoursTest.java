@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.styler.service;
 
 import com.macrotel.rapidstylers.service.DTOService;
 import com.macrotel.rapidstylers.service.ReadCacheService;
-import com.macrotel.rapidstylers.service.StripeService;
+import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;

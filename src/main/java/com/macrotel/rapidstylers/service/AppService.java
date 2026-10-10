@@ -1,9 +1,10 @@
 package com.macrotel.rapidstylers.service;
 
-import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
+import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
+import com.macrotel.rapidstylers.payment.service.MoneyUtils;
+import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
@@ -15,13 +16,17 @@ import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
+import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerService;
 import com.stripe.model.Account;
-import com.stripe.model.AccountLink;
 import com.stripe.model.Customer;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
@@ -87,7 +92,7 @@ public class AppService {
     // Initialized inline so bare construction (unit tests) behaves as before;
     // Spring replaces both with the context beans via @Autowired.
     @Autowired
-    PaymentOpsService paymentOpsService = new PaymentOpsService();
+    PaymentService paymentService = new PaymentService();
     // Shared audit-log / ops-alert sink (see simplification-plan.md).
     @Autowired
     AuditService auditService = new AuditService();
@@ -115,6 +120,8 @@ public class AppService {
     StylerEligibility stylerEligibility;
     @Autowired
     StylerService stylerService;
+    @Autowired
+    CardService cardService;
 
     public BaseResponse testing(){
         BaseResponse response = new BaseResponse(true);
@@ -174,10 +181,6 @@ public class AppService {
             LOG.warning(ex.getMessage());
         }
         return response;
-    }
-
-    public void sendPaymentReceipt(BookAppointmentEntity appointment){
-        paymentOpsService.sendPaymentReceipt(appointment);
     }
 
     /** Null-safe eviction — unit tests constructing AppService directly (no cache wired) never break. */
@@ -285,14 +288,6 @@ public class AppService {
             case 4 -> "1-month final";
             default -> "None";
         };
-    }
-
-    public BaseResponse getCommissionSetting(String adminId){
-        return paymentOpsService.getCommissionSetting(adminId);
-    }
-
-    public BaseResponse updateCommissionSetting(String adminId, double percent){
-        return paymentOpsService.updateCommissionSetting(adminId, percent);
     }
 
     /** Admin-only: sends a test email through the same EmailConfig path used for real notifications. */
@@ -500,7 +495,7 @@ public class AppService {
             appointment.setPrice(pricing.totalPrice);
             // Snapshot the commission at booking time so the payout is deterministic
             // even if the admin later changes the platform rate.
-            appointment.setCommissionPercent(effectiveCommissionPercent());
+            appointment.setCommissionPercent(paymentService.effectiveCommissionPercent());
 
             // Stripe: authorize near-term bookings immediately with the one-time
             // card the booking modal collected via Elements. We never persist the
@@ -543,7 +538,7 @@ public class AppService {
                         }
                         PaymentIntent intent = stripeService.authorizeBookingPayment(
                                 customerId, pm, amountCents, appointment.getAppointmentId(),
-                                destination, commissionCents(amountCents));
+                                destination, paymentService.commissionCents(amountCents));
                         appointment.setPaymentIntentId(intent.getId());
                         appointment.setPaymentStatus("AUTHORIZED");
                         appointment.setPaymentAmount(pricing.totalPrice);
@@ -574,7 +569,7 @@ public class AppService {
                         Customer customer = stripeService.getOrCreateCustomer(existingCustomerId,
                                 buyer.getEmailAddress(),
                                 (buyer.getFirstname() + " " + buyer.getLastname()).trim());
-                        upsertPaymentReference(bookAppointmentData.getUserId(), customer.getId(), pm);
+                        cardService.upsertPaymentReference(bookAppointmentData.getUserId(), customer.getId(), pm);
                         appointment.setPaymentStatus("PAYMENT_SCHEDULED");
                         appointment.setPaymentAmount(pricing.totalPrice);
                         appointment.setPaymentAuthorizationDueAt(paymentAuthorizationDueAt(appointmentDate, appointmentStart));
@@ -678,7 +673,7 @@ public class AppService {
             long amountCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null ? appointment.getPrice() : appointment.getPaymentAmount());
             PaymentIntent intent = stripeService.authorizeBookingPayment(
                     card.get().getStripeCustomerId(), card.get().getStripePaymentMethodId(),
-                    amountCents, appointment.getAppointmentId(), destination, commissionCents(amountCents));
+                    amountCents, appointment.getAppointmentId(), destination, paymentService.commissionCents(amountCents));
             appointment.setPaymentIntentId(intent.getId());
             appointment.setPaymentStatus("AUTHORIZED");
             appointment.setPaymentFailureCode(null);
@@ -686,7 +681,7 @@ public class AppService {
             if(captureAfterAuthorization){
                 stripeService.captureBookingPayment(intent.getId());
                 appointment.setPaymentStatus("CAPTURED");
-                sendPaymentReceipt(appointment);
+                paymentService.sendPaymentReceipt(appointment);
             }
             bookAppointmentRepo.save(appointment);
             return PaymentAttemptResult.success();
@@ -797,30 +792,6 @@ public class AppService {
         return Math.round(value * 10.0) / 10.0;
     }
 
-    public void handleStripeWebhook(String payload, String signatureHeader){
-        paymentOpsService.handleStripeWebhook(payload, signatureHeader);
-    }
-
-    private double effectiveCommissionPercent(){
-        return paymentOpsService.effectiveCommissionPercent();
-    }
-
-    private long commissionCents(long amountCents){
-        return paymentOpsService.commissionCents(amountCents);
-    }
-
-    long commissionCents(long amountCents, double percent){
-        return paymentOpsService.commissionCents(amountCents, percent);
-    }
-
-    double effectiveCommissionPercentForBooking(BookAppointmentEntity appointment){
-        return paymentOpsService.effectiveCommissionPercentForBooking(appointment);
-    }
-
-    void handleAccountUpdated(Account account){
-        paymentOpsService.handleAccountUpdated(account);
-    }
-
     private static class TravelPricing {
         private final String servicePrice;
         private final String travelFee;
@@ -879,10 +850,6 @@ public class AppService {
         }
         ZonedDateTime scheduled = ZonedDateTime.of(date, start, applicationZone());
         return !ZonedDateTime.now(applicationZone()).isBefore(scheduled.plusMinutes(completionGraceMinutes));
-    }
-
-    private void autoRefundCapturedPayment(BookAppointmentEntity appointment, String reason, String actorId){
-        paymentOpsService.autoRefundCapturedPayment(appointment, reason, actorId);
     }
 
     private ZoneId applicationZone(){
@@ -1048,14 +1015,6 @@ public class AppService {
         return response;
     }
 
-    public BaseResponse adminRefund(String adminId, RefundRequestData data){
-        return paymentOpsService.adminRefund(adminId, data);
-    }
-
-    public BaseResponse adminRefunds(String adminId){
-        return paymentOpsService.adminRefunds(adminId);
-    }
-
     private enum ActorRole { STYLER, CUSTOMER }
 
     /**
@@ -1148,7 +1107,7 @@ public class AppService {
                 try {
                     stripeService.captureBookingPayment(appointment.getPaymentIntentId());
                     appointment.setPaymentStatus("CAPTURED");
-                    sendPaymentReceipt(appointment);
+                    paymentService.sendPaymentReceipt(appointment);
                 } catch(Exception ex){
                     LOG.warning("Payment capture failed: " + ex.getMessage());
                     response.setStatusCode(ERROR_STATUS_CODE);
@@ -1172,7 +1131,7 @@ public class AppService {
                 // authorized hold is released so the card is never charged.
                 if(appointment.getPaymentIntentId() != null && stripeService.isConfigured()){
                     if("CAPTURED".equals(appointment.getPaymentStatus())){
-                        autoRefundCapturedPayment(appointment,
+                        paymentService.autoRefundCapturedPayment(appointment,
                                 "Appointment " + ("2".equals(newStatus) ? "rejected" : "cancelled"), "SYSTEM");
                     } else {
                         try {
@@ -1193,8 +1152,8 @@ public class AppService {
                         String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
                         long totalCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null
                                 ? appointment.getPrice() : appointment.getPaymentAmount());
-                        double percent = effectiveCommissionPercentForBooking(appointment);
-                        long commission = commissionCents(totalCents, percent);
+                        double percent = paymentService.effectiveCommissionPercentForBooking(appointment);
+                        long commission = paymentService.commissionCents(totalCents, percent);
                         long stylistShareCents = totalCents - commission;
                         appointment.setCommissionPercent(appointment.getCommissionPercent() == null
                                 ? percent : appointment.getCommissionPercent());
@@ -1315,339 +1274,6 @@ public class AppService {
         }
         catch(Exception ex){
             LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    /**
-     * Creates (or reuses) a Stripe Connect Express account for the stylist and
-     * returns a hosted onboarding link. returnUrl/refreshUrl come from the
-     * frontend (the stylist dashboard) and are where Stripe sends the stylist
-     * after finishing or abandoning onboarding.
-     */
-    public BaseResponse createStylerConnectAccount(String stylerId, String returnUrl, String refreshUrl){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            if(!stripeService.isConfigured()){
-                return Responses.errorResponse(response, "Payments are not configured yet");
-            }
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
-            if(stylerOpt.isEmpty()){
-                return Responses.errorResponse(response, "Invalid Styler Id");
-            }
-            StylerEntity styler = stylerOpt.get();
-            String accountId = styler.getStripeConnectAccountId();
-            if(accountId == null || accountId.isBlank()){
-                Account account = stripeService.createExpressAccount(stylerId, styler.getEmailAddress(),
-                        styler.getBusinessName(), styler.getFirstname(), styler.getLastname());
-                accountId = account.getId();
-                styler.setStripeConnectAccountId(accountId);
-                styler.setConnectOnboardingStatus("PENDING");
-                stylerRepo.save(styler);
-            }
-            AccountLink link = stripeService.createAccountLink(accountId, refreshUrl, returnUrl);
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("accountId", accountId);
-            data.put("onboardingUrl", link.getUrl());
-            data.put("status", styler.getConnectOnboardingStatus());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(data);
-        } catch(Exception ex){
-            LOG.warning("Connect account setup failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not start payout setup — please try again");
-        }
-        return response;
-    }
-
-    public BaseResponse getStylerPayouts(String stylerId){
-        return paymentOpsService.getStylerPayouts(stylerId);
-    }
-
-    /**
-     * Business summary for a stylist dashboard: real appointment, client,
-     * revenue, and popular-service stats (replaces the hardcoded card).
-     * Status map: 1 pending, 3 accepted, 0 completed, 2 rejected, 4 cancelled.
-     */
-    public BaseResponse getStylerBusinessSummary(String stylerId){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
-            if(stylerOpt.isEmpty()){
-                return Responses.errorResponse(response, "Invalid Styler Id");
-            }
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(businessSummaryData(stylerOpt.get()));
-        } catch(Exception ex){
-            LOG.warning("Business summary failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not load business summary");
-        }
-        return response;
-    }
-
-    /**
-     * Admin view: per-stylist business stats for every professional, most
-     * appointments first. Reuses the same computation as the stylist dashboard.
-     */
-    public BaseResponse getAdminStylerBusinessSummaries(){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            List<Map<String, Object>> rows = new ArrayList<>();
-            for(StylerEntity styler : stylerRepo.findAll()){
-                Map<String, Object> row = new LinkedHashMap<>(businessSummaryData(styler));
-                row.put("stylerId", styler.getStylerId());
-                row.put("businessName", styler.getBusinessName());
-                row.put("name", (styler.getFirstname() + " " + styler.getLastname()).trim());
-                row.put("emailAddress", styler.getEmailAddress());
-                row.put("verificationStatus", styler.getVerificationStatus());
-                rows.add(row);
-            }
-            rows.sort((a, b) -> Long.compare(((Number) b.get("totalAppointments")).longValue(),
-                    ((Number) a.get("totalAppointments")).longValue()));
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(rows);
-        } catch(Exception ex){
-            LOG.warning("Admin business summaries failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not load business summaries");
-        }
-        return response;
-    }
-
-    /**
-     * Shared per-stylist stats computation. Revenue counts the captured payment
-     * amount when the payment lifecycle is active (paymentStatus CAPTURED),
-     * otherwise the completed appointment price. netRevenue is the stylist's
-     * share after the platform commission, consistent with the payout page.
-     */
-    private Map<String, Object> businessSummaryData(StylerEntity styler){
-        String stylerId = styler.getStylerId();
-        List<BookAppointmentEntity> appointments = bookAppointmentRepo.findByStylerId(stylerId);
-        if(appointments == null) appointments = new ArrayList<>();
-
-        long total = appointments.size();
-        long pending = 0, confirmed = 0, finished = 0, cancelled = 0;
-        Set<String> clients = new HashSet<>();
-        BigDecimal grossRevenue = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        Map<String, Integer> serviceCounts = new LinkedHashMap<>();
-        Map<String, String> serviceNames = new HashMap<>();
-        for(SubServiceEntity service : subServiceRepo.findByStylerId(stylerId)){
-            serviceNames.put(String.valueOf(service.getId()), service.getName());
-        }
-
-        for(BookAppointmentEntity appointment : appointments){
-            if("1".equals(appointment.getStatus())) pending++;
-            else if("3".equals(appointment.getStatus())) confirmed++;
-            else if("0".equals(appointment.getStatus())) finished++;
-            else if("4".equals(appointment.getStatus())) cancelled++;
-            if("2".equals(appointment.getStatus()) || "4".equals(appointment.getStatus())) continue;
-            if(appointment.getUserId() != null) clients.add(appointment.getUserId());
-            if("0".equals(appointment.getStatus())){
-                boolean captured = "CAPTURED".equals(appointment.getPaymentStatus());
-                grossRevenue = grossRevenue.add(MoneyUtils.amount(
-                        captured && appointment.getPaymentAmount() != null
-                                ? appointment.getPaymentAmount() : appointment.getPrice()));
-            }
-            if(appointment.getSubServiceId() != null){
-                serviceCounts.merge(appointment.getSubServiceId(), 1, Integer::sum);
-            }
-        }
-
-        List<Map<String, Object>> popularServices = new ArrayList<>();
-        serviceCounts.entrySet().stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(5)
-                .forEach(entry -> {
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("name", serviceNames.getOrDefault(entry.getKey(), "Service"));
-                    row.put("count", entry.getValue());
-                    popularServices.add(row);
-                });
-
-        BigDecimal commission = grossRevenue.multiply(BigDecimal.valueOf(effectiveCommissionPercent()))
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal netRevenue = grossRevenue.subtract(commission);
-
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("totalAppointments", total);
-        data.put("clients", clients.size());
-        data.put("pending", pending);
-        data.put("confirmed", confirmed);
-        data.put("finished", finished);
-        data.put("cancelled", cancelled);
-        data.put("totalRevenue", MoneyUtils.money(grossRevenue));
-        // Listing health, so the dashboard can explain a profile that is not
-        // reachable instead of leaving the professional to guess why nobody
-        // books. `bookable` is the same gate public search uses.
-        data.put("addressOnFile", StylerEligibility.hasStreetAddress(styler));
-        data.put("bookable", stylerEligibility.isBookableStyler(styler));
-        data.put("totalCommission", MoneyUtils.money(commission));
-        data.put("netRevenue", MoneyUtils.money(netRevenue));
-        data.put("popularServices", popularServices);
-        return data;
-    }
-
-    public BaseResponse getStylerConnectStatus(String stylerId){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
-            if(stylerOpt.isEmpty()){
-                return Responses.errorResponse(response, "Invalid Styler Id");
-            }
-            StylerEntity styler = stylerOpt.get();
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("accountId", styler.getStripeConnectAccountId());
-            data.put("status", styler.getConnectOnboardingStatus() == null
-                    ? "NOT_STARTED" : styler.getConnectOnboardingStatus());
-            data.put("disabledReason", styler.getConnectDisabledReason());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(data);
-        } catch(Exception ex){
-            LOG.warning("Connect status lookup failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not load payout status");
-        }
-        return response;
-    }
-
-    /**
-     * Admin support view: every stylist's Connect payout status, ordered so
-     * problems surface first (REJECTED, then PENDING, NOT_STARTED, COMPLETE).
-     * Pure DB read — no Stripe calls, so it stays fast regardless of account count.
-     */
-    public BaseResponse getAdminStylerConnectStatuses(){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            List<Map<String, Object>> rows = new ArrayList<>();
-            for(StylerEntity styler : stylerRepo.findAll()){
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("stylerId", styler.getStylerId());
-                row.put("name", (styler.getFirstname() + " " + styler.getLastname()).trim());
-                row.put("businessName", styler.getBusinessName());
-                row.put("emailAddress", styler.getEmailAddress());
-                row.put("verificationStatus", styler.getVerificationStatus() == null
-                        ? "PENDING" : styler.getVerificationStatus());
-                row.put("accountActive", "0".equals(styler.getStatus()));
-                row.put("connectStatus", styler.getConnectOnboardingStatus() == null
-                        ? "NOT_STARTED" : styler.getConnectOnboardingStatus());
-                row.put("connectAccountId", styler.getStripeConnectAccountId());
-                row.put("disabledReason", styler.getConnectDisabledReason());
-                row.put("registered", styler.getInsertedDt());
-                rows.add(row);
-            }
-            rows.sort((a, b) -> {
-                int rankA = connectStatusRank((String) a.get("connectStatus"));
-                int rankB = connectStatusRank((String) b.get("connectStatus"));
-                int byStatus = Integer.compare(rankA, rankB);
-                if(byStatus != 0) return byStatus;
-                return String.valueOf(a.get("stylerId")).compareTo(String.valueOf(b.get("stylerId")));
-            });
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(rows);
-        } catch(Exception ex){
-            LOG.warning("Connect status list failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not load stylist payout statuses");
-        }
-        return response;
-    }
-
-    /** Sort rank for the admin overview: rejected and stuck payouts first. */
-    private int connectStatusRank(String status){
-        switch(status == null ? "NOT_STARTED" : status){
-            case "REJECTED": return 0;
-            case "PENDING": return 1;
-            case "NOT_STARTED": return 2;
-            default: return 3;
-        }
-    }
-
-    public BaseResponse getCardSetupIntent(String userId){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            if(!stripeService.isConfigured()){
-                return Responses.errorResponse(response, "Payments are not configured yet");
-            }
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
-            if(isUserExist.isEmpty()){
-                return Responses.errorResponse(response, "Invalid User Id");
-            }
-            UserEntity user = isUserExist.get();
-            Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(userId);
-            String customerId = existing.filter(c -> c.getStripeCustomerId() != null)
-                    .map(CardDetailsEntity::getStripeCustomerId).orElse(null);
-            Customer customer = stripeService.getOrCreateCustomer(customerId, user.getEmailAddress(),
-                    (user.getFirstname() + " " + user.getLastname()).trim());
-            String clientSecret = stripeService.createSetupIntentClientSecret(customer.getId());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("clientSecret", clientSecret);
-            data.put("stripeCustomerId", customer.getId());
-            response.setData(data);
-        } catch(Exception ex){
-            LOG.warning("Setup intent failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not start card setup — please try again");
-        }
-        return response;
-    }
-
-    /**
-     * Persists only the Stripe token references needed for a far-future booking
-     * so the payment scheduler can authorize when the window opens. Never stores
-     * the card itself (number/expiry/cvv) — only customer + payment-method ids.
-     */
-    private void upsertPaymentReference(String userId, String stripeCustomerId, String paymentMethodId){
-        Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(userId);
-        CardDetailsEntity entity = existing.orElseGet(CardDetailsEntity::new);
-        entity.setUserId(userId);
-        entity.setStripeCustomerId(stripeCustomerId);
-        entity.setStripePaymentMethodId(paymentMethodId);
-        cardDetailsRepo.save(entity);
-    }
-
-    /**
-     * Persists only Stripe references and display metadata for a card collected
-     * inside Stripe's Elements iframe. Raw card numbers, CVVs and expiry dates
-     * are never sent to or stored by this application.
-     */
-    public BaseResponse updateUserCardDetails(CardDetailsData cardDetailsData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(cardDetailsData.getUserId());
-            if(isUserExist.isEmpty()){
-                return Responses.errorResponse(response, "Invalid User Id");
-            }
-            if(!stripeService.isConfigured()){
-                return Responses.errorResponse(response, "Payments are not configured yet");
-            }
-            UserEntity user = isUserExist.get();
-            Optional<CardDetailsEntity> existing = cardDetailsRepo.findByUserId(cardDetailsData.getUserId());
-            String customerId = existing.filter(c -> c.getStripeCustomerId() != null)
-                    .map(CardDetailsEntity::getStripeCustomerId).orElse(null);
-            Customer customer = stripeService.getOrCreateCustomer(customerId, user.getEmailAddress(),
-                    (user.getFirstname() + " " + user.getLastname()).trim());
-            StripeService.CardDisplay display = stripeService.attachPaymentMethod(customer.getId(),
-                    cardDetailsData.getPaymentMethodId());
-
-            CardDetailsEntity entity = existing.orElseGet(CardDetailsEntity::new);
-            entity.setUserId(cardDetailsData.getUserId());
-            entity.setCardName(cardDetailsData.getCardName().trim());
-            entity.setStripeCustomerId(customer.getId());
-            entity.setStripePaymentMethodId(cardDetailsData.getPaymentMethodId());
-            entity.setLast4(display.last4);
-            entity.setBrand(display.brand);
-            entity.setExpMonth(display.expMonth);
-            entity.setExpYear(display.expYear);
-            cardDetailsRepo.save(entity);
-
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(existing.isPresent() ? "Card details updated successfully" : "Card details added successfully");
-            response.setData(EMPTY_DATA);
-        } catch(Exception ex){
-            LOG.warning("Card update failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Could not save your card — please try again");
         }
         return response;
     }

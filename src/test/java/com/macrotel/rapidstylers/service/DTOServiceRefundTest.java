@@ -2,8 +2,8 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.dto.AppointmentDTO;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.entity.RefundEntity;
-import com.macrotel.rapidstylers.repo.RefundRepo;
+import com.macrotel.rapidstylers.payment.entity.RefundEntity;
+import com.macrotel.rapidstylers.payment.repo.RefundRepo;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 

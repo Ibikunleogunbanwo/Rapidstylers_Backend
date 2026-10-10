@@ -1,21 +1,25 @@
 package com.macrotel.rapidstylers.service;
 
+import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.controller.ApplicationController;
+import com.macrotel.rapidstylers.payment.controller.PaymentController;
+import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.entity.CardDetailsEntity;
+import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.entity.UserEntity;
-import com.macrotel.rapidstylers.repo.CardDetailsRepo;
+import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.stripe.exception.CardException;
 import com.stripe.model.PaymentIntent;
 import com.macrotel.rapidstylers.dto.AppointmentDTO;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.BookAppointmentData;
-import com.macrotel.rapidstylers.pojo.CardDetailsData;
+import com.macrotel.rapidstylers.payment.pojo.CardDetailsData;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
@@ -97,15 +101,15 @@ class BookingWorkflowTest {
         // Same default as application.properties (STRIPE_COMMISSION_PERCENT).
         ReflectionTestUtils.setField(services, "paymentAuthorizationWindowDays", 7L);
         ReflectionTestUtils.setField(services, "paymentAuthorizationLeadHours", 48L);
-        // Payment ops (commission, receipts, refunds) live in PaymentOpsService —
+        // Payment ops (commission, receipts, refunds) live in PaymentService —
         // share the same mocks and rate default (see docs/simplification-plan.md).
-        PaymentOpsService paymentOps = new PaymentOpsService();
-        paymentOps.bookAppointmentRepo = appointmentRepo;
-        paymentOps.stylerRepo = stylerRepo;
-        paymentOps.stripeService = stripeService;
-        paymentOps.auditService = services.auditService;
+        PaymentService paymentOps = new PaymentService();
+        ReflectionTestUtils.setField(paymentOps, "bookAppointmentRepo", appointmentRepo);
+        ReflectionTestUtils.setField(paymentOps, "stylerRepo", stylerRepo);
+        ReflectionTestUtils.setField(paymentOps, "stripeService", stripeService);
+        ReflectionTestUtils.setField(paymentOps, "auditService", services.auditService);
         ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);
-        services.paymentOpsService = paymentOps;
+        services.paymentService = paymentOps;
     }
 
     @Test
@@ -557,12 +561,15 @@ class BookingWorkflowTest {
         ApplicationController controller = new ApplicationController();
         AppService service = mock(AppService.class);
         ReflectionTestUtils.setField(controller, "appService", service);
+        PaymentController paymentController = new PaymentController();
+        CardService cardService = mock(CardService.class);
+        ReflectionTestUtils.setField(paymentController, "cardService", cardService);
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getAttribute("accountId")).thenReturn("JWT-CUSTOMER");
         BaseResponse success = new BaseResponse(true);
         success.setStatusCode("200");
         when(service.bookAppointment(any(BookAppointmentData.class))).thenReturn(success);
-        when(service.updateUserCardDetails(any(CardDetailsData.class))).thenReturn(success);
+        when(cardService.updateUserCardDetails(any(CardDetailsData.class))).thenReturn(success);
 
         BookAppointmentData booking = bookingData();
         booking.setUserId("BODY-USER");
@@ -572,8 +579,8 @@ class BookingWorkflowTest {
 
         CardDetailsData card = new CardDetailsData();
         card.setUserId("BODY-USER");
-        controller.updateCardDetails(card, request);
-        verify(service).updateUserCardDetails(org.mockito.ArgumentMatchers.argThat(value ->
+        paymentController.updateCardDetails(card, request);
+        verify(cardService).updateUserCardDetails(org.mockito.ArgumentMatchers.argThat(value ->
                 "JWT-CUSTOMER".equals(value.getUserId())));
     }
 

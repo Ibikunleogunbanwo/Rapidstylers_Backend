@@ -8,7 +8,7 @@ import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
-import com.macrotel.rapidstylers.service.StepUpService;
+import com.macrotel.rapidstylers.auth.service.StepUpService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

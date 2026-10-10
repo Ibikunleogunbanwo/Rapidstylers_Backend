@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.dto;
 
+import com.macrotel.rapidstylers.payment.dto.CardDetailsDTO;
 import lombok.Data;
 
 @Data

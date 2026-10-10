@@ -23,30 +23,32 @@ import com.macrotel.rapidstylers.engagement.service.ReviewService;
 import com.macrotel.rapidstylers.engagement.service.SupportService;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
+import com.macrotel.rapidstylers.payment.service.CardService;
+import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
-import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
-import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.repo.BookingSlotLockRepo;
-import com.macrotel.rapidstylers.repo.CardDetailsRepo;
+import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.repo.SavedStylistRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.service.AuditService;
 import com.macrotel.rapidstylers.service.DTOService;
-import com.macrotel.rapidstylers.styler.service.GeocodingService;
-import com.macrotel.rapidstylers.styler.service.GoogleTimezoneService;
 import com.macrotel.rapidstylers.service.IdempotencyService;
 import com.macrotel.rapidstylers.service.ImageReclaimService;
+import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.service.ReadCacheService;
+import com.macrotel.rapidstylers.payment.service.StripeService;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
+import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.AvailabilityService;
+import com.macrotel.rapidstylers.styler.service.GeocodingService;
+import com.macrotel.rapidstylers.styler.service.GoogleTimezoneService;
 import com.macrotel.rapidstylers.styler.service.LocationCacheService;
 import com.macrotel.rapidstylers.styler.service.LocationService;
-import com.macrotel.rapidstylers.service.PaymentOpsService;
-import com.macrotel.rapidstylers.service.ReadCacheService;
-import com.macrotel.rapidstylers.service.StripeService;
-import com.macrotel.rapidstylers.styler.service.AvailabilityService;
 import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
@@ -102,7 +104,7 @@ public class TestServices {
     public OutboxEventService outboxEventService;
     public Long paymentAuthorizationLeadHours;
     public Long paymentAuthorizationWindowDays;
-    public PaymentOpsService paymentOpsService = new PaymentOpsService();
+    public PaymentService paymentService = new PaymentService();
     public ReadCacheService readCacheService;
     public ReferralRepo referralRepo;
     public ReviewRepo reviewRepo;
@@ -125,6 +127,8 @@ public class TestServices {
             NotificationService.class,
             ReviewService.class,
             SupportService.class,
+            CardService.class,
+            ConnectAccountService.class,
             AppService.class,
             AvailabilityService.class,
             PortfolioService.class,
@@ -156,6 +160,14 @@ public class TestServices {
 
     public SupportService supportService() {
         return get(SupportService.class);
+    }
+
+    public CardService cardService() {
+        return get(CardService.class);
+    }
+
+    public ConnectAccountService connectAccountService() {
+        return get(ConnectAccountService.class);
     }
 
     public AppService appService() {
