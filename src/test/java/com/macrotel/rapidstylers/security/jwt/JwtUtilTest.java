@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.security;
+package com.macrotel.rapidstylers.security.jwt;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.security.WeakKeyException;

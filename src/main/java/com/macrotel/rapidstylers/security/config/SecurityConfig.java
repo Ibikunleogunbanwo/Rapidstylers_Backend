@@ -1,6 +1,6 @@
-package com.macrotel.rapidstylers.config;
+package com.macrotel.rapidstylers.security.config;
 
-import com.macrotel.rapidstylers.security.JwtAuthFilter;
+import com.macrotel.rapidstylers.security.filter.JwtAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
@@ -13,7 +13,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableGlobalMethodSecurity(prePostEnabled = true)
-public class SecurityFilterConfig {
+public class SecurityConfig {
 
     /**
      * Starter Content-Security-Policy for this origin (API + the bundled Swagger UI).
@@ -33,7 +33,7 @@ public class SecurityFilterConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final CorsConfig corsConfig;
 
-    public SecurityFilterConfig(JwtAuthFilter jwtAuthFilter, CorsConfig corsConfig) {
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter, CorsConfig corsConfig) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.corsConfig = corsConfig;
     }

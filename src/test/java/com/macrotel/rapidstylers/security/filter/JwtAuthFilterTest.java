@@ -1,5 +1,6 @@
-package com.macrotel.rapidstylers.security;
+package com.macrotel.rapidstylers.security.filter;
 
+import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;

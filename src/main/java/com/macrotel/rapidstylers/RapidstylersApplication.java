@@ -16,7 +16,7 @@ public class RapidstylersApplication {
 		// application.properties exposes only /actuator/health (an unauthenticated probe
 		// endpoint). The metrics endpoint — which carries the ThrottledLog degradation
 		// counters — is added here at a precedence that overrides that list; it is still
-		// gated by the shared x-api-key via AppConfig, exactly like every other
+		// gated by the shared x-api-key via ApiKeyFilter, exactly like every other
 		// non-health path. Deployments that prefer not to expose metrics can override
 		// MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE in the environment instead.
 		application.addInitializers(context -> context.getEnvironment().getPropertySources()

@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.config;
+package com.macrotel.rapidstylers.security.filter;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -18,7 +18,7 @@ import java.io.IOException;
  * valid JWT, so this filter only needs to handle the shared key.
  */
 @Component
-public class AppConfig extends OncePerRequestFilter {
+public class ApiKeyFilter extends OncePerRequestFilter {
     @Value("${app.api.key}")
     private String apiKey;
 

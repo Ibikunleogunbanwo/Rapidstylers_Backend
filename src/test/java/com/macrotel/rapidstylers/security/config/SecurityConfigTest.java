@@ -1,5 +1,6 @@
-package com.macrotel.rapidstylers.config;
+package com.macrotel.rapidstylers.security.config;
 
+import com.macrotel.rapidstylers.security.filter.ApiKeyFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.mock.web.MockFilterChain;
@@ -17,7 +18,7 @@ class SecurityConfigTest {
 
     @Test
     void apiKeyFilterAllowsCorsOptionsPreflightWithoutApiKey() throws ServletException, IOException {
-        AppConfig appConfig = new AppConfig();
+        ApiKeyFilter appConfig = new ApiKeyFilter();
         ReflectionTestUtils.setField(appConfig, "apiKey", "test-key");
 
         MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", "/rapid_stylers/list_service");

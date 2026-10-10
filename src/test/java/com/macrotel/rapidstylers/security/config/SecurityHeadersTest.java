@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.config;
+package com.macrotel.rapidstylers.security.config;
 
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
@@ -14,10 +14,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Guards the security response headers over the full filter chain (AppConfig,
+ * Guards the security response headers over the full filter chain (ApiKeyFilter,
  * JwtAuthFilter, Spring Security's header writer): X-Content-Type-Options,
  * X-Frame-Options and the Content-Security-Policy declared in
- * SecurityFilterConfig. If a future refactor disables .headers() or drops the
+ * SecurityConfig. If a future refactor disables .headers() or drops the
  * policy string, this test turns red — the headers protect the Swagger UI /
  * any HTML this origin serves, and frame-ancestors 'none' blocks clickjacking.
  */

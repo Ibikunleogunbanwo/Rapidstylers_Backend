@@ -2,7 +2,7 @@ package com.macrotel.rapidstylers.service;
 
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
-import com.macrotel.rapidstylers.security.JwtUtil;
+import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

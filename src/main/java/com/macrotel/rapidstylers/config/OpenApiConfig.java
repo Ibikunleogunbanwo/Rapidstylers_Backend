@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
  * this bean names the two auth mechanisms every non-public call needs — the
  * shared x-api-key header and the optional Bearer JWT. The generated docs are
  * available at /swagger-ui.html and /v3/api-docs (both still gated by the
- * shared API key via AppConfig).
+ * shared API key via ApiKeyFilter).
  */
 @Configuration
 @OpenAPIDefinition(

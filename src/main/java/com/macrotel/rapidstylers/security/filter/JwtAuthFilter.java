@@ -1,5 +1,6 @@
-package com.macrotel.rapidstylers.security;
+package com.macrotel.rapidstylers.security.filter;
 
+import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +33,7 @@ import java.util.Set;
  *   - CUSTOMER: account-owned mutations (bookings, profile, card, feedback)
  *
  * Public/catalog endpoints are NOT in the map — they remain gated only by the
- * shared x-api-key (see AppConfig) so the landing page stays anonymous.
+ * shared x-api-key (see ApiKeyFilter) so the landing page stays anonymous.
  */
 @Component
 @Order(1)

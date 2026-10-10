@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.security;
+package com.macrotel.rapidstylers.security.verifier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.config;
+package com.macrotel.rapidstylers.security.config;
 
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.beans.factory.annotation.Value;

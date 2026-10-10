@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.security;
+package com.macrotel.rapidstylers.security.filter;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;

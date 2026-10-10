@@ -6,7 +6,7 @@ import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.SignInData;
 import com.macrotel.rapidstylers.repo.UserRepo;
-import com.macrotel.rapidstylers.security.JwtUtil;
+import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

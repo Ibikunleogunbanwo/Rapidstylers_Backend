@@ -10,7 +10,7 @@ import com.macrotel.rapidstylers.repo.NotificationRepo;
 import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.RefreshTokenRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
-import com.macrotel.rapidstylers.security.GoogleTokenVerifier;
+import com.macrotel.rapidstylers.security.verifier.GoogleTokenVerifier;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 
