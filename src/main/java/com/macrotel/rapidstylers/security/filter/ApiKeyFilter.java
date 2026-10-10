@@ -12,10 +12,10 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 /**
- * Shared x-api-key gate for every endpoint except public file serving.
- * Role-based access (ADMIN / STYLER / CUSTOMER) is enforced separately by
- * JwtAuthFilter — it runs first and rejects role-protected paths without a
- * valid JWT, so this filter only needs to handle the shared key.
+ * Shared x-api-key gate for every endpoint except public file serving, the
+ * Stripe webhook and the health probe. It only checks the shared key; who the
+ * caller is and which roles may use a route are handled by the security chain
+ * (JwtAuthFilter, SecurityConfig, Routes), which runs before this filter.
  */
 @Component
 public class ApiKeyFilter extends OncePerRequestFilter {

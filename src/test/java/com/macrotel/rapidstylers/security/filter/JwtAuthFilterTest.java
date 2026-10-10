@@ -4,308 +4,116 @@ import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.servlet.ServletException;
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * The filter only identifies the caller; it never rejects. Which roles may use
+ * which route is covered by SecurityRulesTest over the whole chain.
+ */
 class JwtAuthFilterTest {
 
     private JwtUtil jwtUtil;
+    private SessionActivityService sessionActivityService;
     private JwtAuthFilter filter;
 
     @BeforeEach
     void setUp() {
         jwtUtil = mock(JwtUtil.class);
+        sessionActivityService = mock(SessionActivityService.class);
         filter = new JwtAuthFilter();
         ReflectionTestUtils.setField(filter, "jwtUtil", jwtUtil);
-        // The filter calls this on valid-token requests; a no-op mock keeps the
-        // existing role/route assertions the focus of the test.
-        ReflectionTestUtils.setField(filter, "sessionActivityService", mock(SessionActivityService.class));
+        ReflectionTestUtils.setField(filter, "sessionActivityService", sessionActivityService);
+    }
+
+    @AfterEach
+    void clearContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
-    void rejectsCloudinaryDeleteWithoutJwt() throws ServletException, IOException {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/delete_cloudinary_image");
-        MockHttpServletResponse response = new MockHttpServletResponse();
+    void validTokenSignsTheRequestIn() throws ServletException, IOException {
+        tokenFor("styler-token", "STYLER1", "STYLER");
+        MockHttpServletRequest request = request("/rapid_stylers/styler/reviews", "styler-token");
+        MockFilterChain chain = new MockFilterChain();
 
-        filter.doFilter(request, response, new MockFilterChain());
+        filter.doFilter(request, new MockHttpServletResponse(), chain);
 
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void allowsCloudinaryDeleteForAdminJwt() throws ServletException, IOException {
-        Claims claims = Jwts.claims().setSubject("ADMIN1");
-        claims.put("role", "ADMIN");
-        when(jwtUtil.parseToken("admin-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/delete_cloudinary_image");
-        request.addHeader("Authorization", "Bearer admin-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(200, response.getStatus());
-        assertEquals("ADMIN1", request.getAttribute("accountId"));
-    }
-
-    @Test
-    void protectsIdentificationMaintenanceForAdminsOnly() throws ServletException, IOException {
-        Claims claims = Jwts.claims().setSubject("STYLER1");
-        claims.put("role", "STYLER");
-        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/create_identification");
-        request.addHeader("Authorization", "Bearer styler-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void recoveryCampaignsListedForAdminRole() throws ServletException, IOException {
-        // /admin/recovery_campaigns has @PreAuthorize("hasRole('ADMIN')") — but
-        // the method-level check only sees the role when the filter lists the
-        // path and populates the SecurityContext. Without the path entry the
-        // endpoint could never succeed; this locks the entry in place.
-        Claims claims = Jwts.claims().setSubject("ADMIN1");
-        claims.put("role", "ADMIN");
-        when(jwtUtil.parseToken("admin-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/admin/recovery_campaigns");
-        request.addHeader("Authorization", "Bearer admin-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(200, response.getStatus());
-        assertEquals("ADMIN1", request.getAttribute("accountId"));
-    }
-
-    @Test
-    void recoveryCampaignsRejectsStylerRole() throws ServletException, IOException {
-        Claims claims = Jwts.claims().setSubject("STYLER1");
-        claims.put("role", "STYLER");
-        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/admin/recovery_campaigns");
-        request.addHeader("Authorization", "Bearer styler-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void adminPasswordChangeAllowedForAdminRole() throws ServletException, IOException {
-        // POST /admin/accounts/{id}/password is @PreAuthorize("hasRole('ADMIN')"),
-        // so the filter must list the path and populate the SecurityContext.
-        Claims claims = Jwts.claims().setSubject("ADMIN1");
-        claims.put("role", "ADMIN");
-        when(jwtUtil.parseToken("admin-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/admin/accounts/5/password");
-        request.addHeader("Authorization", "Bearer admin-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(200, response.getStatus());
-        assertEquals("ADMIN1", request.getAttribute("accountId"));
-    }
-
-    @Test
-    void adminPasswordChangeRejectsStylerRole() throws ServletException, IOException {
-        Claims claims = Jwts.claims().setSubject("STYLER1");
-        claims.put("role", "STYLER");
-        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/admin/accounts/5/password");
-        request.addHeader("Authorization", "Bearer styler-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void cardSetupIntentRequiresCustomerRole() throws ServletException, IOException {
-        // /card_setup_intent reads the account from the filter-set attribute;
-        // an unlisted path would always see null and return 401 even for a
-        // valid customer. The CUSTOMER entry makes it reachable.
-        Claims claims = Jwts.claims().setSubject("CUST1");
-        claims.put("role", "CUSTOMER");
-        when(jwtUtil.parseToken("customer-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/card_setup_intent");
-        request.addHeader("Authorization", "Bearer customer-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(200, response.getStatus());
-        assertEquals("CUST1", request.getAttribute("accountId"));
-    }
-
-    @Test
-    void cardSetupIntentRejectsAnonymous() throws ServletException, IOException {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/card_setup_intent");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void decryptEndpointAllowsAdminRole() throws ServletException, IOException {
-        // /decrypt was previously open to CUSTOMER/STYLER/ADMIN — a decryption
-        // oracle. Locked to ADMIN: lock the allowlist entry in place so a revert
-        // of the role restriction fails this test.
-        Claims claims = Jwts.claims().setSubject("ADMIN1");
-        claims.put("role", "ADMIN");
-        when(jwtUtil.parseToken("admin-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
-        request.addHeader("Authorization", "Bearer admin-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(200, response.getStatus());
-        assertEquals("ADMIN1", request.getAttribute("accountId"));
-    }
-
-    @Test
-    void decryptEndpointRejectsCustomerRole() throws ServletException, IOException {
-        Claims claims = Jwts.claims().setSubject("CUST1");
-        claims.put("role", "CUSTOMER");
-        when(jwtUtil.parseToken("customer-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
-        request.addHeader("Authorization", "Bearer customer-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void decryptEndpointRejectsStylerRole() throws ServletException, IOException {
-        Claims claims = Jwts.claims().setSubject("STYLER1");
-        claims.put("role", "STYLER");
-        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
-        request.addHeader("Authorization", "Bearer styler-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void decryptEndpointRejectsAnonymous() throws ServletException, IOException {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/decrypt");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void cacheStatsListedForAdminRole() throws ServletException, IOException {
-        // Mirrors the recovery_campaigns guard: the endpoint is @PreAuthorize(ADMIN)
-        // and only succeeds when the filter lists the path and populates the context.
-        Claims claims = Jwts.claims().setSubject("ADMIN1");
-        claims.put("role", "ADMIN");
-        when(jwtUtil.parseToken("admin-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/admin/cache_stats");
-        request.addHeader("Authorization", "Bearer admin-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(200, response.getStatus());
-        assertEquals("ADMIN1", request.getAttribute("accountId"));
-    }
-
-    @Test
-    void cacheStatsRejectsStylerRole() throws ServletException, IOException {
-        Claims claims = Jwts.claims().setSubject("STYLER1");
-        claims.put("role", "STYLER");
-        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/admin/cache_stats");
-        request.addHeader("Authorization", "Bearer styler-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(401, response.getStatus());
-    }
-
-    @Test
-    void stylerReviewsResolvesTheStylistFromTheToken() throws ServletException, IOException {
-        // The controller reads accountId, which only this filter sets; an unlisted
-        // path left it null and the stylist always got 401.
-        Claims claims = Jwts.claims().setSubject("STYLER1");
-        claims.put("role", "STYLER");
-        when(jwtUtil.parseToken("styler-token")).thenReturn(claims);
-
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/rapid_stylers/styler/reviews");
-        request.addHeader("Authorization", "Bearer styler-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, new MockFilterChain());
-
-        assertEquals(200, response.getStatus());
+        assertNotNull(chain.getRequest(), "the request continues down the chain");
         assertEquals("STYLER1", request.getAttribute("accountId"));
+        assertEquals("STYLER", request.getAttribute("role"));
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertEquals("STYLER1", auth.getPrincipal());
+        assertEquals("ROLE_STYLER", auth.getAuthorities().iterator().next().getAuthority());
+        verify(sessionActivityService).touch("STYLER1", "STYLER");
     }
 
     @Test
-    void logoutResolvesTheAccountForEveryRole() throws ServletException, IOException {
-        for (String role : new String[] {"CUSTOMER", "STYLER", "ADMIN"}) {
-            Claims claims = Jwts.claims().setSubject(role + "1");
-            claims.put("role", role);
-            when(jwtUtil.parseToken(role + "-token")).thenReturn(claims);
-
-            MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/auth/logout");
-            request.addHeader("Authorization", "Bearer " + role + "-token");
-            MockHttpServletResponse response = new MockHttpServletResponse();
-
-            filter.doFilter(request, response, new MockFilterChain());
-
-            assertEquals(200, response.getStatus(), role);
-            assertEquals(role + "1", request.getAttribute("accountId"), role);
-        }
-    }
-
-    @Test
-    void logoutWithoutTokenIsRejected() throws ServletException, IOException {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rapid_stylers/auth/logout");
+    void missingTokenPassesThroughAnonymously() throws ServletException, IOException {
+        MockHttpServletRequest request = request("/rapid_stylers/user_data", null);
         MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
 
-        filter.doFilter(request, response, new MockFilterChain());
+        filter.doFilter(request, response, chain);
 
-        assertEquals(401, response.getStatus());
+        assertNotNull(chain.getRequest(), "the filter never rejects; the security rules do");
+        assertEquals(200, response.getStatus());
+        assertNull(request.getAttribute("accountId"));
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    void invalidTokenPassesThroughAnonymously() throws ServletException, IOException {
+        when(jwtUtil.parseToken("forged")).thenReturn(null);
+        MockHttpServletRequest request = request("/rapid_stylers/user_data", "forged");
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        assertNull(request.getAttribute("accountId"));
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        verify(sessionActivityService, never()).touch(any(), any());
+    }
+
+    @Test
+    void tokenRefreshDoesNotCountAsActivity() throws ServletException, IOException {
+        tokenFor("customer-token", "CUST1", "CUSTOMER");
+
+        filter.doFilter(request("/rapid_stylers/auth/refresh", "customer-token"),
+                new MockHttpServletResponse(), new MockFilterChain());
+
+        verify(sessionActivityService, never()).touch(any(), any());
+    }
+
+    private void tokenFor(String token, String accountId, String role) {
+        Claims claims = Jwts.claims().setSubject(accountId);
+        claims.put("role", role);
+        when(jwtUtil.parseToken(token)).thenReturn(claims);
+    }
+
+    private static MockHttpServletRequest request(String path, String token) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+        if (token != null) {
+            request.addHeader("Authorization", "Bearer " + token);
+        }
+        return request;
     }
 }

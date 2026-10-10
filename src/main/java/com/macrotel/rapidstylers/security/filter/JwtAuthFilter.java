@@ -4,11 +4,7 @@ import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.util.AntPathMatcher;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -19,224 +15,53 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
- * Role-based JWT enforcement. Paths in ROLE_PATHS require a valid
- * "Authorization: Bearer <jwt>" whose role claim matches the required role:
- *   - ADMIN   : create/update/delete service (categories)
- *   - STYLER  : styler-owned mutations (sub-services, portfolio, sign-out)
- *   - CUSTOMER: account-owned mutations (bookings, profile, card, feedback)
- *
- * Public/catalog endpoints are NOT in the map — they remain gated only by the
- * shared x-api-key (see ApiKeyFilter) so the landing page stays anonymous.
+ * Works out who is calling. It never rejects a request: when the
+ * "Authorization: Bearer <jwt>" header holds a valid token it signs the request
+ * in (Spring's SecurityContext, plus the accountId and role request attributes
+ * the controllers read). Whether that caller may use the route is decided
+ * afterwards by the rules in SecurityConfig and Routes.
  */
 @Component
-@Order(1)
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private static final Map<String, Set<String>> ROLE_PATHS = new HashMap<>();
-
-    static {
-        allow("/rapid_stylers/create_service", "ADMIN");
-        allow("/rapid_stylers/update_service", "ADMIN");
-        allow("/rapid_stylers/delete_service", "ADMIN");
-
-        allow("/rapid_stylers/create_blog", "ADMIN");
-        allow("/rapid_stylers/update_blog", "ADMIN");
-        allow("/rapid_stylers/delete_blog", "ADMIN");
-        allow("/rapid_stylers/create_identification", "ADMIN");
-        allow("/rapid_stylers/update_identification", "ADMIN");
-        allow("/rapid_stylers/delete_identification", "ADMIN");
-
-        // Professional verification workflow
-        allow("/rapid_stylers/admin/styler_verification_queue", "ADMIN");
-        allow("/rapid_stylers/admin/update_styler_verification", "ADMIN");
-        allow("/rapid_stylers/admin/styler_business_summaries", "ADMIN");
-        allow("/rapid_stylers/admin/all_portfolios", "ADMIN");
-        allow("/rapid_stylers/admin/delete_portfolio_image", "ADMIN");
-        allow("/rapid_stylers/delete_cloudinary_image", "ADMIN", "STYLER");
-
-        allow("/rapid_stylers/create_sub_service", "STYLER");
-        allow("/rapid_stylers/styler_own_sub_services", "STYLER");
-        allow("/rapid_stylers/create_portfolio", "STYLER");
-        allow("/rapid_stylers/styler_own_portfolio", "STYLER");
-        allow("/rapid_stylers/delete_portfolio_image", "STYLER");
-        allow("/rapid_stylers/styler_sign_out", "STYLER");
-        allow("/rapid_stylers/styler/connect_account", "STYLER");
-        allow("/rapid_stylers/styler/connect_status", "STYLER");
-        allow("/rapid_stylers/styler/payouts", "STYLER");
-        allow("/rapid_stylers/styler/business_summary", "STYLER");
-        allow("/rapid_stylers/styler/reviews", "STYLER");
-
-        allow("/rapid_stylers/book_appointment", "CUSTOMER");
-        allow("/rapid_stylers/cancel_appointment", "CUSTOMER");
-        allow("/rapid_stylers/retry_appointment_payment", "CUSTOMER");
-        allow("/rapid_stylers/card_setup_intent", "CUSTOMER");
-        // Decryption oracle — any role could otherwise decrypt arbitrary ciphertext
-        // under the app key. Card user-ids are stored plaintext now, so only ADMIN
-        // (support/diagnosis) legitimately needs it.
-        allow("/rapid_stylers/decrypt", "ADMIN");
-
-        allow("/rapid_stylers/styler_appointments", "STYLER");
-        allow("/rapid_stylers/styler_availability", "STYLER");
-        allow("/rapid_stylers/update_styler_availability", "STYLER");
-        allow("/rapid_stylers/styler_availability_exceptions", "STYLER");
-        allow("/rapid_stylers/styler/travel_settings", "STYLER");
-        allow("/rapid_stylers/update_styler_travel_settings", "STYLER");
-        allow("/rapid_stylers/add_availability_exception", "STYLER");
-        allow("/rapid_stylers/delete_availability_exception", "STYLER");
-        allow("/rapid_stylers/accept_appointment", "STYLER");
-        allow("/rapid_stylers/decline_appointment", "STYLER");
-        allow("/rapid_stylers/complete_appointment", "STYLER");
-        allow("/rapid_stylers/styler_cancel_appointment", "STYLER");
-
-        allow("/rapid_stylers/update_user_data", "CUSTOMER");
-        allow("/rapid_stylers/update_user_password", "CUSTOMER");
-        allow("/rapid_stylers/update_card_details", "CUSTOMER");
-        allow("/rapid_stylers/add_feedback", "CUSTOMER");
-
-        // Account-owned reads and review creation — identity comes from the token, not the query/body.
-        allow("/rapid_stylers/user_data", "CUSTOMER");
-        allow("/rapid_stylers/user_appointments", "CUSTOMER");
-        allow("/rapid_stylers/user_pending_appointments", "CUSTOMER");
-        allow("/rapid_stylers/saved_stylists", "CUSTOMER");
-        allow("/rapid_stylers/save_stylist", "CUSTOMER");
-        allow("/rapid_stylers/remove_saved_stylist", "CUSTOMER");
-        allow("/rapid_stylers/notifications", "CUSTOMER");
-        allow("/rapid_stylers/notifications/read", "CUSTOMER");
-        allow("/rapid_stylers/notifications/read_all", "CUSTOMER");
-        allow("/rapid_stylers/notification_preferences", "CUSTOMER");
-        allow("/rapid_stylers/create_review", "CUSTOMER");
-        allow("/rapid_stylers/support_tickets", "CUSTOMER");
-        allow("/rapid_stylers/loyalty_account", "CUSTOMER");
-        allow("/rapid_stylers/apply_referral", "CUSTOMER");
-        allow("/rapid_stylers/update_sub_service", "STYLER");
-        allow("/rapid_stylers/admin/review_moderation_queue", "ADMIN");
-        allow("/rapid_stylers/admin/update_review_moderation", "ADMIN");
-        allow("/rapid_stylers/admin/support_tickets", "ADMIN");
-        allow("/rapid_stylers/admin/update_support_ticket", "ADMIN");
-        allow("/rapid_stylers/admin/kpis", "ADMIN");
-        allow("/rapid_stylers/admin/cache_stats", "ADMIN");
-        allow("/rapid_stylers/admin/settings/commission", "ADMIN");
-        allow("/rapid_stylers/admin/audit_logs", "ADMIN");
-        allow("/rapid_stylers/admin/styler_connect_statuses", "ADMIN");
-        allow("/rapid_stylers/admin/test_email", "ADMIN");
-        allow("/rapid_stylers/list_feedback", "ADMIN");
-        allow("/rapid_stylers/admin/failed_events", "ADMIN");
-        allow("/rapid_stylers/admin/failed_events/{id}/retry", "ADMIN");
-        allow("/rapid_stylers/admin/recovery_campaigns", "ADMIN");
-        allow("/rapid_stylers/admin/refund", "ADMIN");
-        allow("/rapid_stylers/admin/refunds", "ADMIN");
-        allow("/rapid_stylers/admin/payment_reconciliation", "ADMIN");
-
-        // Any signed-in account: logout needs to know whose refresh tokens to revoke.
-        allow("/rapid_stylers/auth/logout", "CUSTOMER", "STYLER", "ADMIN");
-
-        // Database-backed admin account management
-        allow("/rapid_stylers/admin/accounts", "ADMIN");
-        allow("/rapid_stylers/admin/accounts/{id}/password", "ADMIN");
-        allow("/rapid_stylers/admin/accounts/{id}/disable", "ADMIN");
-        allow("/rapid_stylers/admin/accounts/{id}/enable", "ADMIN");
-    }
+    // Silent token renewal must not count as activity, or the idle timeout
+    // that /auth/refresh enforces could never trigger.
+    private static final String REFRESH_PATH = "/rapid_stylers/auth/refresh";
 
     @Autowired
     private JwtUtil jwtUtil;
 
-    // Records real user activity in Redis so the refresh endpoint can enforce the
-    // role-based idle timeout. Only fires for ROLE_PATHS requests (true user data
-    // traffic), never for /auth/refresh, so silent token renewal does not reset idle.
     @Autowired
     private SessionActivityService sessionActivityService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        if ("OPTIONS".equals(request.getMethod())) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        // No Spring Security persistence filter is registered for this stateless
-        // setup, so clear any context a prior request on this thread may have left,
-        // then re-establish it below only when a valid token is present.
-        SecurityContextHolder.clearContext();
-
-        String path = request.getRequestURI();
-        Set<String> requiredRoles = requiredRolesFor(path);
-        if (requiredRoles == null) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        String authHeader = request.getHeader("Authorization");
-        String token = (authHeader != null && authHeader.startsWith("Bearer "))
-                ? authHeader.substring(7)
-                : null;
-        Claims claims = (token == null) ? null : jwtUtil.parseToken(token);
-
-        // Populate the Spring Security context for any valid token so method-level
-        // @PreAuthorize checks see the role as an authority. Anonymous requests
-        // (no token) get no authentication and are handled by the shared API key.
-        if (claims != null) {
-            String role = claims.get("role", String.class);
-            if (role != null) {
-                List<GrantedAuthority> authorities =
-                        Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role));
-                SecurityContextHolder.getContext().setAuthentication(
-                        new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities));
-            }
-        }
-
+        Claims claims = bearerClaims(request);
         String role = (claims == null) ? null : claims.get("role", String.class);
-        if (requiredRoles != null && (role == null || !requiredRoles.contains(role))) {
-            response.setStatus(HttpStatus.UNAUTHORIZED.value());
-            response.setContentType("application/json");
-            response.getWriter().write("{\"status\": false, \"error\": \"Authorized role required\"}");
-            return;
-        }
-
-        request.setAttribute("accountId", claims == null ? null : claims.getSubject());
-        request.setAttribute("role", role);
-        // A valid token + a protected route that the role may call = evidence of
-        // real activity. Best-effort Redis write; never fails the request.
-        if (claims != null && role != null) {
-            sessionActivityService.touch(claims.getSubject(), role);
+        if (role != null) {
+            String accountId = claims.getSubject();
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                    accountId, null, List.of(new SimpleGrantedAuthority("ROLE_" + role))));
+            request.setAttribute("accountId", accountId);
+            request.setAttribute("role", role);
+            if (!REFRESH_PATH.equals(request.getRequestURI())) {
+                // Best-effort Redis write; never fails the request.
+                sessionActivityService.touch(accountId, role);
+            }
         }
         filterChain.doFilter(request, response);
     }
 
-    private static void allow(String path, String... roles) {
-        ROLE_PATHS.put(path, Set.of(roles));
-    }
-
-    /**
-     * Returns the roles required for an incoming request path. Registered
-     * patterns may include Ant `{id}` placeholders (e.g. the admin account
-     * management and failed-event retry routes), so we match with AntPathMatcher
-     * rather than exact string equality. Exact (placeholder-free) matches take
-     * precedence, so a concrete route is never shadowed by a placeholder one.
-     */
-    private static Set<String> requiredRolesFor(String path) {
-        Set<String> exact = ROLE_PATHS.get(path);
-        if (exact != null) {
-            return exact;
+    /** Returns the claims of a valid bearer token, or null when there is none or it is invalid. */
+    private Claims bearerClaims(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) {
+            return null;
         }
-        AntPathMatcher matcher = new AntPathMatcher();
-        Set<String> placeholderMatch = null;
-        boolean hasPlaceholderMatch = false;
-        for (Map.Entry<String, Set<String>> entry : ROLE_PATHS.entrySet()) {
-            if (matcher.match(entry.getKey(), path)) {
-                if (!hasPlaceholderMatch) {
-                    placeholderMatch = entry.getValue();
-                    hasPlaceholderMatch = true;
-                }
-            }
-        }
-        return placeholderMatch;
+        return jwtUtil.parseToken(header.substring(7));
     }
 }

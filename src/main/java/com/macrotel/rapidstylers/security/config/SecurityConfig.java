@@ -1,8 +1,11 @@
 package com.macrotel.rapidstylers.security.config;
 
+import com.macrotel.rapidstylers.security.access.Routes;
 import com.macrotel.rapidstylers.security.filter.JwtAuthFilter;
+import com.macrotel.rapidstylers.security.handler.JsonAuthErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -11,6 +14,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+/**
+ * Wires the security chain: who the caller is (JwtAuthFilter), whether they may
+ * call this route (the lists in Routes), and what a rejection looks like
+ * (JsonAuthErrorHandler). The rules live in Routes so this class rarely changes.
+ */
 @Configuration
 @EnableGlobalMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
@@ -31,11 +39,11 @@ public class SecurityConfig {
             + "frame-ancestors 'none'";
 
     private final JwtAuthFilter jwtAuthFilter;
-    private final CorsConfig corsConfig;
+    private final JsonAuthErrorHandler authErrorHandler;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, CorsConfig corsConfig) {
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter, JsonAuthErrorHandler authErrorHandler) {
         this.jwtAuthFilter = jwtAuthFilter;
-        this.corsConfig = corsConfig;
+        this.authErrorHandler = authErrorHandler;
     }
 
     @Bean
@@ -55,9 +63,22 @@ public class SecurityConfig {
                 .and()
             .and()
             .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
+            .exceptionHandling()
+                .authenticationEntryPoint(authErrorHandler)
+                .accessDeniedHandler(authErrorHandler)
+                .and()
+            // Closed by default: a route missing from Routes needs a signed-in account.
+            // mvcMatchers match routes exactly the way the controllers do, so a
+            // variant such as a trailing slash cannot slip past a role rule.
             .authorizeRequests()
-                .antMatchers("/actuator/**").permitAll()
-                .anyRequest().permitAll()
+                .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .antMatchers(Routes.FRAMEWORK_PUBLIC).permitAll()
+                .mvcMatchers(Routes.PUBLIC).permitAll()
+                .mvcMatchers(Routes.ADMIN).hasRole("ADMIN")
+                .mvcMatchers(Routes.STYLER).hasRole("STYLER")
+                .mvcMatchers(Routes.CUSTOMER).hasRole("CUSTOMER")
+                .mvcMatchers(Routes.ADMIN_OR_STYLER).hasAnyRole("ADMIN", "STYLER")
+                .anyRequest().authenticated()
             .and()
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
