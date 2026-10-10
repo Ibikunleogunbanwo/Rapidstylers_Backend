@@ -27,6 +27,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static com.macrotel.rapidstylers.config.AppConstants.ERROR_STATUS_CODE;
@@ -53,6 +54,8 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
 @RestController
 @RequestMapping("/rapid_stylers")
 public class CloudinaryController {
+
+    private static final Logger LOG = Logger.getLogger(CloudinaryController.class.getName());
 
     @Value("${cloudinary.cloud-name:}")
     private String cloudName;
@@ -221,7 +224,8 @@ public class CloudinaryController {
             response.setData(Collections.emptyList());
         } catch (Exception e) {
             response.setStatusCode(ERROR_STATUS_CODE);
-            response.setMessage("Delete failed: " + e.getMessage());
+            LOG.warning("Cloudinary delete failed: " + e.getMessage());
+            response.setMessage("Delete failed. Please try again.");
             response.setData(Collections.emptyList());
         }
         return ApiResponses.respond(response);
