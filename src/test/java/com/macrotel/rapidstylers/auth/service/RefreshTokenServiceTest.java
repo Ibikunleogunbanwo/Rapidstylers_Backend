@@ -1,5 +1,7 @@
 package com.macrotel.rapidstylers.auth.service;
 
+import com.macrotel.rapidstylers.security.jwt.AccessTokenRevocations;
+
 import com.macrotel.rapidstylers.auth.entity.RefreshTokenEntity;
 import com.macrotel.rapidstylers.auth.repo.RefreshTokenRepo;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -204,6 +207,16 @@ class RefreshTokenServiceTest {
         service.revokeAllForAccount("ACCOUNT-1", "CUSTOMER");
 
         assertTrue(store.isEmpty(), "logout must clear every refresh token for the account");
+    }
+
+    @Test
+    void logoutAlsoEndsTheLiveAccessTokens() {
+        AccessTokenRevocations revocations = mock(AccessTokenRevocations.class);
+        ReflectionTestUtils.setField(service, "accessTokenRevocations", revocations);
+
+        service.revokeAllForAccount("ACCOUNT-1", "CUSTOMER");
+
+        verify(revocations).revokeAll("ACCOUNT-1", "CUSTOMER");
     }
 
     @Test

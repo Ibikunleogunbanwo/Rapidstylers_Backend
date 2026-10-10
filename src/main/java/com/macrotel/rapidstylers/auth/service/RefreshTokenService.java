@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.auth.entity.RefreshTokenEntity;
 import com.macrotel.rapidstylers.auth.repo.RefreshTokenRepo;
+import com.macrotel.rapidstylers.security.jwt.AccessTokenRevocations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +40,11 @@ public class RefreshTokenService {
     // moment a fresh login issues its refresh-token family.
     @Autowired(required = false)
     private SessionActivityService sessionActivityService;
+
+    // Optional (may be null in unit tests): ends the account's live access tokens
+    // too, so a sign-out does not wait for them to expire.
+    @Autowired(required = false)
+    private AccessTokenRevocations accessTokenRevocations;
 
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -143,9 +149,12 @@ public class RefreshTokenService {
         });
     }
 
-    /** Revoke all tokens for an account (used on logout). */
+    /** Revoke all tokens for an account, refresh and access alike (used on logout). */
     public void revokeAllForAccount(String accountId, String role) {
         refreshTokenRepo.deleteByAccountIdAndRole(accountId, role);
+        if (accessTokenRevocations != null) {
+            accessTokenRevocations.revokeAll(accountId, role);
+        }
     }
 
     private String createAndPersist(String accountId, String role, String familyId) {

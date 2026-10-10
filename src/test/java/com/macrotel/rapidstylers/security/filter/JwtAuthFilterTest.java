@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.security.filter;
 
+import com.macrotel.rapidstylers.security.jwt.AccessTokenRevocations;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.auth.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,6 +36,7 @@ class JwtAuthFilterTest {
 
     private JwtUtil jwtUtil;
     private SessionActivityService sessionActivityService;
+    private AccessTokenRevocations accessTokenRevocations;
     private JwtAuthFilter filter;
 
     @BeforeEach
@@ -43,6 +46,8 @@ class JwtAuthFilterTest {
         filter = new JwtAuthFilter();
         ReflectionTestUtils.setField(filter, "jwtUtil", jwtUtil);
         ReflectionTestUtils.setField(filter, "sessionActivityService", sessionActivityService);
+        accessTokenRevocations = mock(AccessTokenRevocations.class);
+        ReflectionTestUtils.setField(filter, "accessTokenRevocations", accessTokenRevocations);
     }
 
     @AfterEach
@@ -85,6 +90,19 @@ class JwtAuthFilterTest {
     void invalidTokenPassesThroughAnonymously() throws ServletException, IOException {
         when(jwtUtil.parseToken("forged")).thenReturn(null);
         MockHttpServletRequest request = request("/rapid_stylers/user_data", "forged");
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        assertNull(request.getAttribute("accountId"));
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        verify(sessionActivityService, never()).touch(any(), any());
+    }
+
+    @Test
+    void tokenFromBeforeLogoutPassesThroughAnonymously() throws ServletException, IOException {
+        tokenFor("old-token", "CUST1", "CUSTOMER");
+        when(accessTokenRevocations.isRevoked(eq("CUST1"), eq("CUSTOMER"), any())).thenReturn(true);
+        MockHttpServletRequest request = request("/rapid_stylers/user_data", "old-token");
 
         filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
 

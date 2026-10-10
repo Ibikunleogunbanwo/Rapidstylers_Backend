@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.security.filter;
 
 import com.macrotel.rapidstylers.security.access.Roles;
+import com.macrotel.rapidstylers.security.jwt.AccessTokenRevocations;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.auth.service.SessionActivityService;
 import io.jsonwebtoken.Claims;
@@ -38,6 +39,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Autowired
     private SessionActivityService sessionActivityService;
 
+    @Autowired
+    private AccessTokenRevocations accessTokenRevocations;
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -61,12 +65,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /** Returns the claims of a valid bearer token, or null when there is none or it is invalid. */
+    /** Returns the claims of a valid bearer token, or null when there is none, it is invalid or it was revoked. */
     private Claims bearerClaims(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
         if (header == null || !header.startsWith("Bearer ")) {
             return null;
         }
-        return jwtUtil.parseToken(header.substring(7));
+        Claims claims = jwtUtil.parseToken(header.substring(7));
+        // A token from before a logout or password change is treated as no token.
+        if (claims != null && accessTokenRevocations.isRevoked(
+                claims.getSubject(), claims.get("role", String.class), JwtUtil.issuedAt(claims))) {
+            return null;
+        }
+        return claims;
     }
 }

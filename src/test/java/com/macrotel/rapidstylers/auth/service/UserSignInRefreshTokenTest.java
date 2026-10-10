@@ -169,6 +169,45 @@ class UserSignInRefreshTokenTest {
                 Map.of("refreshToken", changeBody.get("refreshToken").asText())).getResponse().getStatus());
     }
 
+    @Test
+    void loggingOutEndsTheAccessTokenAtOnce() throws Exception {
+        UserEntity user = new UserEntity();
+        user.setUserId(userId);
+        user.setFirstname("Pat");
+        user.setLastname("Password");
+        user.setEmailAddress(email);
+        user.setPassword(passwordEncoder.encode(PASSWORD));
+        user.setStatus("0");
+        userRepo.save(user);
+
+        JsonNode signedIn = body(apiPost("/sign_in", Map.of("emailAddress", email, "password", PASSWORD)));
+        String accessToken = signedIn.get("token").asText();
+        assertEquals(200, getUserData(accessToken), "the token works before logout");
+
+        MvcResult loggedOut = mockMvc.perform(post("/rapid_stylers/auth/logout")
+                        .header("x-api-key", apiKey)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("refreshToken", signedIn.get("refreshToken").asText()))))
+                .andReturn();
+        assertEquals(200, loggedOut.getResponse().getStatus());
+
+        // Not "until it expires in 15 minutes": a copy of the token is dead now.
+        assertEquals(401, getUserData(accessToken), "a logged-out token must not reach /user_data");
+
+        // Signing in again works straight away.
+        JsonNode again = body(apiPost("/sign_in", Map.of("emailAddress", email, "password", PASSWORD)));
+        assertEquals(200, getUserData(again.get("token").asText()));
+    }
+
+    private int getUserData(String accessToken) throws Exception {
+        return mockMvc.perform(get("/rapid_stylers/user_data")
+                        .header("x-api-key", apiKey)
+                        .header("Authorization", "Bearer " + accessToken))
+                .andReturn().getResponse().getStatus();
+    }
+
     private String sha256Hex(String input) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));

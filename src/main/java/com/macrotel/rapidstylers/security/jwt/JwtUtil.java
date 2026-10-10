@@ -36,6 +36,15 @@ import static com.macrotel.rapidstylers.config.AppConstants.JWT_SECRET_PLACEHOLD
 @Component
 public class JwtUtil {
 
+    /** Claim holding the exact issue time in milliseconds. */
+    public static final String ISSUED_AT_MS = "iat_ms";
+
+    /** When the token was issued, to the millisecond when it says so. */
+    public static Date issuedAt(Claims claims) {
+        Long ms = claims.get(ISSUED_AT_MS, Long.class);
+        return ms != null ? new Date(ms) : claims.getIssuedAt();
+    }
+
     @Value("${app.jwt.secret:}")
     private String secret;
 
@@ -102,6 +111,9 @@ public class JwtUtil {
                 .setSubject(subject)
                 .claim("role", role)
                 .setIssuedAt(now)
+                // iat is whole seconds; this exact time lets a logout end tokens
+                // issued earlier in the same second (see AccessTokenRevocations).
+                .claim(ISSUED_AT_MS, now.getTime())
                 .setExpiration(expiry)
                 .signWith(signingKey(), SignatureAlgorithm.HS256)
                 .compact();

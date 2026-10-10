@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.security.config;
 import com.macrotel.rapidstylers.security.handler.JsonAuthErrorHandler;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.auth.service.SessionActivityService;
+import com.macrotel.rapidstylers.security.jwt.AccessTokenRevocations;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,6 +55,9 @@ class SecurityRulesTest {
 
     @MockBean
     SessionActivityService sessionActivityService;
+
+    @MockBean
+    AccessTokenRevocations accessTokenRevocations;
 
     @BeforeEach
     void tokens() {
