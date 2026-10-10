@@ -44,6 +44,7 @@ import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
@@ -60,6 +61,7 @@ import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerService;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
@@ -80,6 +82,7 @@ import java.util.Map;
 public class TestServices {
 
     public AccountIds accountIds;
+    public String adminAlertEmail;
     public String appTimeZone;
     public AppUtils appUtils = new AppUtils();
     public AuditLogRepo auditLogRepo;
@@ -97,6 +100,7 @@ public class TestServices {
     public FeedBackRepo feedBackRepo;
     public GeocodingService geocodingService;
     public GoogleTimezoneService googleTimezoneService = new GoogleTimezoneService();
+    public Long holdHours;
     public IdentificationRepo identificationRepo;
     public ImageReclaimService imageReclaimService;
     public JwtUtil jwtUtil;
@@ -147,7 +151,8 @@ public class TestServices {
             AppointmentWorkflowService.class,
             PaymentAuthorizationService.class,
             OtpService.class,
-            BookingRetries.class);
+            BookingRetries.class,
+            PayoutReleaseService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 
@@ -229,6 +234,10 @@ public class TestServices {
 
     public BookingRetries bookingRetries() {
         return get(BookingRetries.class);
+    }
+
+    public PayoutReleaseService payoutReleaseService() {
+        return get(PayoutReleaseService.class);
     }
 
     private synchronized <T> T get(Class<T> type) {

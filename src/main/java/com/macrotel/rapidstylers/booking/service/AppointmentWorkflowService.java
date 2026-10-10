@@ -11,8 +11,8 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
-import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
 import com.stripe.model.Customer;
@@ -60,6 +60,8 @@ public class AppointmentWorkflowService {
     AvailabilityService availabilityService;
     @Autowired
     PaymentAuthorizationService paymentAuthorizationService;
+    @Autowired
+    PayoutReleaseService payoutReleaseService;
     @Value("${app.time-zone:America/Edmonton}")
     private String appTimeZone;
     @Value("${app.booking.completion-grace-minutes:0}")
@@ -301,38 +303,10 @@ public class AppointmentWorkflowService {
                 }
             }
             if("0".equals(newStatus)){
-                if(stripeService.isConfigured() && "CAPTURED".equals(appointment.getPaymentStatus())
-                        && appointment.getStripeTransferId() == null){
-                    try {
-                        Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
-                        String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
-                        // What the platform keeps of the payment: a part refunded
-                        // before completion is not shared with the stylist.
-                        long totalCents = paymentService.refundableCents(appointment);
-                        double percent = paymentService.effectiveCommissionPercentForBooking(appointment);
-                        long commission = paymentService.commissionCents(totalCents, percent);
-                        long stylistShareCents = totalCents - commission;
-                        appointment.setCommissionPercent(appointment.getCommissionPercent() == null
-                                ? percent : appointment.getCommissionPercent());
-                        appointment.setPlatformFeeCents(commission);
-                        appointment.setStylistShareCents(stylistShareCents);
-                        if(destination != null && stylistShareCents > 0){
-                            com.stripe.model.Transfer transfer = stripeService.transferStylistShare(
-                                    destination, stylistShareCents, appointment.getAppointmentId());
-                            if(transfer != null){
-                                appointment.setStripeTransferId(transfer.getId());
-                            }
-                        }
-                        // Persist the fee breakdown (and transfer id, previously never saved here).
-                        bookAppointmentRepo.save(appointment);
-                    } catch(Exception ex){
-                        LOG.warning("Stylist payout transfer failed: " + ex.getMessage());
-                        response.setStatusCode(ERROR_STATUS_CODE);
-                        response.setMessage("Payout transfer failed — the appointment was not completed. Please contact support.");
-                        response.setData(EMPTY_DATA);
-                        return response;
-                    }
-                }
+                // The stylist is paid a day from now, not on the spot, so the
+                // customer has time to say the appointment didn't happen.
+                payoutReleaseService.holdAfterCompletion(appointment);
+                bookAppointmentRepo.save(appointment);
                 loyaltyService.awardCompletionPoints(appointment.getUserId(), appointment.getAppointmentId());
             }
             auditService.audit(ownerId, actorRole == ActorRole.STYLER ? "STYLER" : "CUSTOMER", "APPOINTMENT_" + newStatus,
@@ -354,7 +328,8 @@ public class AppointmentWorkflowService {
             } else if("0".equals(newStatus)){
                 notificationService.sendAppointmentNotification(appointment, "Completed",
                         "Your appointment has been completed",
-                        "Thanks for using RapidStylers. We hope you enjoyed your session — a review is welcome.",
+                        "Thanks for using RapidStylers. We hope you enjoyed your session — a review is welcome. "
+                                + "If the appointment didn't happen, tell us from your bookings within a day.",
                         "Appointment completed",
                         "You have marked this appointment as completed.");
             } else if("4".equals(newStatus)){

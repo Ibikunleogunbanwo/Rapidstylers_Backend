@@ -2,12 +2,14 @@ package com.macrotel.rapidstylers.booking.controller;
 
 import com.macrotel.rapidstylers.booking.pojo.AppointmentActionData;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
+import com.macrotel.rapidstylers.booking.pojo.ServiceDisputeData;
 import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
 import com.macrotel.rapidstylers.booking.service.BookingRetries;
 import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
+import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +29,8 @@ public class BookingController {
     AppointmentWorkflowService appointmentWorkflowService;
     @Autowired
     BookingRetries bookingRetries;
+    @Autowired
+    PayoutReleaseService payoutReleaseService;
 
     @PostMapping("/booking_estimate")
     public ResponseEntity<BaseResponse> bookingEstimate(@RequestBody BookAppointmentData bookAppointmentData){
@@ -112,6 +116,22 @@ public class BookingController {
         BaseResponse baseResponse = appointmentWorkflowService.cancelAppointment(accountId, appointmentActionData.getAppointmentId());
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
+    }
+
+    /** The customer confirms a completed appointment happened; the stylist is paid now. */
+    @PostMapping("/confirm_service")
+    public ResponseEntity<BaseResponse> confirmService(@Valid @RequestBody AppointmentActionData action, HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(payoutReleaseService.confirmServiceHappened(accountId, action.getAppointmentId()));
+    }
+
+    /** The customer says a completed appointment didn't happen; the stylist's payout is held. */
+    @PostMapping("/dispute_service")
+    public ResponseEntity<BaseResponse> disputeService(@Valid @RequestBody ServiceDisputeData dispute, HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(payoutReleaseService.disputeService(accountId, dispute.getAppointmentId(), dispute.getReason()));
     }
 
     @PostMapping("/styler_cancel_appointment")

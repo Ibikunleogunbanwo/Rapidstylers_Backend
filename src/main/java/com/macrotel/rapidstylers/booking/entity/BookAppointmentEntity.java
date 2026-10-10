@@ -74,6 +74,22 @@ public class BookAppointmentEntity implements Serializable {
     private String stylerNote;
     /** When the appointment was marked completed (status "0") — gates the styler cancel window. */
     private LocalDateTime completedAt;
+    /**
+     * When the stylist's payout may leave: a day after completion, unless the
+     * customer confirms sooner or disputes. Null: no payout waiting.
+     */
+    @Column(name = "payout_due_at")
+    private LocalDateTime payoutDueAt;
+    /** When the customer confirmed the appointment happened. */
+    @Column(name = "service_confirmed_at")
+    private LocalDateTime serviceConfirmedAt;
+    /** OPEN while a customer's "it didn't happen" waits for an admin, then RESOLVED. */
+    @Column(name = "service_dispute_status", length = 20)
+    private String serviceDisputeStatus;
+    @Column(name = "service_dispute_reason", length = 1000)
+    private String serviceDisputeReason;
+    @Column(name = "service_disputed_at")
+    private LocalDateTime serviceDisputedAt;
 
     public BookAppointmentEntity() {
     }

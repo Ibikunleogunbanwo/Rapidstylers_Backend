@@ -38,6 +38,12 @@ public class AppointmentDTO {
     private String stylerNote;
     /** When the appointment was marked completed — lets the UI gate the styler cancel action. */
     private LocalDateTime completedAt;
+    /** Until when the customer can say the appointment didn't happen; null once that is no longer possible. */
+    private LocalDateTime disputeWindowEndsAt;
+    /** OPEN while the customer's dispute waits for an admin, then RESOLVED; null when never disputed. */
+    private String serviceDisputeStatus;
+    /** When the customer confirmed the appointment happened. */
+    private LocalDateTime serviceConfirmedAt;
     /** Completed refund for this appointment, when one exists — shown to customers. */
     private String refundId;
     private String refundStatus;

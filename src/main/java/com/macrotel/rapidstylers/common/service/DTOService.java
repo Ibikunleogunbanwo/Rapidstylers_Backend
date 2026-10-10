@@ -18,6 +18,7 @@ import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;
+import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.styler.dto.StylerPortfolioDTO;
@@ -227,6 +228,9 @@ public class DTOService {
         appointmentDTO.setStylistShareCents(bookAppointmentEntity.getStylistShareCents());
         appointmentDTO.setStylerNote(bookAppointmentEntity.getStylerNote());
         appointmentDTO.setCompletedAt(bookAppointmentEntity.getCompletedAt());
+        appointmentDTO.setDisputeWindowEndsAt(PayoutReleaseService.disputeWindowEndsAt(bookAppointmentEntity));
+        appointmentDTO.setServiceDisputeStatus(bookAppointmentEntity.getServiceDisputeStatus());
+        appointmentDTO.setServiceConfirmedAt(bookAppointmentEntity.getServiceConfirmedAt());
         populateRefund(appointmentDTO, bookAppointmentEntity.getAppointmentId());
         return appointmentDTO;
     }

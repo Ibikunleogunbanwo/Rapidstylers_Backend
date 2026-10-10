@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.booking.repo;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.persistence.LockModeType;
@@ -26,6 +27,12 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
             java.time.LocalTime appointmentStartTime, List<String> statuses);
 
     Optional<BookAppointmentEntity> findByAppointmentId(String appointmentId);
+
+    /** Completed, charged bookings whose stylist payout is due and not yet sent. */
+    List<BookAppointmentEntity> findTop50ByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtLessThanEqual(
+            String status, String paymentStatus, LocalDateTime dueBy);
+
+    List<BookAppointmentEntity> findByServiceDisputeStatus(String serviceDisputeStatus);
 
     Optional<BookAppointmentEntity> findByIdempotencyKey(String idempotencyKey);
 

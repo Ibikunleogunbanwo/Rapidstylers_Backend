@@ -452,4 +452,26 @@ class RefundServiceTest {
         assertEquals("0", appointment.getStatus());
         assertNotNull(appointment.getCompletedAt());
     }
+
+    @Test
+    void completingDoesNotPayTheStylistOnTheSpotButADayLater() throws Exception {
+        BookAppointmentEntity appointment = capturedAppointment();
+        appointment.setStatus("3");
+        appointment.setAppointmentDate("2020-01-01");
+        appointment.setAppointmentDateValue(LocalDate.of(2020, 1, 1));
+        appointment.setArrivalTime("09:00");
+        appointment.setAppointmentStartTime(LocalTime.of(9, 0));
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+
+        BaseResponse response = services.appointmentWorkflowService().completeAppointment("STYLER1", "APPT1");
+
+        assertEquals("200", response.getStatusCode());
+        verify(stripeService, never()).transferStylistShare(any(), anyLong(), any(), any());
+        verify(stripeService, never()).transferStylistShare(any(), anyLong(), any());
+        assertNotNull(appointment.getPayoutDueAt());
+        long hoursAfterCompletion = java.time.Duration.between(appointment.getCompletedAt(), appointment.getPayoutDueAt())
+                .plusMinutes(1).toHours();
+        assertEquals(24, hoursAfterCompletion);
+    }
 }

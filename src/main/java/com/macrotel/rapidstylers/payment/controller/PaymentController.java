@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.payment.controller;
 
 import com.macrotel.rapidstylers.auth.service.StepUpService;
+import com.macrotel.rapidstylers.booking.pojo.ServiceDisputeData;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
@@ -10,6 +11,7 @@ import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentReconciliationService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
 import com.macrotel.rapidstylers.payment.service.RefundReviewService;
 import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
@@ -40,6 +42,8 @@ public class PaymentController {
     PaymentReconciliationService paymentReconciliationService;
     @Autowired
     RefundReviewService refundReviewService;
+    @Autowired
+    PayoutReleaseService payoutReleaseService;
 
     @PostMapping("/update_card_details")
     public ResponseEntity<BaseResponse> updateCardDetails(@Valid @RequestBody CardDetailsData cardDetailsData, HttpServletRequest request){
@@ -170,6 +174,24 @@ public class PaymentController {
         String adminId = CurrentAccount.adminId(request);
         if (adminId == null) return CurrentAccount.unauthorized();
         return ApiResponses.respond(refundReviewService.paymentContext(appointmentId));
+    }
+
+    /** Completed appointments whose customer says they didn't happen; their stylist payouts are on hold. */
+    @GetMapping("/admin/service_disputes")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminServiceDisputes(HttpServletRequest request) {
+        if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(payoutReleaseService.openDisputes());
+    }
+
+    /** Closes a dispute: refund first if owed, then this pays the stylist their share of what was kept. */
+    @PostMapping("/admin/resolve_service_dispute")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminResolveServiceDispute(@Valid @RequestBody ServiceDisputeData data,
+                                                                   HttpServletRequest request) {
+        String adminId = CurrentAccount.adminId(request);
+        if (adminId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(payoutReleaseService.resolveDispute(adminId, data.getAppointmentId(), data.getNote()));
     }
 
     @GetMapping("/admin/payment_reconciliation")

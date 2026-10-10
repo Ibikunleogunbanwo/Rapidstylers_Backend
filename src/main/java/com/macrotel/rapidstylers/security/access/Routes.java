@@ -110,6 +110,8 @@ public final class Routes {
             "/rapid_stylers/admin/refund",
             "/rapid_stylers/admin/refunds",
             "/rapid_stylers/admin/refund_context",
+            "/rapid_stylers/admin/service_disputes",
+            "/rapid_stylers/admin/resolve_service_dispute",
             "/rapid_stylers/admin/payment_reconciliation",
 
             // Admin accounts
@@ -165,6 +167,8 @@ public final class Routes {
             // Bookings
             "/rapid_stylers/book_appointment",
             "/rapid_stylers/cancel_appointment",
+            "/rapid_stylers/confirm_service",
+            "/rapid_stylers/dispute_service",
             "/rapid_stylers/retry_appointment_payment",
             "/rapid_stylers/user_appointments",
             "/rapid_stylers/user_pending_appointments",
