@@ -14,4 +14,8 @@ public interface UserRepo extends JpaRepository<UserEntity, Long> {
     Optional<UserEntity> userAuthenticate(@Param("emailAddress") String emailAddress, @Param("password") String password);
 
     Optional<UserEntity> findByUserId (String userId);
+
+    /** Ids of active customer accounts, for admin announcements. */
+    @Query("SELECT u.userId FROM UserEntity u WHERE u.status = '0' AND u.userId IS NOT NULL")
+    java.util.List<String> findActiveUserIds();
 }

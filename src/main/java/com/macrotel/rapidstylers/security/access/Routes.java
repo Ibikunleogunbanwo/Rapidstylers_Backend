@@ -99,6 +99,7 @@ public final class Routes {
             "/rapid_stylers/admin/cache_stats",
             "/rapid_stylers/admin/audit_logs",
             "/rapid_stylers/admin/test_email",
+            "/rapid_stylers/admin/send_announcement",
             "/rapid_stylers/admin/settings/commission",
             "/rapid_stylers/admin/recovery_campaigns",
             "/rapid_stylers/admin/failed_events",

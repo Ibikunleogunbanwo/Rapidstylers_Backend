@@ -2,6 +2,8 @@ package com.macrotel.rapidstylers.engagement.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
@@ -23,6 +25,7 @@ class NotificationInboxTest {
     private NotificationRepo notificationRepo;
     private OutboxEventService outbox;
     private NotificationService service;
+    private UserRepo userRepo;
 
     @BeforeEach
     void setUp() {
@@ -31,6 +34,8 @@ class NotificationInboxTest {
         outbox = mock(OutboxEventService.class);
         services.notificationRepo = notificationRepo;
         services.outboxEventService = outbox;
+        userRepo = mock(UserRepo.class);
+        services.userRepo = userRepo;
         service = services.notificationService();
     }
 
@@ -83,5 +88,43 @@ class NotificationInboxTest {
 
         assertEquals("200", service.deleteAllNotifications("U1").getStatusCode());
         verify(notificationRepo).deleteAll(mine);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void adminAnnouncementReachesEveryActiveCustomer() {
+        when(userRepo.findActiveUserIds()).thenReturn(List.of("U1", "U2", "U3"));
+
+        BaseResponse response = service.sendAnnouncement("A1", " Holiday hours ", "We are closed Monday.", null);
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals(3, ((java.util.Map<String, Object>) response.getData()).get("sent"));
+        ArgumentCaptor<List<NotificationEntity>> saved = ArgumentCaptor.forClass(List.class);
+        verify(notificationRepo).saveAll(saved.capture());
+        assertEquals(3, saved.getValue().size());
+        assertEquals("ANNOUNCEMENT", saved.getValue().get(0).getType());
+        assertEquals("Holiday hours", saved.getValue().get(0).getTitle());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void adminAnnouncementCanTargetOneCustomerByEmail() {
+        UserEntity user = new UserEntity();
+        user.setUserId("U9");
+        when(userRepo.findByEmailAddress("ade@example.com")).thenReturn(Optional.of(user));
+
+        assertEquals("200", service.sendAnnouncement("A1", "Hi", "Your refund is on its way.", "ade@example.com").getStatusCode());
+        ArgumentCaptor<List<NotificationEntity>> saved = ArgumentCaptor.forClass(List.class);
+        verify(notificationRepo).saveAll(saved.capture());
+        assertEquals("U9", saved.getValue().get(0).getUserId());
+        verify(userRepo, never()).findActiveUserIds();
+    }
+
+    @Test
+    void adminAnnouncementNeedsATitleAMessageAndAKnownEmail() {
+        assertEquals("400", service.sendAnnouncement("A1", "", "x", null).getStatusCode());
+        assertEquals("400", service.sendAnnouncement("A1", "t", " ", null).getStatusCode());
+        assertEquals("400", service.sendAnnouncement("A1", "t", "m", "nobody@example.com").getStatusCode());
+        verify(notificationRepo, never()).saveAll(any());
     }
 }

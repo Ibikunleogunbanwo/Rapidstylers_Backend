@@ -44,6 +44,8 @@ public class NotificationService {
     NotificationRepo notificationRepo;
     @Autowired
     OutboxEventService outboxEventService;
+    @Autowired
+    com.macrotel.rapidstylers.common.service.AuditService auditService;
 
     /**
      * Emails both parties about an appointment event with role-appropriate
@@ -168,6 +170,45 @@ public class NotificationService {
             response.setData(Collections.emptyMap());
         } catch (Exception ex) {
             LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * Admin announcement: an in-app notification for one customer (by email)
+     * or, with no email, for every active customer. In-app only, no email.
+     */
+    public BaseResponse sendAnnouncement(String adminId, String title, String message, String recipientEmail){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            String cleanTitle = title == null ? "" : title.trim();
+            String cleanMessage = message == null ? "" : message.trim();
+            if(cleanTitle.isEmpty() || cleanMessage.isEmpty()) return Responses.errorResponse(response, "Title and message are required");
+            if(cleanTitle.length() > 120) return Responses.errorResponse(response, "Title must be 120 characters or fewer");
+            if(cleanMessage.length() > 1000) return Responses.errorResponse(response, "Message must be 1000 characters or fewer");
+            List<String> recipients;
+            if(recipientEmail != null && !recipientEmail.isBlank()){
+                Optional<UserEntity> user = userRepo.findByEmailAddress(recipientEmail.trim());
+                if(user.isEmpty()) return Responses.errorResponse(response, "No customer with that email");
+                recipients = List.of(user.get().getUserId());
+            } else {
+                recipients = userRepo.findActiveUserIds();
+            }
+            List<NotificationEntity> rows = new ArrayList<>();
+            for(String userId : recipients){
+                rows.add(new NotificationEntity(userId, "", "ANNOUNCEMENT", cleanTitle, cleanMessage));
+            }
+            notificationRepo.saveAll(rows);
+            if(auditService != null){
+                auditService.audit(adminId, "ADMIN", "ADMIN_ANNOUNCEMENT", "NOTIFICATION",
+                        recipients.size() == 1 ? recipients.get(0) : "ALL",
+                        "Sent \"" + cleanTitle + "\" to " + rows.size() + " customer(s)");
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Announcement sent");
+            response.setData(Map.of("sent", rows.size()));
+        } catch (Exception ex) {
+            LOG.warning("Announcement failed: " + ex.getMessage());
         }
         return response;
     }

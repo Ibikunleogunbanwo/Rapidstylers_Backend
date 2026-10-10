@@ -25,6 +25,8 @@ public class AdminController {
     AdminService adminService;
     @Autowired
     EncryptionConfig encryptionConfig;
+    @Autowired
+    com.macrotel.rapidstylers.engagement.service.NotificationService notificationService;
 
     @GetMapping("/admin/recovery_campaigns")
     @PreAuthorize("hasRole('ADMIN')")
@@ -68,6 +70,16 @@ public class AdminController {
             return ApiResponses.respond(adminService.listAuditLogs());
         }
         return ApiResponses.respond(adminService.searchAuditLogs(page, size, action, actorId, resourceId));
+    }
+
+    /** Admin-only: an in-app announcement to one customer (recipientEmail) or all active customers. */
+    @PostMapping("/admin/send_announcement")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminSendAnnouncement(@RequestBody Map<String, String> body, HttpServletRequest request){
+        String adminId = CurrentAccount.id(request);
+        if(adminId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(notificationService.sendAnnouncement(adminId, body.get("title"),
+                body.get("message"), body.get("recipientEmail")));
     }
 
     /** Admin-only: sends a test email through EmailConfig to verify delivery. */
