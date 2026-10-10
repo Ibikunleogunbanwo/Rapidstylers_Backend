@@ -5,7 +5,6 @@ import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
-import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.security.access.Roles;
@@ -34,7 +33,6 @@ class PasswordResetOtpVerificationTest {
     private AuthService authService;
     private UserRepo userRepo;
     private OTPRepo otpRepo;
-    private EmailConfig emailConfig;
     private RateLimiterService rateLimiterService;
     private RefreshTokenService refreshTokenService;
 
@@ -43,12 +41,10 @@ class PasswordResetOtpVerificationTest {
         authService = new AuthService();
         userRepo = mock(UserRepo.class);
         otpRepo = mock(OTPRepo.class);
-        emailConfig = mock(EmailConfig.class);
         rateLimiterService = mock(RateLimiterService.class);
 
         authService.userRepo = userRepo;
         authService.otpRepo = otpRepo;
-        authService.emailConfig = emailConfig;
         authService.rateLimiterService = rateLimiterService;
         refreshTokenService = mock(RefreshTokenService.class);
         authService.refreshTokenService = refreshTokenService;

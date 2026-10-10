@@ -4,6 +4,7 @@ import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.pojo.OTPData;
 import com.macrotel.rapidstylers.auth.pojo.SignInData;
 import com.macrotel.rapidstylers.auth.service.AuthService;
+import com.macrotel.rapidstylers.auth.service.OtpService;
 import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
 import com.macrotel.rapidstylers.auth.service.SessionActivityService;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
@@ -31,6 +32,8 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class AuthController {
     @Autowired
     AuthService authService;
+    @Autowired
+    OtpService otpService;
     @Autowired
     RefreshTokenService refreshTokenService;
     @Autowired
@@ -64,7 +67,7 @@ public class AuthController {
 
     @PostMapping("/generate_sign_up_otp_code")
     public ResponseEntity <BaseResponse> generateSignUpOtpCode(@Valid @RequestBody OTPData otpData){
-        BaseResponse baseResponse = authService.generateSignUpOtpCode(otpData);
+        BaseResponse baseResponse = otpService.generateSignUpOtpCode(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -73,7 +76,7 @@ public class AuthController {
     public ResponseEntity <BaseResponse> verifyOtpCode(@RequestBody Map<String, String> body){
         String emailAddress = body.getOrDefault("emailAddress", "");
         String otpCode = body.getOrDefault("otpCode", "");
-        BaseResponse baseResponse = authService.verifyUserOTP(emailAddress, otpCode);
+        BaseResponse baseResponse = otpService.verifyUserOTP(emailAddress, otpCode);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -123,7 +126,7 @@ public class AuthController {
 
     @PostMapping("/generate_reset_password_token")
     public ResponseEntity <BaseResponse> resetPasswordToken(@Valid @RequestBody OTPData otpData){
-        BaseResponse baseResponse = authService.resetPasswordMessage(otpData);
+        BaseResponse baseResponse = otpService.resetPasswordMessage(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -148,7 +151,7 @@ public class AuthController {
 
     @PostMapping("/styler_generate_otp")
     public ResponseEntity<BaseResponse> stylerGenerateOtp(@Valid @RequestBody OTPData otpData){
-        BaseResponse baseResponse = authService.stylerGenerateOtp(otpData);
+        BaseResponse baseResponse = otpService.stylerGenerateOtp(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -157,7 +160,7 @@ public class AuthController {
     public ResponseEntity<BaseResponse> stylerVerifyOtp(@RequestBody Map<String, String> body){
         String emailAddress = body.getOrDefault("emailAddress", "");
         String otpCode = body.getOrDefault("otpCode", "");
-        BaseResponse baseResponse = authService.stylerVerifyOtp(emailAddress, otpCode);
+        BaseResponse baseResponse = otpService.stylerVerifyOtp(emailAddress, otpCode);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

@@ -5,6 +5,7 @@ import com.macrotel.rapidstylers.admin.service.AdminService;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
+import com.macrotel.rapidstylers.auth.service.OtpService;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
@@ -18,6 +19,7 @@ import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.service.DTOService;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
@@ -43,6 +45,7 @@ import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
+import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
@@ -57,7 +60,6 @@ import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerService;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
@@ -98,6 +100,7 @@ public class TestServices {
     public IdempotencyService idempotencyService;
     public IdentificationRepo identificationRepo;
     public ImageReclaimService imageReclaimService;
+    public JwtUtil jwtUtil;
     public LocationCacheService locationCacheService;
     public LocationService locationService;
     public LoyaltyAccountRepo loyaltyAccountRepo;
@@ -109,6 +112,7 @@ public class TestServices {
     public Long paymentAuthorizationLeadHours;
     public Long paymentAuthorizationWindowDays;
     public PaymentService paymentService = new PaymentService();
+    public RateLimiterService rateLimiterService;
     public ReadCacheService readCacheService;
     public ReferralRepo referralRepo;
     public ReviewRepo reviewRepo;
@@ -142,7 +146,8 @@ public class TestServices {
             StylerEligibility.class,
             StylerService.class,
             AppointmentWorkflowService.class,
-            PaymentAuthorizationService.class);
+            PaymentAuthorizationService.class,
+            OtpService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 
@@ -216,6 +221,10 @@ public class TestServices {
 
     public PaymentAuthorizationService paymentAuthorizationService() {
         return get(PaymentAuthorizationService.class);
+    }
+
+    public OtpService otpService() {
+        return get(OtpService.class);
     }
 
     private synchronized <T> T get(Class<T> type) {
