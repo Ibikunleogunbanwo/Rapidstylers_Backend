@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -540,6 +541,28 @@ class BookingWorkflowTest {
         assertEquals("200", accepted.getStatusCode());
         assertEquals("3", pending.getStatus());
         assertEquals("Accepted anyway — far but worth it", pending.getStylerNote());
+    }
+
+    @Test
+    void aStylistWithoutPayoutSetupCannotAcceptAPaidBooking() {
+        when(stripeService.isConfigured()).thenReturn(true);
+        com.macrotel.rapidstylers.styler.entity.StylerEntity stylist = new com.macrotel.rapidstylers.styler.entity.StylerEntity();
+        stylist.setStylerId("STYLER1");
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
+        BookAppointmentEntity pending = appointment("1");
+        pending.setAppointmentId("APPT-NOPAY");
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT-NOPAY")).thenReturn(Optional.of(pending));
+
+        BaseResponse response = services.appointmentWorkflowService().acceptAppointment("STYLER1", "APPT-NOPAY", null);
+
+        assertEquals("400", response.getStatusCode());
+        assertTrue(response.getMessage().contains("payout setup"));
+        assertEquals("1", pending.getStatus());
+
+        stylist.setStripeConnectAccountId("acct_1");
+        stylist.setConnectOnboardingStatus("COMPLETE");
+        BaseResponse accepted = services.appointmentWorkflowService().acceptAppointment("STYLER1", "APPT-NOPAY", null);
+        assertEquals("200", accepted.getStatusCode());
     }
 
     @Test

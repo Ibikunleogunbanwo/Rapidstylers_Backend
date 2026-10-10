@@ -423,6 +423,10 @@ public class PaymentService {
         s.setConnectDisabledReason("REJECTED".equals(status) ? disabledReason : null);
         stylerRepo.save(s);
         auditService.audit("system", "SYSTEM", "CONNECT_ACCOUNT_UPDATED", "STYLER", s.getStylerId(), status);
+        int queued = 0;
+        if (PayoutReleaseService.canReceivePayouts(s)) {
+            queued = queueHeldPayouts(s.getStylerId());
+        }
         if ("COMPLETE".equals(status) && !"COMPLETE".equals(previous)) {
             sendConnectStatusEmail(s, "RapidStylers - Payouts are ready",
                     "Your payout account is connected",
@@ -436,7 +440,26 @@ public class PaymentService {
                             + ". Please reconnect from your dashboard or contact support.");
         }
         return "styler=" + s.getStylerId() + " status=" + status
-                + ("REJECTED".equals(status) && disabledReason != null ? " reason=" + disabledReason : "");
+                + ("REJECTED".equals(status) && disabledReason != null ? " reason=" + disabledReason : "")
+                + (queued > 0 ? " heldPayoutsQueued=" + queued : "");
+    }
+
+    /**
+     * Payouts kept back because the stylist had no payout account become due
+     * now; the payout job sends them. Safe to repeat: once queued they are no
+     * longer marked held.
+     */
+    int queueHeldPayouts(String stylerId) {
+        List<BookAppointmentEntity> held = bookAppointmentRepo.findByStylerIdAndPayoutHoldReason(
+                stylerId, PayoutReleaseService.HOLD_NO_PAYOUT_ACCOUNT);
+        // A day back, so it is already due whatever the app's time zone.
+        LocalDateTime alreadyDue = LocalDateTime.now(java.time.ZoneOffset.UTC).minusDays(1);
+        for (BookAppointmentEntity appointment : held) {
+            appointment.setPayoutHoldReason(null);
+            appointment.setPayoutDueAt(alreadyDue);
+            bookAppointmentRepo.save(appointment);
+        }
+        return held.size();
     }
 
     private void sendConnectStatusEmail(StylerEntity styler, String subject, String headline, String detail) {

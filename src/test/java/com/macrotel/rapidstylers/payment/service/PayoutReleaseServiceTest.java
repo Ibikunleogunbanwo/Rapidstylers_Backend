@@ -214,4 +214,115 @@ class PayoutReleaseServiceTest {
         assertNull(appointment.getPayoutDueAt());
         verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
     }
+
+    // ── Stylists without a payout account ─────────────────────────────
+
+    private StylerEntity stylistWithoutPayoutAccount() {
+        StylerEntity stylist = new StylerEntity();
+        stylist.setStylerId("STYLER1");
+        stylist.setEmailAddress("chloe@example.com");
+        when(payouts.stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
+        return stylist;
+    }
+
+    @Test
+    void aStylistWithoutAPayoutAccountKeepsThePayoutAndIsAskedToFinishSetup() throws Exception {
+        stylistWithoutPayoutAccount();
+        BookAppointmentEntity appointment = completed();
+
+        boolean paid = payouts.release(appointment);
+
+        assertEquals(false, paid);
+        assertEquals("NO_PAYOUT_ACCOUNT", appointment.getPayoutHoldReason());
+        assertNull(appointment.getPayoutDueAt());
+        assertEquals(11000L, appointment.getStylistShareCents());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+        verify(emailConfig).sendSimpleMail(eq("chloe@example.com"), contains("earnings waiting"), anyString());
+    }
+
+    @Test
+    void theStylistIsOnlyAskedOnceWhilePayoutsWait() throws Exception {
+        stylistWithoutPayoutAccount();
+        when(bookAppointmentRepo.existsByStylerIdAndPayoutHoldReason("STYLER1", "NO_PAYOUT_ACCOUNT")).thenReturn(true);
+
+        payouts.release(completed());
+
+        verify(emailConfig, never()).sendSimpleMail(eq("chloe@example.com"), anyString(), anyString());
+    }
+
+    @Test
+    void anUnfinishedPayoutAccountAlsoWaits() throws Exception {
+        StylerEntity stylist = stylistWithoutPayoutAccount();
+        stylist.setStripeConnectAccountId("acct_1");
+        stylist.setConnectOnboardingStatus("PENDING");
+        BookAppointmentEntity appointment = completed();
+
+        payouts.release(appointment);
+
+        assertEquals("NO_PAYOUT_ACCOUNT", appointment.getPayoutHoldReason());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void onceStripeEnablesPayoutsTheHeldOnesBecomeDue() {
+        BookAppointmentEntity held = completed();
+        held.setPayoutDueAt(null);
+        held.setPayoutHoldReason("NO_PAYOUT_ACCOUNT");
+        PaymentService paymentService = payouts.paymentService;
+        paymentService.bookAppointmentRepo = bookAppointmentRepo;
+        when(bookAppointmentRepo.findByStylerIdAndPayoutHoldReason("STYLER1", "NO_PAYOUT_ACCOUNT")).thenReturn(List.of(held));
+
+        int queued = paymentService.queueHeldPayouts("STYLER1");
+
+        assertEquals(1, queued);
+        assertNull(held.getPayoutHoldReason());
+        assertNotNull(held.getPayoutDueAt());
+        // Due already, so the next run of the job picks it up.
+        assertEquals(true, !held.getPayoutDueAt().isAfter(LocalDateTime.now()));
+    }
+
+    @Test
+    void anAdminCanPayAnOlderUnpaidBookingNow() throws Exception {
+        BookAppointmentEntity older = completed();
+        older.setPayoutDueAt(null);
+
+        BaseResponse response = payouts.payNow("ADMIN1", "APPT1");
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals("Payout sent", response.getMessage());
+        assertEquals("tr_9", older.getStripeTransferId());
+    }
+
+    @Test
+    void payingNowStillWaitsForAPayoutAccount() throws Exception {
+        stylistWithoutPayoutAccount();
+        BookAppointmentEntity older = completed();
+        older.setPayoutDueAt(null);
+
+        BaseResponse response = payouts.payNow("ADMIN1", "APPT1");
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals("NO_PAYOUT_ACCOUNT", older.getPayoutHoldReason());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void theUnpaidListShowsHeldAndOlderPayoutsButNotDisputes() {
+        BookAppointmentEntity held = completed();
+        held.setPayoutHoldReason("NO_PAYOUT_ACCOUNT");
+        held.setStylistShareCents(11000L);
+        BookAppointmentEntity disputed = completed();
+        disputed.setAppointmentId("APPT2");
+        disputed.setServiceDisputeStatus("OPEN");
+        when(bookAppointmentRepo.findByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtIsNull("0", "CAPTURED"))
+                .thenReturn(List.of(held, disputed));
+
+        List<?> rows = (List<?>) payouts.unpaidPayouts().getData();
+
+        assertEquals(1, rows.size());
+        java.util.Map<?, ?> row = (java.util.Map<?, ?>) rows.get(0);
+        assertEquals("APPT1", row.get("appointmentId"));
+        assertEquals("NO_PAYOUT_ACCOUNT", row.get("reason"));
+        assertEquals("110.00", row.get("stylistShare"));
+    }
 }

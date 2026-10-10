@@ -205,6 +205,7 @@ services:
       # How long a booking authorization may be held before capture (hours), and how
       # far ahead a booking may be authorized (days).
       BOOKING_PAYMENT_AUTHORIZATION_LEAD_HOURS: ${BOOKING_PAYMENT_AUTHORIZATION_LEAD_HOURS:-48}
+      PAYOUT_REQUIRE_ACCOUNT_TO_ACCEPT: ${PAYOUT_REQUIRE_ACCOUNT_TO_ACCEPT:-true}
       BOOKING_PAYMENT_AUTHORIZATION_WINDOW_DAYS: ${BOOKING_PAYMENT_AUTHORIZATION_WINDOW_DAYS:-7}
       # Payout recovery: retry interval (ms) and attempt budget for transfer reversals.
       PAYOUT_REVERSAL_RETRY_INTERVAL_MS: ${PAYOUT_REVERSAL_RETRY_INTERVAL_MS:-1800000}

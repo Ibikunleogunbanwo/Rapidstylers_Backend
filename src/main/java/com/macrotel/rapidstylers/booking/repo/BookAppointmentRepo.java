@@ -34,6 +34,15 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
 
     List<BookAppointmentEntity> findByServiceDisputeStatus(String serviceDisputeStatus);
 
+    /** A stylist's payouts held for one reason, such as no payout account yet. */
+    List<BookAppointmentEntity> findByStylerIdAndPayoutHoldReason(String stylerId, String payoutHoldReason);
+
+    boolean existsByStylerIdAndPayoutHoldReason(String stylerId, String payoutHoldReason);
+
+    /** Completed, charged bookings whose stylist was never paid and no payout is scheduled. */
+    List<BookAppointmentEntity> findByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtIsNull(
+            String status, String paymentStatus);
+
     Optional<BookAppointmentEntity> findByIdempotencyKey(String idempotencyKey);
 
     /**

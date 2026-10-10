@@ -44,6 +44,8 @@ public class PayoutReleaseService {
     private static final Logger LOG = Logger.getLogger(PayoutReleaseService.class.getName());
     static final String DISPUTE_OPEN = "OPEN";
     static final String DISPUTE_RESOLVED = "RESOLVED";
+    /** Hold reason while the stylist has no Stripe account that can receive payouts. */
+    public static final String HOLD_NO_PAYOUT_ACCOUNT = "NO_PAYOUT_ACCOUNT";
 
     @Autowired
     BookAppointmentRepo bookAppointmentRepo;
@@ -90,17 +92,32 @@ public class PayoutReleaseService {
     }
 
     /**
+     * Whether Stripe can pay this stylist: they have a connected account and
+     * Stripe has not said it is unfinished or refused. An account whose status
+     * never arrived is tried, as before.
+     */
+    public static boolean canReceivePayouts(StylerEntity styler) {
+        if (styler == null || styler.getStripeConnectAccountId() == null
+                || styler.getStripeConnectAccountId().isBlank()) {
+            return false;
+        }
+        String status = styler.getConnectOnboardingStatus();
+        return !"PENDING".equals(status) && !"REJECTED".equals(status);
+    }
+
+    /**
      * Sends the stylist their share of what the platform kept (the charge minus
      * any refunds), unless a dispute is open. Returns true when nothing is left
-     * waiting: paid, nothing to pay, or the stylist has no payout account.
+     * waiting: paid, or nothing to pay. A stylist who cannot receive payouts yet
+     * keeps the payout, marked NO_PAYOUT_ACCOUNT, until their setup is done.
      */
     boolean release(BookAppointmentEntity appointment) {
         if (DISPUTE_OPEN.equals(appointment.getServiceDisputeStatus())) {
             return false;
         }
         try {
-            String destination = stylerRepo.findByStylerId(appointment.getStylerId())
-                    .map(StylerEntity::getStripeConnectAccountId).orElse(null);
+            Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
+            String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
             long keptCents = paymentService.refundableCents(appointment);
             double percent = paymentService.effectiveCommissionPercentForBooking(appointment);
             long commission = paymentService.commissionCents(keptCents, percent);
@@ -110,7 +127,11 @@ public class PayoutReleaseService {
             }
             appointment.setPlatformFeeCents(commission);
             appointment.setStylistShareCents(stylistShareCents);
-            if (destination != null && !destination.isBlank() && stylistShareCents > 0) {
+            if (stylistShareCents > 0 && !canReceivePayouts(styler.orElse(null))) {
+                holdForPayoutAccount(appointment, styler.orElse(null));
+                return false;
+            }
+            if (stylistShareCents > 0) {
                 com.stripe.model.Transfer transfer = stripeService.transferStylistShare(destination, stylistShareCents,
                         appointment.getAppointmentId(),
                         "payout_" + appointment.getAppointmentId() + "_" + stylistShareCents);
@@ -119,6 +140,7 @@ public class PayoutReleaseService {
                 }
             }
             appointment.setPayoutDueAt(null);
+            appointment.setPayoutHoldReason(null);
             bookAppointmentRepo.save(appointment);
             return true;
         } catch (Exception ex) {
@@ -258,6 +280,115 @@ public class PayoutReleaseService {
         data.put("stripeTransferId", appointment.getStripeTransferId());
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage("Dispute resolved");
+        response.setData(data);
+        return response;
+    }
+
+    /**
+     * Keeps the payout until the stylist can receive it. The stylist is told the
+     * first time, not once per booking; the account.updated webhook queues every
+     * held payout again once Stripe says payouts are enabled.
+     */
+    private void holdForPayoutAccount(BookAppointmentEntity appointment, StylerEntity styler) {
+        boolean firstHeld = !bookAppointmentRepo.existsByStylerIdAndPayoutHoldReason(
+                appointment.getStylerId(), HOLD_NO_PAYOUT_ACCOUNT);
+        appointment.setPayoutHoldReason(HOLD_NO_PAYOUT_ACCOUNT);
+        appointment.setPayoutDueAt(null);
+        bookAppointmentRepo.save(appointment);
+        auditService.audit("system", "SYSTEM", "PAYOUT_HELD", "APPOINTMENT", appointment.getAppointmentId(),
+                "Stylist has no payout account that can receive payouts yet");
+        if (firstHeld && styler != null) {
+            askForPayoutSetup(styler);
+        }
+    }
+
+    private void askForPayoutSetup(StylerEntity styler) {
+        if (emailConfig == null || styler.getEmailAddress() == null || styler.getEmailAddress().isBlank()) {
+            return;
+        }
+        try {
+            emailConfig.sendSimpleMail(styler.getEmailAddress(), "RapidStylers - You have earnings waiting",
+                    "<p>You have earnings from completed appointments waiting for you.</p>"
+                            + "<p>Finish your payout setup from the Payouts page of your dashboard and we will "
+                            + "send them to you straight away.</p><p>Thank you,<br>The RapidStylers Team</p>");
+        } catch (Exception ex) {
+            LOG.warning("Payout setup email failed: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Completed, charged bookings whose stylist has not been paid and whose
+     * payout is not scheduled: held for a payout account, or older bookings
+     * from before payouts waited a day. Open disputes are listed separately.
+     */
+    public BaseResponse unpaidPayouts() {
+        BaseResponse response = new BaseResponse(true);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (BookAppointmentEntity appointment : bookAppointmentRepo
+                .findByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtIsNull("0", "CAPTURED")) {
+            if (DISPUTE_OPEN.equals(appointment.getServiceDisputeStatus())) {
+                continue;
+            }
+            Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("appointmentId", appointment.getAppointmentId());
+            row.put("stylerId", appointment.getStylerId());
+            row.put("businessName", styler.map(StylerEntity::getBusinessName).orElse(null));
+            row.put("completedAt", text(appointment.getCompletedAt()));
+            row.put("stylistShare", appointment.getStylistShareCents() == null ? null
+                    : MoneyUtils.moneyCents(appointment.getStylistShareCents()));
+            row.put("reason", appointment.getPayoutHoldReason() == null ? "NOT_SCHEDULED" : appointment.getPayoutHoldReason());
+            row.put("connectStatus", styler.map(StylerEntity::getConnectOnboardingStatus).orElse(null));
+            row.put("canReceivePayouts", canReceivePayouts(styler.orElse(null)));
+            rows.add(row);
+        }
+        rows.sort(java.util.Comparator.comparing(r -> String.valueOf(r.get("completedAt"))));
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setData(rows);
+        return response;
+    }
+
+    /**
+     * An admin sends an unpaid payout now: after checking that an older booking
+     * was never paid outside the app, or once a stylist's account is fixed.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse payNow(String adminId, String appointmentId) {
+        BaseResponse response = new BaseResponse(true);
+        Optional<BookAppointmentEntity> found = appointmentId == null ? Optional.empty()
+                : bookAppointmentRepo.findByAppointmentIdForUpdate(appointmentId.trim());
+        if (found.isEmpty()) {
+            return Responses.errorResponse(response, "Invalid Appointment Id");
+        }
+        BookAppointmentEntity appointment = found.get();
+        if (!"0".equals(appointment.getStatus()) || !"CAPTURED".equals(appointment.getPaymentStatus())
+                || appointment.getStripeTransferId() != null) {
+            return Responses.errorResponse(response, "This booking has no unpaid stylist payout");
+        }
+        if (DISPUTE_OPEN.equals(appointment.getServiceDisputeStatus())) {
+            return Responses.errorResponse(response, "Resolve the customer's dispute first");
+        }
+        if (!stripeService.isConfigured()) {
+            return Responses.errorResponse(response, "Payments are not configured");
+        }
+        auditService.audit(adminId, "ADMIN", "PAYOUT_RELEASED_BY_ADMIN", "APPOINTMENT", appointmentId, "Admin sent the stylist payout");
+        appointment.setPayoutDueAt(now());
+        boolean paid = release(appointment);
+        if (!paid && appointment.getPayoutDueAt() != null) {
+            bookAppointmentRepo.save(appointment); // failed: left due for the next run
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("appointmentId", appointment.getAppointmentId());
+        data.put("stylistShare", appointment.getStylistShareCents() == null ? null
+                : MoneyUtils.moneyCents(appointment.getStylistShareCents()));
+        data.put("stripeTransferId", appointment.getStripeTransferId());
+        data.put("payoutHoldReason", appointment.getPayoutHoldReason());
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(paid ? "Payout sent"
+                : HOLD_NO_PAYOUT_ACCOUNT.equals(appointment.getPayoutHoldReason())
+                        ? "The stylist has no payout account yet; it will be sent once they finish payout setup"
+                        : "The payout could not be sent now; it will be retried");
         response.setData(data);
         return response;
     }

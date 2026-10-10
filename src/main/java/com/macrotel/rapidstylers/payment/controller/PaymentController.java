@@ -176,6 +176,24 @@ public class PaymentController {
         return ApiResponses.respond(refundReviewService.paymentContext(appointmentId));
     }
 
+    /** Completed, charged bookings whose stylist has not been paid and no payout is scheduled. */
+    @GetMapping("/admin/unpaid_payouts")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminUnpaidPayouts(HttpServletRequest request) {
+        if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(payoutReleaseService.unpaidPayouts());
+    }
+
+    /** Sends one unpaid stylist payout now; held again if the stylist still has no payout account. */
+    @PostMapping("/admin/pay_stylist_now")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminPayStylistNow(@Valid @RequestBody ServiceDisputeData data,
+                                                           HttpServletRequest request) {
+        String adminId = CurrentAccount.adminId(request);
+        if (adminId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(payoutReleaseService.payNow(adminId, data.getAppointmentId()));
+    }
+
     /** Completed appointments whose customer says they didn't happen; their stylist payouts are on hold. */
     @GetMapping("/admin/service_disputes")
     @PreAuthorize("hasRole('ADMIN')")

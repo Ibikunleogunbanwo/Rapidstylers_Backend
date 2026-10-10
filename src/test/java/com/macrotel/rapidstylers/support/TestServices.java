@@ -61,7 +61,6 @@ import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerService;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
@@ -118,6 +117,7 @@ public class TestServices {
     public RateLimiterService rateLimiterService;
     public ReadCacheService readCacheService;
     public ReferralRepo referralRepo;
+    public Boolean requirePayoutAccountToAccept;
     public ReviewRepo reviewRepo;
     public SavedStylistRepo savedStylistRepo;
     public ServiceRepo serviceRepo;

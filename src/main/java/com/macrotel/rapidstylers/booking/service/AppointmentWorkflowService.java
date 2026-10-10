@@ -66,6 +66,9 @@ public class AppointmentWorkflowService {
     private String appTimeZone;
     @Value("${app.booking.completion-grace-minutes:0}")
     private long completionGraceMinutes;
+    /** A stylist needs a payout account before accepting, so nobody works unpaid. */
+    @Value("${app.payout.require-account-to-accept:true}")
+    boolean requirePayoutAccountToAccept = true;
     /** Stylists may cancel a completed booking only within this window (hours since completion). */
     @Value("${app.booking.styler-cancel-window-hours:24}")
     private long stylerCancelWindowHours;
@@ -224,6 +227,14 @@ public class AppointmentWorkflowService {
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("This appointment cannot be updated from its current state");
                 response.setData(EMPTY_DATA);
+                return response;
+            }
+            // A stylist needs somewhere to be paid before taking on paid work.
+            if("3".equals(newStatus) && requirePayoutAccountToAccept && stripeService.isConfigured()
+                    && !PayoutReleaseService.canReceivePayouts(stylerRepo.findByStylerId(appointment.getStylerId()).orElse(null))){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Finish your payout setup on the Payouts page before accepting bookings, so you can be paid for them.");
+                response.setData(Collections.singletonMap("payoutSetupRequired", true));
                 return response;
             }
             // Completed bookings can only be cancelled by the stylist within a

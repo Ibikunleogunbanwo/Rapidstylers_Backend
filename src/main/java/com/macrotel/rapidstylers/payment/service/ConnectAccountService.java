@@ -220,6 +220,17 @@ public class ConnectAccountService {
             data.put("status", styler.getConnectOnboardingStatus() == null
                     ? "NOT_STARTED" : styler.getConnectOnboardingStatus());
             data.put("disabledReason", styler.getConnectDisabledReason());
+            // Earnings kept back until payout setup is done, for a "finish setup" banner.
+            long waitingCents = 0;
+            int waiting = 0;
+            for (BookAppointmentEntity held : bookAppointmentRepo
+                    .findByStylerIdAndPayoutHoldReason(stylerId, PayoutReleaseService.HOLD_NO_PAYOUT_ACCOUNT)) {
+                waiting++;
+                waitingCents += held.getStylistShareCents() == null ? 0 : held.getStylistShareCents();
+            }
+            data.put("payoutsWaiting", waiting);
+            data.put("payoutsWaitingAmount", MoneyUtils.moneyCents(waitingCents));
+            data.put("canReceivePayouts", PayoutReleaseService.canReceivePayouts(styler));
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(data);

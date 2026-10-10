@@ -111,6 +111,8 @@ public final class Routes {
             "/rapid_stylers/admin/refunds",
             "/rapid_stylers/admin/refund_context",
             "/rapid_stylers/admin/service_disputes",
+            "/rapid_stylers/admin/unpaid_payouts",
+            "/rapid_stylers/admin/pay_stylist_now",
             "/rapid_stylers/admin/resolve_service_dispute",
             "/rapid_stylers/admin/payment_reconciliation",
 
