@@ -75,9 +75,11 @@ class EncryptionConfigTest {
     @Test
     void gcmDecryptRejectsTamperedCiphertext() throws Exception {
         String ciphertext = config.encrypt("A1234B");
-        // Flip a character in the middle of the ciphertext
-        String tampered = ciphertext.substring(0, ciphertext.length() / 2) + "A"
-                + ciphertext.substring(ciphertext.length() / 2 + 1);
+        // Change a character in the middle of the ciphertext (always to a different one,
+        // otherwise the test fails 1 time in 64 when that character already was "A")
+        int mid = ciphertext.length() / 2;
+        char swapped = ciphertext.charAt(mid) == 'A' ? 'B' : 'A';
+        String tampered = ciphertext.substring(0, mid) + swapped + ciphertext.substring(mid + 1);
         assertThrows(Exception.class, () -> config.decrypt(tampered),
                 "Tampered GCM ciphertext must fail authentication");
     }
