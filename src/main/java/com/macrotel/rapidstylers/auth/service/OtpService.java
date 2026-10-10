@@ -36,7 +36,7 @@ public class OtpService {
     private static final int AUTH_MAX_FAILURES = 5;       // per email
     private static final int AUTH_IP_MAX_FAILURES = 20;   // per IP
     // Long enough to fill in the rest of the stylist sign-up after the email code.
-    private static final Duration SIGNUP_UPLOAD_TTL = Duration.ofHours(2);
+    private static final Duration SIGNUP_UPLOAD_TTL = Duration.ofMinutes(30);
     private static final int OTP_GEN_WINDOW_SECONDS = 900;
     private static final int OTP_GEN_MAX = 3;             // per email
     private static final int OTP_VERIFY_WINDOW_SECONDS = 900;

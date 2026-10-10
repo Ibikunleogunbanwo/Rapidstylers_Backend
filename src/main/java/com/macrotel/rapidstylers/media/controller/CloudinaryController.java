@@ -4,6 +4,8 @@ import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
+import com.macrotel.rapidstylers.media.service.UploadOwnership;
+import com.macrotel.rapidstylers.security.access.Roles;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -16,6 +18,9 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -43,6 +48,9 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
  *   ?folderPrefix=id        → rapid_stylers/id
  *   ?folderPrefix=store     → rapid_stylers/store
  *   (no prefix)             → rapid_stylers
+ *
+ * Inside that folder each caller gets their own (see UploadOwnership), so
+ * rapid_stylers/profile/signup_3f9a.../ holds only one sign-up's photos.
  */
 @RestController
 @RequestMapping("/rapid_stylers")
@@ -73,6 +81,9 @@ public class CloudinaryController {
     @Autowired
     private ImageReclaimService imageReclaimService;
 
+    @Autowired(required = false)
+    private UploadOwnership uploadOwnership;
+
     @GetMapping("/get_upload_signature")
     public ResponseEntity<BaseResponse> getUploadSignature(
             @RequestParam(value = "folderPrefix", required = false) String folderPrefix) {
@@ -99,6 +110,12 @@ public class CloudinaryController {
                 rateLimiterService.record(rateLimitKey, 900);
             }
             String folder = sanitizedPrefix.isBlank() ? baseFolder : baseFolder + "/" + sanitizedPrefix;
+            String[] caller = caller();
+            String ownerFolder = uploadOwnership == null || caller == null ? null
+                    : uploadOwnership.folderFor(caller[1], caller[0]);
+            if (ownerFolder != null) {
+                folder = folder + "/" + ownerFolder;
+            }
 
             // The upload constraints are part of the SIGNED parameter set, so
             // Cloudinary enforces them itself: a client that drops them,
@@ -176,13 +193,22 @@ public class CloudinaryController {
      * Deletes an uploaded image that nothing uses. The frontend calls it to clean
      * up photos uploaded for a sign-up or portfolio save that then failed. It
      * only ever removes an orphan: an image any profile, ID, portfolio, blog or
-     * service still points at is kept, so nobody can delete someone else's photo
-     * by sending its public id.
+     * service still points at is kept. And only the caller's own uploads: an
+     * admin may delete any orphan, everyone else only files in their own folder.
      */
     @PostMapping("/delete_cloudinary_image")
     public ResponseEntity<BaseResponse> deleteCloudinaryImage(@RequestBody Map<String, String> requestBody) {
         String publicId = requestBody.getOrDefault("publicId", "");
         BaseResponse response = new BaseResponse();
+        String[] caller = caller();
+        boolean admin = caller != null && Roles.ADMIN.equals(caller[1]);
+        if (!admin && uploadOwnership != null
+                && (caller == null || !uploadOwnership.owns(caller[1], caller[0], publicId))) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Image was not deleted: it is not one of your uploads.");
+            response.setData(Collections.emptyList());
+            return ApiResponses.respond(response);
+        }
         if (imageReclaimService.reclaimPublicIdIfUnreferenced(publicId)) {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Image deleted");
@@ -192,6 +218,21 @@ public class CloudinaryController {
         }
         response.setData(Collections.emptyList());
         return ApiResponses.respond(response);
+    }
+
+    /** The signed-in caller as {subject, role}, or null outside a request with a token. */
+    private static String[] caller() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            return null;
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            String name = authority.getAuthority();
+            if (name != null && name.startsWith("ROLE_")) {
+                return new String[]{auth.getName(), name.substring(5)};
+            }
+        }
+        return null;
     }
 
     private String sha1(String input) throws Exception {

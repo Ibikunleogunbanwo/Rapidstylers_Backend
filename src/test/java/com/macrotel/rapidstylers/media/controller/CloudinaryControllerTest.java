@@ -108,6 +108,49 @@ class CloudinaryControllerTest {
         assertEquals(ERROR_STATUS_CODE, response.getBody().getStatusCode());
     }
 
+    // ── Each caller's own folder ──────────────────────────────────────
+
+    private void signedInAs(String subject, String role) {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(subject, null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role))));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void signOut() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void aSignUpUploadsIntoItsOwnFolder() {
+        com.macrotel.rapidstylers.media.service.UploadOwnership ownership = new com.macrotel.rapidstylers.media.service.UploadOwnership();
+        ReflectionTestUtils.setField(controller, "uploadOwnership", ownership);
+        signedInAs("chloe@example.com", "SIGNUP_UPLOAD");
+
+        Map<?, ?> params = params(controller.getUploadSignature("profile"));
+
+        assertEquals("rapid_stylers/profile/" + ownership.folderFor("SIGNUP_UPLOAD", "chloe@example.com"), params.get("folder"));
+    }
+
+    @Test
+    void nobodyButAnAdminCanDeleteSomeoneElsesUpload() {
+        com.macrotel.rapidstylers.media.service.UploadOwnership ownership = new com.macrotel.rapidstylers.media.service.UploadOwnership();
+        com.macrotel.rapidstylers.media.service.ImageReclaimService reclaim = org.mockito.Mockito.mock(com.macrotel.rapidstylers.media.service.ImageReclaimService.class);
+        ReflectionTestUtils.setField(controller, "uploadOwnership", ownership);
+        ReflectionTestUtils.setField(controller, "imageReclaimService", reclaim);
+        String theirs = "rapid_stylers/profile/" + ownership.folderFor("SIGNUP_UPLOAD", "someone@example.com") + "/face";
+        String mine = "rapid_stylers/profile/" + ownership.folderFor("SIGNUP_UPLOAD", "chloe@example.com") + "/face";
+        when(reclaim.reclaimPublicIdIfUnreferenced(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+
+        signedInAs("chloe@example.com", "SIGNUP_UPLOAD");
+        assertEquals(ERROR_STATUS_CODE, controller.deleteCloudinaryImage(Map.of("publicId", theirs)).getBody().getStatusCode());
+        assertEquals(SUCCESS_STATUS_CODE, controller.deleteCloudinaryImage(Map.of("publicId", mine)).getBody().getStatusCode());
+        org.mockito.Mockito.verify(reclaim, org.mockito.Mockito.never()).reclaimPublicIdIfUnreferenced(theirs);
+
+        signedInAs("ADMIN1", "ADMIN");
+        assertEquals(SUCCESS_STATUS_CODE, controller.deleteCloudinaryImage(Map.of("publicId", theirs)).getBody().getStatusCode());
+    }
+
     private Map<?, ?> params(ResponseEntity<BaseResponse> response) {
         Map<?, ?> data = (Map<?, ?>) response.getBody().getData();
         return (Map<?, ?>) data.get("params");

@@ -108,6 +108,8 @@ public class StylerService {
     PortfolioService portfolioService;
     @Autowired
     StylerEligibility stylerEligibility;
+    @Autowired
+    StylerSignupRetries stylerSignupRetries;
 
     /**
      * Creates a professional account, and gives the images back if it cannot.
@@ -117,14 +119,28 @@ public class StylerService {
      * anything here learns their names, and therefore the only place that can
      * discard them when the account is not created: a duplicate email, a rejected
      * password or a missing field would otherwise leave two images in the bucket
-     * that no record will ever point at. No authorization question arises, because
-     * reclaiming only ever destroys an asset that nothing references.
+     * that no record will ever point at. Only this sign-up's own uploads are
+     * given back, and only when nothing references them.
+     *
+     * The photos must be ones this email's sign-up uploaded. A retry after a lost
+     * response finds the account it already made and says so instead of "email
+     * already exists", so the website can send the stylist to sign in.
      */
     public BaseResponse createStyler(StylerData stylerData){
+        String email = stylerData.getEmailAddress();
+        if(imageReclaimService.uploadedByAnotherSignup(email, stylerData.getProfileImageUrl())
+                || imageReclaimService.uploadedByAnotherSignup(email, stylerData.getIdentificationImageUrl())){
+            return Responses.errorResponse(new BaseResponse(true),
+                    "These photos were uploaded for a different sign-up. Please upload your photos again.");
+        }
+        BaseResponse alreadyCreated = stylerSignupRetries.alreadyCreated(stylerData);
+        if(alreadyCreated != null){
+            return alreadyCreated;
+        }
         BaseResponse response = createStylerAccount(stylerData);
         if(!SUCCESS_STATUS_CODE.equals(response.getStatusCode())){
-            imageReclaimService.reclaimIfUnreferenced(stylerData.getProfileImageUrl());
-            imageReclaimService.reclaimIfUnreferenced(stylerData.getIdentificationImageUrl());
+            imageReclaimService.reclaimSignupUpload(email, stylerData.getProfileImageUrl());
+            imageReclaimService.reclaimSignupUpload(email, stylerData.getIdentificationImageUrl());
         }
         return response;
     }

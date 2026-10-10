@@ -167,6 +167,65 @@ public class CloudinaryService {
         }
     }
 
+    /** One uploaded asset as the listing reports it. */
+    public static final class Upload {
+        public final String publicId;
+        public final Instant createdAt;
+
+        public Upload(String publicId, Instant createdAt) {
+            this.publicId = publicId;
+            this.createdAt = createdAt;
+        }
+    }
+
+    /** A page of uploads plus the cursor for the next page (null on the last). */
+    public static final class UploadPage {
+        public final java.util.List<Upload> uploads;
+        public final String nextCursor;
+
+        public UploadPage(java.util.List<Upload> uploads, String nextCursor) {
+            this.uploads = uploads;
+            this.nextCursor = nextCursor;
+        }
+    }
+
+    /**
+     * Lists uploaded images under a folder, oldest pages first as Cloudinary
+     * returns them, 500 at a time. Returns an empty page when Cloudinary is not
+     * configured or the call fails, so a caller simply finds nothing to do.
+     */
+    public UploadPage listUploads(String prefix, String cursor) {
+        if (!isConfigured() || isBlank(prefix)) {
+            return new UploadPage(Collections.emptyList(), null);
+        }
+        try {
+            String url = "https://api.cloudinary.com/v1_1/" + cloudName + "/resources/image/upload?max_results=500&prefix="
+                    + java.net.URLEncoder.encode(prefix, StandardCharsets.UTF_8)
+                    + (isBlank(cursor) ? "" : "&next_cursor=" + java.net.URLEncoder.encode(cursor, StandardCharsets.UTF_8));
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBasicAuth(apiKey, apiSecret);
+            headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+            ResponseEntity<String> res = restTemplate().exchange(URI.create(url),
+                    org.springframework.http.HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            JsonNode root = res.getBody() == null ? null : new ObjectMapper().readTree(res.getBody());
+            java.util.List<Upload> uploads = new java.util.ArrayList<>();
+            if (root != null) {
+                for (JsonNode resource : root.path("resources")) {
+                    String publicId = resource.path("public_id").asText("");
+                    String created = resource.path("created_at").asText("");
+                    if (!publicId.isBlank() && !created.isBlank()) {
+                        uploads.add(new Upload(publicId, Instant.parse(created)));
+                    }
+                }
+            }
+            String next = root == null ? "" : root.path("next_cursor").asText("");
+            return new UploadPage(uploads, next.isBlank() ? null : next);
+        } catch (Exception ex) {
+            LOG.warning("Cloudinary listing failed for " + prefix + ": " + ex.getMessage());
+            return new UploadPage(Collections.emptyList(), null);
+        }
+    }
+
     /**
      * A short-timeout client. A browser is often waiting on the request that
      * triggered this cleanup, so it must not hang on a slow third party.

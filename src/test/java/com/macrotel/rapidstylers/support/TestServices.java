@@ -38,6 +38,7 @@ import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.engagement.service.ReviewService;
 import com.macrotel.rapidstylers.engagement.service.SupportService;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
+import com.macrotel.rapidstylers.media.service.UploadOwnership;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
@@ -61,6 +62,8 @@ import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerService;
+import com.macrotel.rapidstylers.styler.service.StylerSignupRetries;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
@@ -120,6 +123,7 @@ public class TestServices {
     public Boolean requirePayoutAccountToAccept;
     public ReviewRepo reviewRepo;
     public SavedStylistRepo savedStylistRepo;
+    public String secret;
     public ServiceRepo serviceRepo;
     public StripeService stripeService;
     public Long stylerCancelWindowHours;
@@ -152,7 +156,9 @@ public class TestServices {
             PaymentAuthorizationService.class,
             OtpService.class,
             BookingRetries.class,
-            PayoutReleaseService.class);
+            PayoutReleaseService.class,
+            StylerSignupRetries.class,
+            UploadOwnership.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 
@@ -238,6 +244,14 @@ public class TestServices {
 
     public PayoutReleaseService payoutReleaseService() {
         return get(PayoutReleaseService.class);
+    }
+
+    public StylerSignupRetries stylerSignupRetries() {
+        return get(StylerSignupRetries.class);
+    }
+
+    public UploadOwnership uploadOwnership() {
+        return get(UploadOwnership.class);
     }
 
     private synchronized <T> T get(Class<T> type) {

@@ -154,4 +154,63 @@ class ImageReclaimServiceTest {
 
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
     }
+
+    // ── Sign-up uploads ───────────────────────────────────────────────
+
+    private String signupUrl(String email, String file) {
+        String publicId = "rapid_stylers/profile/" + new UploadOwnership().folderFor("SIGNUP_UPLOAD", email) + "/" + file;
+        String url = "https://res.cloudinary.com/demo/image/upload/v1/" + publicId + ".jpg";
+        when(cloudinaryService.extractPublicId(url)).thenReturn(publicId);
+        return url;
+    }
+
+    @Test
+    void aSignUpCannotUseOrDeleteAnotherSignUpsPhoto() {
+        String theirs = signupUrl("someone@example.com", "face");
+
+        assertTrue(reclaimService.uploadedByAnotherSignup("chloe@example.com", theirs));
+        assertFalse(reclaimService.reclaimSignupUpload("chloe@example.com", theirs));
+        verify(cloudinaryService, never()).destroy(anyString());
+    }
+
+    @Test
+    void aSignUpMayUseAndGiveBackItsOwnPhoto() {
+        String mine = signupUrl("chloe@example.com", "face");
+
+        assertFalse(reclaimService.uploadedByAnotherSignup("Chloe@example.com", mine));
+        assertTrue(reclaimService.reclaimSignupUpload("chloe@example.com", mine));
+    }
+
+    @Test
+    void olderPhotosWithoutAnOwnerFolderAreAcceptedAsBefore() {
+        assertFalse(reclaimService.uploadedByAnotherSignup("chloe@example.com", ORPHAN_URL));
+    }
+
+    @Test
+    void theSweepDeletesOnlyOldUnusedSignUpPhotos() {
+        String owner = new UploadOwnership().folderFor("SIGNUP_UPLOAD", "gone@example.com");
+        java.time.Instant old = java.time.Instant.now().minus(java.time.Duration.ofDays(2));
+        java.time.Instant fresh = java.time.Instant.now().minus(java.time.Duration.ofHours(1));
+        String abandoned = "rapid_stylers/profile/" + owner + "/abandoned";
+        String used = "rapid_stylers/id/" + owner + "/used";
+        String recent = "rapid_stylers/profile/" + owner + "/recent";
+        String account = "rapid_stylers/portfolio/" + new UploadOwnership().folderFor("STYLER", "CM1") + "/work";
+        when(cloudinaryService.isConfigured()).thenReturn(true);
+        when(cloudinaryService.listUploads("rapid_stylers/", null)).thenReturn(new CloudinaryService.UploadPage(java.util.List.of(
+                new CloudinaryService.Upload(abandoned, old),
+                new CloudinaryService.Upload(used, old),
+                new CloudinaryService.Upload(recent, fresh),
+                new CloudinaryService.Upload(account, old),
+                new CloudinaryService.Upload(PUBLIC_ID, old)), null));
+        when(stylerRepo.countByIdentificationImageUrlContaining("/" + used)).thenReturn(1L);
+
+        int deleted = reclaimService.sweepAbandonedSignupUploads();
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, deleted);
+        verify(cloudinaryService).destroy(abandoned);
+        verify(cloudinaryService, never()).destroy(used);
+        verify(cloudinaryService, never()).destroy(recent);
+        verify(cloudinaryService, never()).destroy(account);
+        verify(cloudinaryService, never()).destroy(PUBLIC_ID);
+    }
 }

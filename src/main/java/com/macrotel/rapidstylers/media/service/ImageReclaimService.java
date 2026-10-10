@@ -4,9 +4,14 @@ import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.security.access.Roles;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
@@ -54,6 +59,16 @@ public class ImageReclaimService {
 
     @Autowired
     ServiceRepo serviceRepo;
+
+    @Autowired
+    UploadOwnership uploadOwnership = new UploadOwnership();
+
+    /** A sign-up photo nothing uses after this long was abandoned (the sign-up pass lasts 30 minutes). */
+    @Value("${app.uploads.abandoned-after-hours:24}")
+    long abandonedAfterHours = 24;
+
+    /** At most this many listing pages (500 each) per sweep, so one run stays short. */
+    private static final int MAX_SWEEP_PAGES = 10;
 
     /**
      * The shape of a public id this app hands out: under the rapid_stylers folder,
@@ -121,5 +136,62 @@ public class ImageReclaimService {
             LOG.warning("Image reclaim failed for " + publicId + ": " + ex.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Whether the photo at this URL was uploaded by someone other than this
+     * email's sign-up, so the sign-up may not use it. Older uploads with no
+     * owner folder, and non-Cloudinary URLs, are accepted as before.
+     */
+    public boolean uploadedByAnotherSignup(String email, String url) {
+        String publicId = url == null || url.isBlank() ? null : cloudinaryService.extractPublicId(url.trim());
+        if (publicId == null || !UploadOwnership.hasOwnerFolder(publicId)) {
+            return false;
+        }
+        return !uploadOwnership.owns(Roles.SIGNUP_UPLOAD, email, publicId);
+    }
+
+    /**
+     * Gives back a failed sign-up's photo, but only one this sign-up uploaded
+     * (or an older one with no owner folder, as before), and only if unused.
+     */
+    public boolean reclaimSignupUpload(String email, String url) {
+        if (uploadedByAnotherSignup(email, url)) {
+            return false;
+        }
+        return reclaimIfUnreferenced(url);
+    }
+
+    /**
+     * Deletes sign-up photos nothing ever used: uploaded with a sign-up pass,
+     * older than a day, and not on any profile. They come from sign-ups that
+     * were abandoned or failed after the upload. Account uploads and anything
+     * from before owner folders are never touched here.
+     */
+    @Scheduled(cron = "${app.uploads.sweep-cron:0 30 3 * * *}")
+    public int sweepAbandonedSignupUploads() {
+        if (!cloudinaryService.isConfigured()) {
+            return 0;
+        }
+        Instant cutoff = Instant.now().minus(Duration.ofHours(abandonedAfterHours));
+        int deleted = 0;
+        String cursor = null;
+        for (int page = 0; page < MAX_SWEEP_PAGES; page++) {
+            CloudinaryService.UploadPage uploads = cloudinaryService.listUploads("rapid_stylers/", cursor);
+            for (CloudinaryService.Upload upload : uploads.uploads) {
+                if (UploadOwnership.isSignupUpload(upload.publicId) && upload.createdAt.isBefore(cutoff)
+                        && reclaimPublicIdIfUnreferenced(upload.publicId)) {
+                    deleted++;
+                }
+            }
+            cursor = uploads.nextCursor;
+            if (cursor == null) {
+                break;
+            }
+        }
+        if (deleted > 0) {
+            LOG.info("Deleted " + deleted + " abandoned sign-up photo(s)");
+        }
+        return deleted;
     }
 }
