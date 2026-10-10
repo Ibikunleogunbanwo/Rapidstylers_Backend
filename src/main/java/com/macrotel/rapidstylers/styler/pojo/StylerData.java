@@ -10,10 +10,10 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 @Data
 public class StylerData {
     @NotEmpty(message = "Firstname cannot be empty")
-    @Pattern(regexp = CHARACTER_VALIDATION_REGEX, message = "Firstname must be at least 3 characters")
+    @Pattern(regexp = PERSON_NAME_REGEX, message = "First name must be at least 3 characters: letters, spaces, hyphens or apostrophes")
     private String firstname;
     @NotEmpty(message = "Lastname cannot be empty")
-    @Pattern(regexp = CHARACTER_VALIDATION_REGEX, message = "Lastname must be at least 3 characters")
+    @Pattern(regexp = PERSON_NAME_REGEX, message = "Last name must be at least 3 characters: letters, spaces, hyphens or apostrophes")
     private String lastname;
     @NotEmpty(message = "Email Address cannot be empty")
     @Email(message = "Enter a valid email address")

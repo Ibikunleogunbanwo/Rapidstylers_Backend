@@ -61,4 +61,13 @@ class AccountIdsTest {
     void customerIdsFallBackToUWithoutNames() {
         assertTrue(accountIds.newCustomerId("", "").matches("U\\d{4}"));
     }
+
+    @Test
+    void initialsArePlainCapitalLettersWhateverTheName() {
+        assertEquals("A", AccountIds.initial("adébáyọ̀"));
+        assertEquals("E", AccountIds.initial("Émile"));
+        assertEquals("O", AccountIds.initial("O'Neil"));
+        assertEquals("X", AccountIds.initial("Мария"));
+        assertEquals("X", AccountIds.initial(null));
+    }
 }

@@ -199,8 +199,8 @@ public class StylerService {
             }
             StylerEntity stylerEntity = new StylerEntity(stylerData);
             stylerEntity.setStylerId(accountIds.freeAccountId(stylerEntity.getStylerId(),
-                    () -> stylerData.getFirstname().toUpperCase().charAt(0) + ""
-                            + stylerData.getLastname().toUpperCase().charAt(0) + appUtils.randomDigit(4)));
+                    () -> AccountIds.initial(stylerData.getFirstname())
+                            + AccountIds.initial(stylerData.getLastname()) + appUtils.randomDigit(4)));
 
             // Geocode address → lat/lng if not already provided
             if(stylerEntity.getLatitude() == null || stylerEntity.getLongitude() == null){

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.entity;
 
+import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.styler.pojo.StylerData;
 import java.io.Serializable;
@@ -90,7 +91,7 @@ public class StylerEntity implements Serializable {
         this.identificationImageUrl = stylerData.getIdentificationImageUrl();
         this.insertedDt = String.valueOf(LocalDate.now());
         this.phoneNumber = stylerData.getPhoneNumber();
-        this.stylerId = stylerData.getFirstname().toUpperCase().charAt(0)+""+stylerData.getLastname().toUpperCase().charAt(0)+appUtils.randomDigit(4);
+        this.stylerId = AccountIds.initial(stylerData.getFirstname())+AccountIds.initial(stylerData.getLastname())+appUtils.randomDigit(4);
         this.status = "0";
         this.isOnline = "1";
         this.verificationStatus = "PENDING";

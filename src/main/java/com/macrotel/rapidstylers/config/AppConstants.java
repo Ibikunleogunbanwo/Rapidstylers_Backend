@@ -11,6 +11,9 @@ public class AppConstants {
     public static final  String SUCCESS_MESSAGE = "Successful";
     public static  final Object EMPTY_DATA = new Object[0];
     public static final String CHARACTER_VALIDATION_REGEX = "^[a-zA-Z ]{3,}(?: [a-zA-Z ]+){0,2}$";
+    // A person's name: 3 to 50 characters, starting with a letter in any language,
+    // then letters, spaces, hyphens, apostrophes or periods (Anne-Marie, O'Neil, Adébáyọ̀).
+    public static final String PERSON_NAME_REGEX = "^\\p{L}[\\p{L}\\p{M} '\u2019.-]{2,49}$";
     public static final String NUMBER_VALIDATION_REGEX = "^[0-9]+$";
     // Canadian phone: exactly 10 digits, or 11 with leading 1
     public static final String PHONE_NUMBER_VALIDATION_REGEX ="^1?[0-9]{10}$";

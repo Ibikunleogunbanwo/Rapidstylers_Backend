@@ -47,4 +47,15 @@ public class AccountIds {
         }
         throw new IllegalStateException("No free account id after 100 attempts");
     }
+
+    /**
+     * The capital A-Z letter an account id takes from a name. Accents are dropped
+     * (É gives E) and a name with no Latin letter gives X, so ids stay plain
+     * ASCII and safe in links whatever alphabet the name is written in.
+     */
+    public static String initial(String name) {
+        String plain = java.text.Normalizer.normalize(name == null ? "" : name, java.text.Normalizer.Form.NFD)
+                .replaceAll("[^A-Za-z]", "");
+        return plain.isEmpty() ? "X" : plain.substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+    }
 }
