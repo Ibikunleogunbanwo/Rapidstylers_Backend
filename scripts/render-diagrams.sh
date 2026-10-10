@@ -3,7 +3,7 @@
 # render-diagrams.sh — re-render docs/diagrams/*.mmd to SVG via mermaid.ink.
 #
 # Usage:  bash scripts/render-diagrams.sh            (all diagrams)
-#         bash scripts/render-diagrams.sh system-design  (one by stem)
+#         bash scripts/render-diagrams.sh cloudflare-request-path  (one by stem)
 #
 # Requires: curl + python3. Edit the .mmd source, run this, commit both the
 # .mmd and the .svg so the docs read in any viewer (the SVGs are embedded in

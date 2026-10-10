@@ -2,7 +2,7 @@
 #
 # bootstrap-vps.sh — stand up the RapidStylers production stack on a fresh VPS.
 #
-# Mirrors docs/duplication-guide.md §3. Installs Docker + nginx, creates the
+# Installs Docker + nginx, creates the
 # deploy user, opens the firewall, syncs the backend repo, and starts the prod
 # compose stack (MySQL, Redis, Kafka, API), then waits for health.
 #
@@ -176,5 +176,5 @@ echo "  curl -i https://api.YOURDOMAIN.com/actuator/health"
 echo "  curl -i -H 'x-api-key: \$APP_API_KEY' https://api.YOURDOMAIN.com/rapid_stylers/list_service"
 echo
 warn "Remaining host work (not automated): nginx site for api.YOURDOMAIN.com proxying to"
-warn "127.0.0.1:9095 with TLS certs (see docs/duplication-guide.md §3), DNS at Cloudflare,"
+warn "127.0.0.1:9095 with TLS certs (see deploy/nginx/README.md), DNS at Cloudflare,"
 warn "and a nightly MySQL backup cron."

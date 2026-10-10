@@ -1,28 +1,24 @@
-# docs/diagrams — rendered system diagrams
+# docs/diagrams — diagram sources
 
-SVG renders of the system-design diagrams, embedded in the markdown docs so they
-read in any viewer (GitHub, editors, plain markdown renderers) — not just on
-GitHub's mermaid renderer.
+Mermaid sources (`.mmd`) for the diagrams in `docs/`. The docs draw them inline
+in a mermaid block, which GitHub and most Markdown previews render. Render an
+`.svg` only if you need a plain image (for slides, or a viewer without mermaid).
 
 | File | Used by |
 |---|---|
-| `system-design.svg` / `.mmd` | System at a glance (not embedded in a doc right now) |
-| `ci-cd-pipeline.svg` / `.mmd` | CI/CD pipeline at a glance (not embedded in a doc right now) |
-| `duplication-topology.svg` / `.mmd` | `deploy/README.md` — full duplication picture |
 | `target-architecture.mmd` | `docs/target-architecture.md` — the target design (rendered inline by GitHub) |
 | `cloudflare-request-path.mmd` | `docs/cloudflare.md` — how a request reaches the app (rendered inline by GitHub) |
 
 ## Workflow
 
-The `.mmd` files are the **editable source of truth**; the `.svg` files are what
-the docs embed.
+The `.mmd` files are the **editable source of truth**. If you change one, paste
+the same text into the mermaid block of the doc that shows it.
 
 ```bash
 # Edit a .mmd, then re-render (all, or one by stem):
 bash scripts/render-diagrams.sh            # all
-bash scripts/render-diagrams.sh system-design   # one
+bash scripts/render-diagrams.sh cloudflare-request-path   # one
 ```
 
-Commit the `.mmd` and the `.svg` together so the diagram and its render never
-drift. The render uses [mermaid.ink](https://mermaid.ink) (`curl` + `python3`
+If you render an `.svg`, commit it with its `.mmd` so they never drift. The render uses [mermaid.ink](https://mermaid.ink) (`curl` + `python3`
 only — no node/chromium download needed).
