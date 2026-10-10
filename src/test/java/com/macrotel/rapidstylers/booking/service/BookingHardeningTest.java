@@ -72,7 +72,7 @@ class BookingHardeningTest {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "3");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
-        BaseResponse response = services.bookingService().completeAppointment("STYLER1", "APPT1");
+        BaseResponse response = services.appointmentWorkflowService().completeAppointment("STYLER1", "APPT1");
 
         assertEquals("400", response.getStatusCode());
         assertTrue(response.getMessage().contains("after its scheduled start"));
@@ -84,8 +84,8 @@ class BookingHardeningTest {
         BookAppointmentEntity appointment = appointment("2030-08-24", "09:00", "1");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
 
-        BaseResponse stylistAttemptToCancel = services.bookingService().cancelAppointment("STYLER1", "APPT1");
-        BaseResponse customerAttemptToAccept = services.bookingService().acceptAppointment("CUSTOMER1", "APPT1");
+        BaseResponse stylistAttemptToCancel = services.appointmentWorkflowService().cancelAppointment("STYLER1", "APPT1");
+        BaseResponse customerAttemptToAccept = services.appointmentWorkflowService().acceptAppointment("CUSTOMER1", "APPT1");
 
         assertEquals("400", stylistAttemptToCancel.getStatusCode());
         assertEquals("400", customerAttemptToAccept.getStatusCode());

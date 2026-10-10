@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.booking.controller;
 
 import com.macrotel.rapidstylers.booking.pojo.AppointmentActionData;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
+import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
 import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.*;
 public class BookingController {
     @Autowired
     BookingService bookingService;
+    @Autowired
+    AppointmentWorkflowService appointmentWorkflowService;
 
     @PostMapping("/booking_estimate")
     public ResponseEntity<BaseResponse> bookingEstimate(@RequestBody BookAppointmentData bookAppointmentData){
@@ -61,7 +64,7 @@ public class BookingController {
         if(accountId == null){
             return CurrentAccount.unauthorized();
         }
-        BaseResponse baseResponse = bookingService.acceptAppointment(accountId, appointmentActionData.getAppointmentId(),
+        BaseResponse baseResponse = appointmentWorkflowService.acceptAppointment(accountId, appointmentActionData.getAppointmentId(),
                 appointmentActionData.getDecisionNote());
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
@@ -73,7 +76,7 @@ public class BookingController {
         if(accountId == null){
             return CurrentAccount.unauthorized();
         }
-        BaseResponse baseResponse = bookingService.declineAppointment(accountId, appointmentActionData.getAppointmentId(),
+        BaseResponse baseResponse = appointmentWorkflowService.declineAppointment(accountId, appointmentActionData.getAppointmentId(),
                 appointmentActionData.getDecisionNote());
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
@@ -85,7 +88,7 @@ public class BookingController {
         if(accountId == null){
             return CurrentAccount.unauthorized();
         }
-        BaseResponse baseResponse = bookingService.completeAppointment(accountId, appointmentActionData.getAppointmentId());
+        BaseResponse baseResponse = appointmentWorkflowService.completeAppointment(accountId, appointmentActionData.getAppointmentId());
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -94,7 +97,7 @@ public class BookingController {
     public ResponseEntity<BaseResponse> retryAppointmentPayment(@Valid @RequestBody AppointmentActionData action, HttpServletRequest request){
         String accountId = CurrentAccount.id(request);
         if(accountId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(bookingService.retryAppointmentPayment(accountId, action.getAppointmentId()));
+        return ApiResponses.respond(appointmentWorkflowService.retryAppointmentPayment(accountId, action.getAppointmentId()));
     }
 
     @PostMapping("/cancel_appointment")
@@ -103,7 +106,7 @@ public class BookingController {
         if(accountId == null){
             return CurrentAccount.unauthorized();
         }
-        BaseResponse baseResponse = bookingService.cancelAppointment(accountId, appointmentActionData.getAppointmentId());
+        BaseResponse baseResponse = appointmentWorkflowService.cancelAppointment(accountId, appointmentActionData.getAppointmentId());
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -114,7 +117,7 @@ public class BookingController {
         if(accountId == null){
             return CurrentAccount.unauthorized();
         }
-        BaseResponse baseResponse = bookingService.stylerCancelAppointment(accountId, appointmentActionData.getAppointmentId());
+        BaseResponse baseResponse = appointmentWorkflowService.stylerCancelAppointment(accountId, appointmentActionData.getAppointmentId());
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

@@ -11,10 +11,8 @@ import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
-import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
@@ -37,21 +35,21 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 /**
- * Bookings: price estimates, booking an appointment, the accept / decline / complete / cancel workflow and scheduled payment authorization.
+ * Bookings: price estimates, booking an appointment and the booking lists.
+ * What happens after booking lives in {@link AppointmentWorkflowService};
+ * deferred card authorization lives in {@link PaymentAuthorizationService}.
  */
 @Service
 public class BookingService {
@@ -91,17 +89,6 @@ public class BookingService {
     private static final int SLOT_GRANULARITY_MINUTES = 15;
     @Value("${app.time-zone:America/Edmonton}")
     private String appTimeZone;
-    @Value("${app.booking.completion-grace-minutes:0}")
-    private long completionGraceMinutes;
-    @Value("${app.booking.payment-authorization-window-days:7}")
-    private long paymentAuthorizationWindowDays;
-    @Value("${app.booking.payment-authorization-lead-hours:48}")
-    private long paymentAuthorizationLeadHours;
-    /** Stylists may cancel a completed booking only within this window (hours since completion). */
-    @Value("${app.booking.styler-cancel-window-hours:24}")
-    private long stylerCancelWindowHours;
-    @Autowired
-    LoyaltyService loyaltyService;
     @Autowired
     NotificationService notificationService;
     @Autowired
@@ -110,6 +97,8 @@ public class BookingService {
     StylerEligibility stylerEligibility;
     @Autowired
     CardService cardService;
+    @Autowired
+    PaymentAuthorizationService paymentAuthorizationService;
 
     /** Null-safe eviction — unit tests that build this service without a cache never break. */
     private void evict(String... keys){
@@ -277,7 +266,7 @@ public class BookingService {
                 String destination = connectAccountId == null || connectAccountId.isBlank() ? null : connectAccountId;
                 long amountCents = MoneyUtils.centsFromPrice(pricing.totalPrice);
 
-                if(shouldAuthorizeNow(appointmentDate, appointmentStart)){
+                if(paymentAuthorizationService.shouldAuthorizeNow(appointmentDate, appointmentStart)){
                     // Near-term: authorize immediately with the one-time payment method.
                     // Reuse an existing Stripe customer id if the user has one; otherwise
                     // create one purely to host the authorization (no card persisted).
@@ -335,7 +324,7 @@ public class BookingService {
                         cardService.upsertPaymentReference(bookAppointmentData.getUserId(), customer.getId(), pm);
                         appointment.setPaymentStatus("PAYMENT_SCHEDULED");
                         appointment.setPaymentAmount(pricing.totalPrice);
-                        appointment.setPaymentAuthorizationDueAt(paymentAuthorizationDueAt(appointmentDate, appointmentStart));
+                        appointment.setPaymentAuthorizationDueAt(paymentAuthorizationService.paymentAuthorizationDueAt(appointmentDate, appointmentStart));
                     } catch(com.stripe.exception.StripeException ex){
                         LOG.warning("Payment reference save failed: " + ex.getMessage());
                         return Responses.paymentErrorResponse(response, "PAYMENT_ERROR",
@@ -388,109 +377,6 @@ public class BookingService {
             return Responses.errorResponse(response, ex.getMessage());
         }
         return response;
-    }
-
-    private boolean shouldAuthorizeNow(LocalDate appointmentDate, LocalTime appointmentStart){
-        ZonedDateTime scheduled = ZonedDateTime.of(appointmentDate, appointmentStart, applicationZone());
-        return !scheduled.isAfter(ZonedDateTime.now(applicationZone()).plusDays(paymentAuthorizationWindowDays));
-    }
-
-    private LocalDateTime paymentAuthorizationDueAt(LocalDate appointmentDate, LocalTime appointmentStart){
-        ZonedDateTime scheduled = ZonedDateTime.of(appointmentDate, appointmentStart, applicationZone())
-                .minusHours(paymentAuthorizationLeadHours);
-        ZonedDateTime now = ZonedDateTime.now(applicationZone());
-        return (scheduled.isBefore(now) ? now : scheduled).toLocalDateTime();
-    }
-
-    private LocalDateTime paymentAuthorizationDueAt(BookAppointmentEntity appointment){
-        if(appointment.getPaymentAuthorizationDueAt() != null){
-            return appointment.getPaymentAuthorizationDueAt();
-        }
-        LocalDate date = appointment.getAppointmentDateValue();
-        LocalTime start = appointment.getAppointmentStartTime();
-        if(date == null || start == null){
-            date = availabilityService.parseBookingDate(appointment.getAppointmentDate());
-            start = availabilityService.parseBookingTime(appointment.getArrivalTime());
-        }
-        return paymentAuthorizationDueAt(date, start);
-    }
-
-    /**
-     * Authorizes a scheduled booking exactly once. When captureAfterAuthorization
-     * is true, the stylist has already accepted and the authorized amount is
-     * captured immediately after Stripe confirms the hold.
-     */
-    @Transactional(rollbackFor = Exception.class)
-    PaymentAttemptResult authorizeScheduledPayment(BookAppointmentEntity appointment, boolean captureAfterAuthorization){
-        try {
-            Optional<CardDetailsEntity> card = cardDetailsRepo.findByUserId(appointment.getUserId());
-            if(card.isEmpty() || card.get().getStripeCustomerId() == null || card.get().getStripePaymentMethodId() == null){
-                appointment.setPaymentStatus("PAYMENT_FAILED");
-                appointment.setPaymentFailureCode("NO_PAYMENT_METHOD");
-                bookAppointmentRepo.save(appointment);
-                return PaymentAttemptResult.failure("NO_PAYMENT_METHOD", "Please add a payment method to complete this booking");
-            }
-            Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
-            String destination = styler.filter(s -> s.getStripeConnectAccountId() != null && !s.getStripeConnectAccountId().isBlank())
-                    .map(StylerEntity::getStripeConnectAccountId).orElse(null);
-            long amountCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null ? appointment.getPrice() : appointment.getPaymentAmount());
-            PaymentIntent intent = stripeService.authorizeBookingPayment(
-                    card.get().getStripeCustomerId(), card.get().getStripePaymentMethodId(),
-                    amountCents, appointment.getAppointmentId(), destination, paymentService.commissionCents(amountCents));
-            appointment.setPaymentIntentId(intent.getId());
-            appointment.setPaymentStatus("AUTHORIZED");
-            appointment.setPaymentFailureCode(null);
-            appointment.setPaymentAuthorizationDueAt(null);
-            if(captureAfterAuthorization){
-                stripeService.captureBookingPayment(intent.getId());
-                appointment.setPaymentStatus("CAPTURED");
-                paymentService.sendPaymentReceipt(appointment);
-            }
-            bookAppointmentRepo.save(appointment);
-            return PaymentAttemptResult.success();
-        } catch(com.stripe.exception.CardException ex){
-            String code = "authentication_required".equals(ex.getCode()) ? "PAYMENT_REQUIRES_ACTION"
-                    : "expired_card".equals(ex.getCode()) ? "CARD_EXPIRED" : "CARD_DECLINED";
-            appointment.setPaymentStatus("PAYMENT_REQUIRES_ACTION".equals(code) ? "PAYMENT_REQUIRES_ACTION" : "PAYMENT_FAILED");
-            appointment.setPaymentFailureCode(code);
-            bookAppointmentRepo.save(appointment);
-            String message = "PAYMENT_REQUIRES_ACTION".equals(code)
-                    ? "Please return to RapidStylers to confirm your payment."
-                    : "Your saved card could not be charged. Please update it and try again.";
-            return PaymentAttemptResult.failure(code, message);
-        } catch(Exception ex){
-            LOG.warning("Scheduled payment authorization failed: " + ex.getMessage());
-            appointment.setPaymentStatus("PAYMENT_FAILED");
-            appointment.setPaymentFailureCode("PAYMENT_ERROR");
-            bookAppointmentRepo.save(appointment);
-            return PaymentAttemptResult.failure("PAYMENT_ERROR", "Payment could not be completed. Please try again.");
-        }
-    }
-
-    @Scheduled(fixedDelayString = "${app.booking.payment-scheduler-delay-ms:60000}")
-    @Transactional(rollbackFor = Exception.class)
-    public void processDuePaymentAuthorizations(){
-        if(!stripeService.isConfigured()) return;
-        LocalDateTime now = LocalDateTime.now(applicationZone());
-        List<BookAppointmentEntity> due = bookAppointmentRepo
-                .findByPaymentStatusAndPaymentAuthorizationDueAtBefore("PAYMENT_ACCEPTED_SCHEDULED", now);
-        for(BookAppointmentEntity appointment : due){
-            if(!"3".equals(appointment.getStatus())) continue;
-            authorizeScheduledPayment(appointment, true);
-        }
-    }
-
-    private static class PaymentAttemptResult {
-        private final boolean success;
-        private final String code;
-        private final String message;
-        private PaymentAttemptResult(boolean success, String code, String message){
-            this.success = success;
-            this.code = code;
-            this.message = message;
-        }
-        private static PaymentAttemptResult success(){ return new PaymentAttemptResult(true, null, null); }
-        private static PaymentAttemptResult failure(String code, String message){ return new PaymentAttemptResult(false, code, message); }
     }
 
     private int serviceDuration(Integer durationMinutes){
@@ -600,21 +486,6 @@ public class BookingService {
         bookingSlotLockRepo.saveAllAndFlush(locks);
     }
 
-    private boolean appointmentStartHasPassed(BookAppointmentEntity appointment){
-        LocalDate date = appointment.getAppointmentDateValue();
-        LocalTime start = appointment.getAppointmentStartTime();
-        if(date == null || start == null){
-            try {
-                date = availabilityService.parseBookingDate(appointment.getAppointmentDate());
-                start = availabilityService.parseBookingTime(appointment.getArrivalTime());
-            } catch(Exception ex){
-                return false;
-            }
-        }
-        ZonedDateTime scheduled = ZonedDateTime.of(date, start, applicationZone());
-        return !ZonedDateTime.now(applicationZone()).isBefore(scheduled.plusMinutes(completionGraceMinutes));
-    }
-
     private ZoneId applicationZone(){
         try {
             return ZoneId.of(appTimeZone == null || appTimeZone.isBlank() ? "America/Edmonton" : appTimeZone);
@@ -642,291 +513,6 @@ public class BookingService {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
-        }
-        catch(Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse acceptAppointment(String stylerId, String appointmentId){
-        return acceptAppointment(stylerId, appointmentId, null);
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse acceptAppointment(String stylerId, String appointmentId, String decisionNote){
-        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "3", new String[]{"1"},
-                "Appointment confirmed", decisionNote);
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse declineAppointment(String stylerId, String appointmentId){
-        return declineAppointment(stylerId, appointmentId, null);
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse declineAppointment(String stylerId, String appointmentId, String decisionNote){
-        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "2", new String[]{"1"},
-                "Appointment rejected", decisionNote);
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse completeAppointment(String stylerId, String appointmentId){
-        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "0", new String[]{"3"}, "Appointment marked as completed");
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse cancelAppointment(String userId, String appointmentId){
-        return transitionAppointment(userId, ActorRole.CUSTOMER, appointmentId, "4", new String[]{"1", "3"}, "Appointment cancelled");
-    }
-
-    /**
-     * Stylist-initiated cancellation of their own appointment. Covers the
-     * completes-then-cancels edge case: a booking already marked completed
-     * (payment captured) is cancelled by the stylist who completed it, and
-     * the captured payment is refunded automatically — exactly once.
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse stylerCancelAppointment(String stylerId, String appointmentId){
-        return transitionAppointment(stylerId, ActorRole.STYLER, appointmentId, "4", new String[]{"3", "0"}, "Appointment cancelled");
-    }
-
-    /** Customer retry path for a deferred or failed payment. */
-    @Transactional(rollbackFor = Exception.class)
-    public BaseResponse retryAppointmentPayment(String userId, String appointmentId){
-        BaseResponse response = new BaseResponse(true);
-        try {
-            Optional<BookAppointmentEntity> found = bookAppointmentRepo.findByAppointmentId(appointmentId);
-            if(found.isEmpty()) return Responses.errorResponse(response, "Invalid Appointment Id");
-            BookAppointmentEntity appointment = found.get();
-            if(!userId.equals(appointment.getUserId())) return Responses.errorResponse(response, "You do not have permission to update this appointment");
-            if(!Arrays.asList("PAYMENT_FAILED", "PAYMENT_REQUIRES_ACTION", "PAYMENT_ACCEPTED_SCHEDULED").contains(appointment.getPaymentStatus())){
-                return Responses.errorResponse(response, "This appointment does not need a payment retry");
-            }
-            PaymentAttemptResult payment = authorizeScheduledPayment(appointment, "3".equals(appointment.getStatus()));
-            if(!payment.success){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage(payment.message);
-                response.setData(Collections.singletonMap("paymentError", payment.code));
-                return response;
-            }
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Payment completed successfully");
-            response.setData(EMPTY_DATA);
-        } catch(Exception ex){
-            LOG.warning("Payment retry failed: " + ex.getMessage());
-            return Responses.errorResponse(response, "Payment could not be completed. Please try again.");
-        }
-        return response;
-    }
-
-    private enum ActorRole { STYLER, CUSTOMER }
-
-    /**
-     * Loads an appointment, verifies the actor owns the correct side of it,
-     * and applies a status transition only when the current state is allowed.
-     * Status codes: 1 pending, 3 accepted, 2 rejected, 0 completed, 4 cancelled.
-     */
-    private BaseResponse transitionAppointment(String ownerId, ActorRole actorRole, String appointmentId,
-                                               String newStatus, String[] allowedFrom, String successMessage){
-        return transitionAppointment(ownerId, actorRole, appointmentId, newStatus, allowedFrom, successMessage, null);
-    }
-
-    private BaseResponse transitionAppointment(String ownerId, ActorRole actorRole, String appointmentId,
-                                               String newStatus, String[] allowedFrom, String successMessage,
-                                               String decisionNote){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            Optional<BookAppointmentEntity> isExist = bookAppointmentRepo.findByAppointmentIdForUpdate(appointmentId);
-            if(isExist.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Appointment Id");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            BookAppointmentEntity appointment = isExist.get();
-            boolean ownsAppointment = actorRole == ActorRole.STYLER
-                    ? ownerId.equals(appointment.getStylerId())
-                    : ownerId.equals(appointment.getUserId());
-            if(!ownsAppointment){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("You do not have permission to update this appointment");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            if("0".equals(newStatus) && !appointmentStartHasPassed(appointment)){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("An appointment can only be completed after its scheduled start time");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            boolean allowed = false;
-            for(String from : allowedFrom){
-                if(from.equals(appointment.getStatus())){
-                    allowed = true;
-                    break;
-                }
-            }
-            if(!allowed){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("This appointment cannot be updated from its current state");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            // Completed bookings can only be cancelled by the stylist within a
-            // short window of completion — after that, refunds go through admin.
-            if("4".equals(newStatus) && "0".equals(appointment.getStatus())){
-                LocalDateTime completedAt = appointment.getCompletedAt();
-                if(completedAt == null){
-                    response.setStatusCode(ERROR_STATUS_CODE);
-                    response.setMessage("This completed appointment cannot be cancelled — completion time is unknown. Please contact support.");
-                    response.setData(EMPTY_DATA);
-                    return response;
-                }
-                if(completedAt.isBefore(LocalDateTime.now(applicationZone()).minusHours(stylerCancelWindowHours))){
-                    response.setStatusCode(ERROR_STATUS_CODE);
-                    response.setMessage("Appointments can only be cancelled within " + stylerCancelWindowHours + " hours of completion");
-                    response.setData(EMPTY_DATA);
-                    return response;
-                }
-            }
-            if("3".equals(newStatus) && stripeService.isConfigured()
-                    && "PAYMENT_SCHEDULED".equals(appointment.getPaymentStatus())
-                    && paymentAuthorizationDueAt(appointment).isAfter(LocalDateTime.now(applicationZone()))){
-                // The stylist can accept an advance booking before the payment
-                // window opens. The scheduler will authorize it later.
-                appointment.setPaymentStatus("PAYMENT_ACCEPTED_SCHEDULED");
-                appointment.setPaymentFailureCode(null);
-            } else if("3".equals(newStatus) && stripeService.isConfigured()
-                    && "PAYMENT_SCHEDULED".equals(appointment.getPaymentStatus())){
-                PaymentAttemptResult payment = authorizeScheduledPayment(appointment, true);
-                if(!payment.success){
-                    response.setStatusCode(ERROR_STATUS_CODE);
-                    response.setMessage(payment.message);
-                    response.setData(Collections.singletonMap("paymentError", payment.code));
-                    return response;
-                }
-            }
-            if("3".equals(newStatus) && appointment.getPaymentIntentId() != null && stripeService.isConfigured()
-                    && "AUTHORIZED".equals(appointment.getPaymentStatus())){
-                try {
-                    stripeService.captureBookingPayment(appointment.getPaymentIntentId());
-                    appointment.setPaymentStatus("CAPTURED");
-                    paymentService.sendPaymentReceipt(appointment);
-                } catch(Exception ex){
-                    LOG.warning("Payment capture failed: " + ex.getMessage());
-                    response.setStatusCode(ERROR_STATUS_CODE);
-                    response.setMessage("Payment capture failed — please try again or update your payment method.");
-                    response.setData(EMPTY_DATA);
-                    return response;
-                }
-            }
-            if("0".equals(newStatus)){
-                appointment.setCompletedAt(LocalDateTime.now(applicationZone()));
-            }
-            appointment.setStatus(newStatus);
-            if(decisionNote != null && !decisionNote.isBlank()){
-                appointment.setStylerNote(AppUtils.sanitizeText(decisionNote.trim()));
-            }
-            bookAppointmentRepo.save(appointment);
-            if("2".equals(newStatus) || "4".equals(newStatus)){
-                // Rejected and customer-cancelled bookings release their held slots.
-                bookingSlotLockRepo.deleteByAppointmentId(appointment.getAppointmentId());
-                // A captured payment is refunded automatically; otherwise the
-                // authorized hold is released so the card is never charged.
-                if(appointment.getPaymentIntentId() != null && stripeService.isConfigured()){
-                    if("CAPTURED".equals(appointment.getPaymentStatus())){
-                        paymentService.autoRefundCapturedPayment(appointment,
-                                "Appointment " + ("2".equals(newStatus) ? "rejected" : "cancelled"), "SYSTEM");
-                    } else {
-                        try {
-                            stripeService.releaseBookingPayment(appointment.getPaymentIntentId());
-                            appointment.setPaymentStatus("RELEASED");
-                            bookAppointmentRepo.save(appointment);
-                        } catch(Exception ex){
-                            LOG.warning("Payment hold release failed: " + ex.getMessage());
-                        }
-                    }
-                }
-            }
-            if("0".equals(newStatus)){
-                if(stripeService.isConfigured() && "CAPTURED".equals(appointment.getPaymentStatus())
-                        && appointment.getStripeTransferId() == null){
-                    try {
-                        Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
-                        String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
-                        long totalCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null
-                                ? appointment.getPrice() : appointment.getPaymentAmount());
-                        double percent = paymentService.effectiveCommissionPercentForBooking(appointment);
-                        long commission = paymentService.commissionCents(totalCents, percent);
-                        long stylistShareCents = totalCents - commission;
-                        appointment.setCommissionPercent(appointment.getCommissionPercent() == null
-                                ? percent : appointment.getCommissionPercent());
-                        appointment.setPlatformFeeCents(commission);
-                        appointment.setStylistShareCents(stylistShareCents);
-                        if(destination != null && stylistShareCents > 0){
-                            com.stripe.model.Transfer transfer = stripeService.transferStylistShare(
-                                    destination, stylistShareCents, appointment.getAppointmentId());
-                            if(transfer != null){
-                                appointment.setStripeTransferId(transfer.getId());
-                            }
-                        }
-                        // Persist the fee breakdown (and transfer id, previously never saved here).
-                        bookAppointmentRepo.save(appointment);
-                    } catch(Exception ex){
-                        LOG.warning("Stylist payout transfer failed: " + ex.getMessage());
-                        response.setStatusCode(ERROR_STATUS_CODE);
-                        response.setMessage("Payout transfer failed — the appointment was not completed. Please contact support.");
-                        response.setData(EMPTY_DATA);
-                        return response;
-                    }
-                }
-                loyaltyService.awardCompletionPoints(appointment.getUserId(), appointment.getAppointmentId());
-            }
-            auditService.audit(ownerId, actorRole == ActorRole.STYLER ? "STYLER" : "CUSTOMER", "APPOINTMENT_" + newStatus,
-                    "APPOINTMENT", appointmentId, successMessage);
-
-            // Notify both parties about the outcome.
-            if("3".equals(newStatus)){
-                notificationService.sendAppointmentNotification(appointment, "Confirmed",
-                        "Your appointment has been confirmed",
-                        "The professional has accepted your booking request. See you at your appointment!",
-                        "Appointment confirmed",
-                        "You have confirmed this client's booking request.");
-            } else if("2".equals(newStatus)){
-                notificationService.sendAppointmentNotification(appointment, "Declined",
-                        "Your appointment request was declined",
-                        "The professional could not take this booking. Please book another slot.",
-                        "Appointment declined",
-                        "You have declined this client's booking request.");
-            } else if("0".equals(newStatus)){
-                notificationService.sendAppointmentNotification(appointment, "Completed",
-                        "Your appointment has been completed",
-                        "Thanks for using RapidStylers. We hope you enjoyed your session — a review is welcome.",
-                        "Appointment completed",
-                        "You have marked this appointment as completed.");
-            } else if("4".equals(newStatus)){
-                notificationService.sendAppointmentNotification(appointment, "Cancelled",
-                        "Your appointment was cancelled",
-                        "Your appointment has been cancelled. Check your dashboard for updates.",
-                        "Appointment cancelled",
-                        actorRole == ActorRole.STYLER
-                                ? "You have cancelled this appointment."
-                                : "This appointment has been cancelled by the client.");
-            }
-
-            // Booked-slot cache is display data; evict so the next profile view is fresh.
-            evict(ReadCacheService.KEY_STYLER_APPOINTMENTS + appointment.getStylerId());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(successMessage);
-            response.setData(EMPTY_DATA);
-        }
-        catch (RuntimeException ex){
-            // Persistence failures must escape the transaction so status changes
-            // and slot releases roll back together.
-            LOG.warning(ex.getMessage());
-            throw ex;
         }
         catch(Exception ex){
             LOG.warning(ex.getMessage());

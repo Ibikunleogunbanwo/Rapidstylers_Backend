@@ -7,8 +7,10 @@ import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
 import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.booking.service.IdempotencyService;
+import com.macrotel.rapidstylers.booking.service.PaymentAuthorizationService;
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
@@ -55,6 +57,7 @@ import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerService;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
@@ -137,7 +140,9 @@ public class TestServices {
             PortfolioService.class,
             SearchService.class,
             StylerEligibility.class,
-            StylerService.class);
+            StylerService.class,
+            AppointmentWorkflowService.class,
+            PaymentAuthorizationService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 
@@ -203,6 +208,14 @@ public class TestServices {
 
     public StylerService stylerService() {
         return get(StylerService.class);
+    }
+
+    public AppointmentWorkflowService appointmentWorkflowService() {
+        return get(AppointmentWorkflowService.class);
+    }
+
+    public PaymentAuthorizationService paymentAuthorizationService() {
+        return get(PaymentAuthorizationService.class);
     }
 
     private synchronized <T> T get(Class<T> type) {

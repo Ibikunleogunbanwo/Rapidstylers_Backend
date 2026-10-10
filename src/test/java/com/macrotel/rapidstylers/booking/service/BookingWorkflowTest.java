@@ -517,13 +517,13 @@ class BookingWorkflowTest {
         BookAppointmentEntity pending = appointment("1");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-1")).thenReturn(Optional.of(pending));
 
-        BaseResponse declined = services.bookingService().declineAppointment("STYLER1", "APPT-1");
+        BaseResponse declined = services.appointmentWorkflowService().declineAppointment("STYLER1", "APPT-1");
         assertEquals("200", declined.getStatusCode());
         verify(slotLockRepo).deleteByAppointmentId("APPT-1");
 
         BookAppointmentEntity accepted = appointment("APPT-2", "3");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-2")).thenReturn(Optional.of(accepted));
-        BaseResponse cancelled = services.bookingService().cancelAppointment("CUSTOMER1", "APPT-2");
+        BaseResponse cancelled = services.appointmentWorkflowService().cancelAppointment("CUSTOMER1", "APPT-2");
         assertEquals("200", cancelled.getStatusCode());
         verify(slotLockRepo).deleteByAppointmentId("APPT-2");
     }
@@ -534,7 +534,7 @@ class BookingWorkflowTest {
         pending.setAppointmentId("APPT-NOTE");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-NOTE")).thenReturn(Optional.of(pending));
 
-        BaseResponse accepted = services.bookingService().acceptAppointment("STYLER1", "APPT-NOTE", " Accepted anyway — far but worth it ");
+        BaseResponse accepted = services.appointmentWorkflowService().acceptAppointment("STYLER1", "APPT-NOTE", " Accepted anyway — far but worth it ");
 
         assertEquals("200", accepted.getStatusCode());
         assertEquals("3", pending.getStatus());
@@ -547,7 +547,7 @@ class BookingWorkflowTest {
         pending.setAppointmentId("APPT-NOTE2");
         when(appointmentRepo.findByAppointmentIdForUpdate("APPT-NOTE2")).thenReturn(Optional.of(pending));
 
-        services.bookingService().acceptAppointment("STYLER1", "APPT-NOTE2", "<script>alert(1)</script>accepted");
+        services.appointmentWorkflowService().acceptAppointment("STYLER1", "APPT-NOTE2", "<script>alert(1)</script>accepted");
         assertNotNull(pending.getStylerNote());
         assertFalse(pending.getStylerNote().contains("<script>"));
 
