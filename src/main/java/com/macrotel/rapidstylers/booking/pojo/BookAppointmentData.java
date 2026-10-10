@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.booking.pojo;
 
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.Pattern;
+import javax.validation.constraints.Size;
 import lombok.Data;
 
 @Data
@@ -26,6 +27,15 @@ public class BookAppointmentData {
     @Pattern(regexp = "^\\d+$", message = "Sub Service Id must be numeric")
     private String subServiceId;
     private String serviceTime;
+    /**
+     * Where a home visit happens, typed by the customer. The server finds it on
+     * the map and measures the travel distance itself, so the fee can't be
+     * lowered by editing the request. Required for home visits once the website
+     * sends it; until then travelDistanceKm is still accepted.
+     */
+    @Size(max = 500, message = "Visit address is too long")
+    private String serviceAddress;
+    /** Legacy: the browser's own distance guess. Ignored when serviceAddress is sent. */
     private Double travelDistanceKm;
     /** Optional client-generated key used to safely retry a booking request. */
     private String idempotencyKey;

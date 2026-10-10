@@ -20,6 +20,7 @@ public class AppointmentDTO {
     private String travelFee;
     private Double includedTravelKm;
     private Double travelDistanceKm;
+    private String serviceAddress;
     private Double billableTravelKm;
     private String baseTravelFee;
     private String price;

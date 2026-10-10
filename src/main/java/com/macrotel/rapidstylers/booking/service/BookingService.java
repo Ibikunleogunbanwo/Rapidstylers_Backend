@@ -25,6 +25,8 @@ import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
+import com.macrotel.rapidstylers.styler.service.GeoDistance;
+import com.macrotel.rapidstylers.styler.service.GeocodingService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.stripe.model.Customer;
 import com.stripe.model.PaymentIntent;
@@ -99,6 +101,8 @@ public class BookingService {
     CardService cardService;
     @Autowired
     PaymentAuthorizationService paymentAuthorizationService;
+    @Autowired
+    GeocodingService geocodingService;
 
     /** Null-safe eviction — unit tests that build this service without a cache never break. */
     private void evict(String... keys){
@@ -243,6 +247,7 @@ public class BookingService {
             appointment.setIncludedTravelKm(pricing.includedTravelKm);
             appointment.setTravelDistanceKm(pricing.travelDistanceKm);
             appointment.setBillableTravelKm(pricing.billableTravelKm);
+            appointment.setServiceAddress(pricing.serviceAddress);
             appointment.setBaseTravelFee(pricing.baseTravelFee);
             appointment.setPrice(pricing.totalPrice);
             // Snapshot the commission at booking time so the payout is deterministic
@@ -398,13 +403,22 @@ public class BookingService {
         double billableKm = 0.0;
         BigDecimal travelFee = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
+        String visitAddress = null;
         if(isHomeService(data.getServiceTime())){
-            if(data.getTravelDistanceKm() == null){
-                throw new IllegalArgumentException("Travel distance is required for home service bookings");
-            }
-            distanceKm = roundKm(data.getTravelDistanceKm());
-            if(distanceKm < 0){
-                throw new IllegalArgumentException("Travel distance cannot be negative");
+            if(data.getServiceAddress() != null && !data.getServiceAddress().isBlank()){
+                // Measured here, from the address, so the request can't name its own distance.
+                VisitLocation visit = locateVisit(data.getServiceAddress().trim(), styler);
+                distanceKm = visit.distanceKm;
+                visitAddress = visit.formattedAddress;
+            } else {
+                // Legacy clients that only send their own distance guess.
+                if(data.getTravelDistanceKm() == null){
+                    throw new IllegalArgumentException("Travel distance is required for home service bookings");
+                }
+                distanceKm = roundKm(data.getTravelDistanceKm());
+                if(distanceKm < 0){
+                    throw new IllegalArgumentException("Travel distance cannot be negative");
+                }
             }
             billableKm = roundKm(Math.max(0.0, distanceKm - includedKm));
             // Flat home-visit fee beyond the included radius — no per-km pricing.
@@ -421,7 +435,34 @@ public class BookingService {
                 distanceKm,
                 billableKm,
                 MoneyUtils.money(baseTravelFee),
-                MoneyUtils.money(total));
+                MoneyUtils.money(total),
+                visitAddress);
+    }
+
+    /** Finds the visit address on the map and measures the straight line to the stylist. */
+    private VisitLocation locateVisit(String address, StylerEntity styler){
+        if(styler.getLatitude() == null || styler.getLongitude() == null){
+            throw new IllegalArgumentException("This professional's location isn't set, so home visits can't be priced yet");
+        }
+        Map<String, Object> geo = geocodingService == null ? null : geocodingService.geocode(address);
+        if(geo == null || geo.get("latitude") == null || geo.get("longitude") == null){
+            throw new IllegalArgumentException("We couldn't find that address. Check it and try again");
+        }
+        double km = GeoDistance.km(styler.getLatitude(), styler.getLongitude(),
+                ((Number) geo.get("latitude")).doubleValue(), ((Number) geo.get("longitude")).doubleValue());
+        Object formatted = geo.get("formattedAddress");
+        return new VisitLocation(roundKm(km),
+                formatted == null || formatted.toString().isBlank() ? address : formatted.toString());
+    }
+
+    private static class VisitLocation {
+        private final double distanceKm;
+        private final String formattedAddress;
+
+        private VisitLocation(double distanceKm, String formattedAddress) {
+            this.distanceKm = distanceKm;
+            this.formattedAddress = formattedAddress;
+        }
     }
 
     private int parsePeople(String noOfPeople){
@@ -449,10 +490,11 @@ public class BookingService {
         private final Double billableTravelKm;
         private final String baseTravelFee;
         private final String totalPrice;
+        private final String serviceAddress;
 
         private TravelPricing(String servicePrice, String travelFee, Double includedTravelKm,
                               Double travelDistanceKm, Double billableTravelKm,
-                              String baseTravelFee, String totalPrice) {
+                              String baseTravelFee, String totalPrice, String serviceAddress) {
             this.servicePrice = servicePrice;
             this.travelFee = travelFee;
             this.includedTravelKm = includedTravelKm;
@@ -460,6 +502,7 @@ public class BookingService {
             this.billableTravelKm = billableTravelKm;
             this.baseTravelFee = baseTravelFee;
             this.totalPrice = totalPrice;
+            this.serviceAddress = serviceAddress;
         }
 
         private Map<String, Object> toMap(){
@@ -471,6 +514,7 @@ public class BookingService {
             data.put("billableTravelKm", billableTravelKm);
             data.put("baseTravelFee", baseTravelFee);
             data.put("totalPrice", totalPrice);
+            data.put("serviceAddress", serviceAddress);
             return data;
         }
     }

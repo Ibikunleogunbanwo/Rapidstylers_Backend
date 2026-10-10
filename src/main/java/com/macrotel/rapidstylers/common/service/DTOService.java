@@ -199,6 +199,7 @@ public class DTOService {
                 ? 15.0 : bookAppointmentEntity.getIncludedTravelKm());
         appointmentDTO.setTravelDistanceKm(bookAppointmentEntity.getTravelDistanceKm() == null
                 ? 0.0 : bookAppointmentEntity.getTravelDistanceKm());
+        appointmentDTO.setServiceAddress(bookAppointmentEntity.getServiceAddress());
         appointmentDTO.setBillableTravelKm(bookAppointmentEntity.getBillableTravelKm() == null
                 ? 0.0 : bookAppointmentEntity.getBillableTravelKm());
         appointmentDTO.setBaseTravelFee(bookAppointmentEntity.getBaseTravelFee() == null

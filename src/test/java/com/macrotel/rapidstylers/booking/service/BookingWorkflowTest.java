@@ -25,6 +25,7 @@ import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.GeocodingService;
 import com.macrotel.rapidstylers.support.TestServices;
 import com.stripe.exception.CardException;
 import com.stripe.model.PaymentIntent;
@@ -580,6 +581,113 @@ class BookingWorkflowTest {
         paymentController.updateCardDetails(card, request);
         verify(cardService).updateUserCardDetails(org.mockito.ArgumentMatchers.argThat(value ->
                 "JWT-CUSTOMER".equals(value.getUserId())));
+    }
+
+    @Test
+    void homeServiceDistanceIsMeasuredFromTheVisitAddressNotTheClientNumber() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("homeService");
+        data.setServiceAddress("  10 Main St, Calgary  ");
+        data.setTravelDistanceKm(1.0); // a client-sent number is ignored when an address is given
+        StylerEntity styler = homeVisitStyler();
+        stubBookableHomeVisit(styler);
+        GeocodingService geocoding = mock(GeocodingService.class);
+        // About 0.2 degrees of latitude north of the stylist: roughly 22.2 km.
+        when(geocoding.geocode("10 Main St, Calgary")).thenReturn(Map.of(
+                "latitude", 51.2447, "longitude", -114.0719,
+                "formattedAddress", "10 Main St NW, Calgary, AB"));
+        services.geocodingService = geocoding;
+
+        BaseResponse response = services.bookingService().bookAppointment(data);
+
+        assertEquals("200", response.getStatusCode());
+        verify(appointmentRepo).saveAndFlush(argThat(appointment ->
+                Double.valueOf(22.2).equals(appointment.getTravelDistanceKm())
+                        && "25.00".equals(appointment.getTravelFee())
+                        && "10 Main St NW, Calgary, AB".equals(appointment.getServiceAddress())));
+    }
+
+    @Test
+    void estimateReturnsTheServerMeasuredDistanceAndVisitAddress() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("homeService");
+        data.setServiceAddress("10 Main St, Calgary");
+        StylerEntity styler = homeVisitStyler();
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(90)));
+        GeocodingService geocoding = mock(GeocodingService.class);
+        when(geocoding.geocode("10 Main St, Calgary")).thenReturn(Map.of(
+                "latitude", 51.0547, "longitude", -114.0719));
+        services.geocodingService = geocoding;
+
+        BaseResponse response = services.bookingService().estimateBooking(data);
+
+        assertEquals("200", response.getStatusCode());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> estimate = (Map<String, Object>) response.getData();
+        assertEquals(1.1, estimate.get("travelDistanceKm"));
+        assertEquals("10 Main St, Calgary", estimate.get("serviceAddress"));
+        assertEquals("0.00", estimate.get("travelFee"));
+    }
+
+    @Test
+    void homeServiceRejectsAnAddressThatCannotBeFound() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("homeService");
+        data.setServiceAddress("nowhere at all");
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(homeVisitStyler()));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(90)));
+        services.geocodingService = mock(GeocodingService.class); // geocode() returns null
+
+        BaseResponse response = services.bookingService().estimateBooking(data);
+
+        assertEquals("400", response.getStatusCode());
+        assertEquals("We couldn't find that address. Check it and try again", response.getMessage());
+    }
+
+    @Test
+    void homeServiceRejectsAVisitAddressWhenTheStylistHasNoLocation() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("homeService");
+        data.setServiceAddress("10 Main St, Calgary");
+        StylerEntity styler = homeVisitStyler();
+        styler.setLatitude(null);
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(90)));
+        GeocodingService geocoding = mock(GeocodingService.class);
+        services.geocodingService = geocoding;
+
+        BaseResponse response = services.bookingService().estimateBooking(data);
+
+        assertEquals("400", response.getStatusCode());
+        assertEquals("This professional's location isn't set, so home visits can't be priced yet", response.getMessage());
+        verifyNoInteractions(geocoding);
+    }
+
+    private StylerEntity homeVisitStyler() {
+        StylerEntity styler = approvedStyler();
+        styler.setLatitude(51.0447);
+        styler.setLongitude(-114.0719);
+        styler.setIncludedTravelKm(15.0);
+        styler.setBaseTravelFee("25.00");
+        return styler;
+    }
+
+    private void stubBookableHomeVisit(StylerEntity styler) {
+        UserEntity customer = new UserEntity();
+        customer.setUserId("CUSTOMER1");
+        when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
+        when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(styler));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(90)));
+        when(appointmentRepo.findByUserIdAndStylerIdAndAppointmentDateValueAndAppointmentStartTimeAndStatusIn(
+                anyString(), anyString(), any(), any(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findDuplicateBooking(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDateValue(anyString(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDate(anyString(), anyString())).thenReturn(Collections.emptyList());
+        when(availabilityRepo.findByStylerId(anyString())).thenReturn(Collections.emptyList());
+        when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
+        when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     private BookAppointmentData bookingData() {

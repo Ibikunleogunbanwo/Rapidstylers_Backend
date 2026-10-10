@@ -41,6 +41,9 @@ public class BookAppointmentEntity implements Serializable {
     private Double includedTravelKm;
     private Double travelDistanceKm;
     private Double billableTravelKm;
+    // Home-visit address as Google formatted it; null for salon visits.
+    @Column(name = "service_address", length = 500)
+    private String serviceAddress;
     private String baseTravelFee;
     private String price;
     private String status;
