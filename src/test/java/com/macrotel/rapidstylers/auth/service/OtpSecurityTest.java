@@ -316,6 +316,48 @@ class OtpSecurityTest {
         verify(otpRepo).save(argThat(otp -> otp.getIsUsed() != null && otp.getIsUsed().equals("0")));
     }
 
+    // ── Wrong guesses are capped per emailed code, not just per IP ────
+
+    @Test
+    void aWrongGuessCountsAgainstTheEmailedCode() {
+        OTPEntity open = otpEntity("real@example.com", "USER SIGN UP", "111111");
+        open.setId(7L);
+        when(otpRepo.findLatestUnusedByEmail("real@example.com")).thenReturn(Optional.of(open));
+        when(otpRepo.recordWrongGuess(7L, OtpService.OTP_MAX_WRONG_GUESSES)).thenReturn(1);
+        when(otpRepo.findById(7L)).thenReturn(Optional.of(open));
+
+        BaseResponse response = otpService.verifyUserOTP("real@example.com", "222222");
+
+        assertEquals("Invalid OTP Code", response.getMessage());
+        verify(otpRepo).recordWrongGuess(7L, OtpService.OTP_MAX_WRONG_GUESSES);
+    }
+
+    @Test
+    void theLastAllowedWrongGuessClosesTheCodeAndSaysSo() {
+        OTPEntity open = otpEntity("vendor@example.com", "STYLER SIGN UP", "111111");
+        open.setId(8L);
+        OTPEntity closed = otpEntity("vendor@example.com", "STYLER SIGN UP", "111111");
+        closed.setId(8L);
+        closed.setIsUsed(OTPEntity.LOCKED);
+        when(otpRepo.findLatestUnusedByEmail("vendor@example.com")).thenReturn(Optional.of(open));
+        when(otpRepo.recordWrongGuess(8L, OtpService.OTP_MAX_WRONG_GUESSES)).thenReturn(1);
+        when(otpRepo.findById(8L)).thenReturn(Optional.of(closed));
+
+        BaseResponse response = otpService.stylerVerifyOtp("vendor@example.com", "222222");
+
+        assertEquals("400", response.getStatusCode());
+        assertEquals(OtpService.CODE_LOCKED, response.getMessage());
+    }
+
+    @Test
+    void aWrongGuessForAnEmailWithNoOpenCodeCountsOnlyAgainstTheIp() {
+        BaseResponse response = otpService.verifyUserOTP("nobody@example.com", "222222");
+
+        assertEquals("Invalid OTP Code", response.getMessage());
+        verify(otpRepo, never()).recordWrongGuess(any(), anyInt());
+        verify(rateLimiterService).record("auth_ip:127.0.0.1", 900);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────
 
     private OTPData otpData(String email) {

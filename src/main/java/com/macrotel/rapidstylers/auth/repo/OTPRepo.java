@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,6 +24,19 @@ public interface OTPRepo extends JpaRepository<OTPEntity,Long> {
     @Query(value = "SELECT * FROM otp_codes " +
                     "WHERE email_address =:emailAddress AND is_used='1' ORDER BY id DESC LIMIT 1", nativeQuery = true)
     Optional<OTPEntity> findLatestUnusedByEmail(@Param("emailAddress") String emailAddress);
+
+    /**
+     * Counts one wrong guess against a code that is still open and, on the guess
+     * that reaches :max, closes it (is_used='2'). MySQL applies SET clauses left
+     * to right, so the CASE already sees the new count. It is one statement, so
+     * guesses sent in parallel cannot slip past the limit.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE otp_codes SET failed_attempts = failed_attempts + 1, " +
+                    "is_used = CASE WHEN failed_attempts >= :max THEN '2' ELSE is_used END " +
+                    "WHERE id = :id AND is_used = '1'", nativeQuery = true)
+    int recordWrongGuess(@Param("id") Long id, @Param("max") int max);
 
     @Query(value = "SELECT * FROM otp_codes " +
                     "WHERE email_address =:emailAddress AND purpose='USER SIGN UP' AND is_used='0' ORDER BY id DESC LIMIT 1", nativeQuery = true)

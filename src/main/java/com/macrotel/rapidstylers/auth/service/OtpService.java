@@ -41,6 +41,9 @@ public class OtpService {
     private static final int OTP_GEN_MAX = 3;             // per email
     private static final int OTP_VERIFY_WINDOW_SECONDS = 900;
     private static final int OTP_VERIFY_MAX = 10;         // per IP
+    // Wrong guesses one emailed code survives, from any number of IPs.
+    static final int OTP_MAX_WRONG_GUESSES = 5;
+    static final String CODE_LOCKED = "Too many wrong codes. Request a new code and try again.";
     @Autowired
     OTPRepo otpRepo;
     @Autowired
@@ -148,12 +151,7 @@ public class OtpService {
             // (never by code), then compare the code against its stored hash.
             Optional<OTPEntity> isOTPExist = otpRepo.findLatestUnusedByEmail(emailAddress);
             if(isOTPExist.isEmpty() || !appUtils.otpMatches(otpCode, isOTPExist.get().getCode())){
-                // Wrong code or unknown email — count failures against the IP.
-                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid OTP Code");
-                response.setData(EMPTY_DATA);
-                return response;
+                return wrongCode(response, ip, isOTPExist);
             }
             OTPEntity otpData = isOTPExist.get();
             String otpPurpose = otpData.getPurpose();
@@ -197,7 +195,7 @@ public class OtpService {
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
             }
-            otpData.setIsUsed("0");
+            otpData.setIsUsed(OTPEntity.VERIFIED);
             otpRepo.save(otpData);
         }
         catch (Exception ex){
@@ -349,6 +347,26 @@ public class OtpService {
     }
 
     /**
+     * Answers a wrong code (or an email with no open code). The guess counts
+     * against the caller's IP and against the emailed code itself, so spreading
+     * guesses over many IPs still runs out: on the last allowed wrong guess the
+     * code closes and only a newly emailed one can verify the address.
+     */
+    private BaseResponse wrongCode(BaseResponse response, String ip, Optional<OTPEntity> openCode){
+        rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
+        boolean closed = false;
+        if(openCode.isPresent()){
+            Long id = openCode.get().getId();
+            closed = otpRepo.recordWrongGuess(id, OTP_MAX_WRONG_GUESSES) > 0
+                    && otpRepo.findById(id).map(otp -> OTPEntity.LOCKED.equals(otp.getIsUsed())).orElse(false);
+        }
+        response.setStatusCode(ERROR_STATUS_CODE);
+        response.setMessage(closed ? CODE_LOCKED : "Invalid OTP Code");
+        response.setData(EMPTY_DATA);
+        return response;
+    }
+
+    /**
      * Verify stylist OTP — same logic as user OTP but with STYLER SIGN UP purpose.
      */
     public BaseResponse stylerVerifyOtp(String emailAddress, String otpCode){
@@ -375,12 +393,7 @@ public class OtpService {
             // (never by code), then compare the code against its stored hash.
             Optional<OTPEntity> isOTPExist = otpRepo.findLatestUnusedByEmail(emailAddress);
             if(isOTPExist.isEmpty() || !appUtils.otpMatches(otpCode, isOTPExist.get().getCode())){
-                // Wrong code or unknown email — count failures against the IP.
-                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid OTP Code");
-                response.setData(EMPTY_DATA);
-                return response;
+                return wrongCode(response, ip, isOTPExist);
             }
             OTPEntity otpData = isOTPExist.get();
             String otpPurpose = otpData.getPurpose();
@@ -426,7 +439,7 @@ public class OtpService {
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
             }
-            otpData.setIsUsed("0");
+            otpData.setIsUsed(OTPEntity.VERIFIED);
             otpRepo.save(otpData);
         }
         catch (Exception ex){

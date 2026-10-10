@@ -12,6 +12,11 @@ import java.time.format.DateTimeFormatter;
 @Entity
 @Table(name = "otp_codes")
 public class OTPEntity implements Serializable {
+    /** isUsed values: still open, verified, closed after too many wrong guesses. */
+    public static final String OPEN = "1";
+    public static final String VERIFIED = "0";
+    public static final String LOCKED = "2";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
@@ -20,6 +25,9 @@ public class OTPEntity implements Serializable {
     private String purpose;
     private String insertedDt;
     private String isUsed;
+    // Wrong guesses made against this code (see OTPRepo.recordWrongGuess).
+    @Column(name = "failed_attempts", nullable = false)
+    private int failedAttempts;
     // Abandoned-signup recovery milestone already emailed for this attempt:
     // 0 = none, 1 = 24h reminder, 2 = 7d, 3 = 14d, 4 = 1 month. New attempts
     // start at 0, so a fresh sign-up can be followed up afresh.
