@@ -1,62 +1,75 @@
 package com.macrotel.rapidstylers.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.macrotel.rapidstylers.pojo.BaseResponse;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.*;
-import java.util.logging.Logger;
-
-import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 /**
- * Detects user location from their IP address using ip-api.com (free, no key).
- * Returns lat/lng + city + province so the frontend can use it as default
+ * Detects the visitor's approximate location from the headers Cloudflare's
+ * "Add visitor location headers" managed transform puts on every proxied
+ * request (cf-iplatitude, cf-iplongitude, cf-ipcity, cf-region, cf-ipcountry).
+ * Returns lat/lng + city + province so the frontend can use it as the default
  * search location.
+ *
+ * This replaces an ip-api.com lookup keyed on request.getRemoteAddr(), which
+ * behind Nginx + Docker is the bridge gateway, so production always fell back
+ * to Edmonton. No outbound call is made now. Without the headers (local dev,
+ * or the transform turned off in the Cloudflare dashboard) the Edmonton
+ * fallback is returned, as before.
  */
 @Service
 public class LocationService {
 
-    private static final Logger LOG = Logger.getLogger(LocationService.class.getName());
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    static final String LATITUDE_HEADER = "cf-iplatitude";
+    static final String LONGITUDE_HEADER = "cf-iplongitude";
+    static final String CITY_HEADER = "cf-ipcity";
+    static final String REGION_HEADER = "cf-region";
+    static final String COUNTRY_HEADER = "cf-ipcountry";
 
     /**
-     * Detect location from the request's remote IP address.
-     * Falls back to Edmonton, AB if detection fails.
+     * Detect location from Cloudflare's visitor location headers.
+     * Falls back to Edmonton, AB if they are missing or unusable.
      */
     public Map<String, Object> detectLocation(HttpServletRequest request) {
-        try {
-            // In dev, the IP is 127.0.0.1 — use a public IP for testing
-            String ip = request.getRemoteAddr();
-            if ("127.0.0.1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip)) {
-                ip = "";  // ip-api.com uses the caller's IP when empty
-            }
-
-            String url = "http://ip-api.com/json/" + ip + "?fields=status,country,regionName,city,lat,lon";
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-            JsonNode root = objectMapper.readTree(response.getBody());
-
-            if (!"success".equals(root.path("status").asText())) {
-                return fallbackLocation();
-            }
-
-            Map<String, Object> location = new HashMap<>();
-            location.put("latitude", root.path("lat").asDouble());
-            location.put("longitude", root.path("lon").asDouble());
-            location.put("city", root.path("city").asText(""));
-            location.put("province", root.path("regionName").asText(""));
-            location.put("country", root.path("country").asText("Canada"));
-            return location;
-
-        } catch (Exception ex) {
-            LOG.warning("IP geolocation error: " + ex.getMessage());
+        Double latitude = coordinate(request.getHeader(LATITUDE_HEADER), 90);
+        Double longitude = coordinate(request.getHeader(LONGITUDE_HEADER), 180);
+        if (latitude == null || longitude == null) {
             return fallbackLocation();
         }
+
+        Map<String, Object> location = new HashMap<>();
+        location.put("latitude", latitude);
+        location.put("longitude", longitude);
+        location.put("city", text(request.getHeader(CITY_HEADER)));
+        location.put("province", text(request.getHeader(REGION_HEADER)));
+        location.put("country", countryName(request.getHeader(COUNTRY_HEADER)));
+        return location;
+    }
+
+    private static Double coordinate(String value, double limit) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            double parsed = Double.parseDouble(value.trim());
+            return (Double.isFinite(parsed) && Math.abs(parsed) <= limit) ? parsed : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static String text(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    /** Cloudflare sends an ISO 3166-1 alpha-2 code; ip-api used to send the English name. */
+    private static String countryName(String code) {
+        if (code == null || code.isBlank()) {
+            return "Canada";
+        }
+        String name = new Locale("", code.trim().toUpperCase(Locale.ROOT)).getDisplayCountry(Locale.ENGLISH);
+        return name.isBlank() ? code.trim() : name;
     }
 
     private Map<String, Object> fallbackLocation() {
