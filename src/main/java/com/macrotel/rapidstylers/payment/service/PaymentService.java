@@ -492,7 +492,7 @@ public class PaymentService {
             // balance cannot cover it yet.
             if (appointment.getStripeTransferId() != null && !appointment.getStripeTransferId().isBlank()) {
                 if (payoutReversalService != null) {
-                    long shareCents = totalCents - commissionCents(totalCents);
+                    long shareCents = stylistShareOfRefund(appointment, totalCents);
                     payoutReversalService.requestReversal(appointment.getAppointmentId(),
                             appointment.getStripeTransferId(),
                             String.format(Locale.ROOT, "%.2f", shareCents / 100.0),
@@ -597,6 +597,7 @@ public class PaymentService {
                 if (outboxEventService != null) {
                     outboxEventService.refundEvent(appointment, refund.getAmount(), data.getReason(), true);
                 }
+                String recovered = recoverStylistShare(adminId, appointment, refund, refundCents, data);
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Refund processed");
                 Map<String, Object> result = new LinkedHashMap<>();
@@ -608,6 +609,7 @@ public class PaymentService {
                 result.put("refundedTotal", MoneyUtils.moneyCents(refundedNowCents));
                 result.put("refundableRemaining", MoneyUtils.moneyCents(Math.max(0, capturedCents - refundedNowCents)));
                 result.put("fullyRefunded", fullyRefunded);
+                result.put("stylistShareRecovered", recovered);
                 response.setData(result);
             } catch (Exception ex) {
                 LOG.warning("Refund failed: " + ex.getMessage());
@@ -711,6 +713,43 @@ public class PaymentService {
             }
         }
         return total;
+    }
+
+    /**
+     * When the admin asked for it and the stylist has been paid, takes the
+     * stylist's part of this refund back from their payout. Returns the amount
+     * being recovered, or null when nothing is.
+     */
+    private String recoverStylistShare(String adminId, BookAppointmentEntity appointment, RefundEntity refund,
+                                       long refundCents, RefundRequestData data) {
+        String transferId = appointment.getStripeTransferId();
+        if (!Boolean.TRUE.equals(data.getRecoverStylistShare()) || transferId == null || transferId.isBlank()
+                || payoutReversalService == null) {
+            return null;
+        }
+        long shareCents = stylistShareOfRefund(appointment, refundCents);
+        if (shareCents <= 0) {
+            return null;
+        }
+        String amount = MoneyUtils.moneyCents(shareCents);
+        auditService.audit(adminId, "ADMIN", "PAYOUT_RECOVERY_REQUESTED", "APPOINTMENT", appointment.getAppointmentId(),
+                "Taking back $" + amount + " of the stylist payout for refund " + refund.getRefundId());
+        payoutReversalService.requestRefundReversal(appointment.getAppointmentId(), transferId, amount,
+                "Stylist share of refund " + refund.getRefundId(), refund.getRefundId());
+        return amount;
+    }
+
+    /**
+     * The stylist's part of a refund: the refund split the way the booking's
+     * payout was split between stylist and platform.
+     */
+    public long stylistShareOfRefund(BookAppointmentEntity appointment, long refundCents) {
+        Long share = appointment.getStylistShareCents();
+        Long fee = appointment.getPlatformFeeCents();
+        if (share != null && fee != null && share + fee > 0) {
+            return Math.round((double) refundCents * share / (share + fee));
+        }
+        return refundCents - commissionCents(refundCents, effectiveCommissionPercentForBooking(appointment));
     }
 
     /** What the customer was charged for this booking, in cents. */

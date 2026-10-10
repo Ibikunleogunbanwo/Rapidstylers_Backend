@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -181,6 +182,62 @@ class RefundServiceTest {
         assertEquals("200", response.getStatusCode());
         verify(stripeService).refundBookingPayment(eq("pi_1"), eq(10000L), any(), any());
         assertEquals("REFUNDED", appointment.getPaymentStatus());
+    }
+
+    // ── Taking the stylist's share back on an admin refund ────────────
+
+    private BookAppointmentEntity paidOutAppointment() {
+        BookAppointmentEntity appointment = capturedAppointment();
+        appointment.setStatus("0");
+        appointment.setStripeTransferId("tr_1");
+        appointment.setPlatformFeeCents(1500L);   // 12% of 125.00
+        appointment.setStylistShareCents(11000L);
+        return appointment;
+    }
+
+    @Test
+    void anAdminCanTakeTheStylistsPartOfARefundBack() throws Exception {
+        BookAppointmentEntity appointment = paidOutAppointment();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        stripeRefunds(5000L);
+        RefundRequestData data = refundOf("50.00");
+        data.setRecoverStylistShare(true);
+
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", data);
+
+        assertEquals("200", response.getStatusCode());
+        // $50 of a $125 booking the stylist got $110 of: 50 x 110 / 125 = $44.
+        verify(payoutReversalService).requestRefundReversal(eq("APPT1"), eq("tr_1"), eq("44.00"), any(), startsWith("RFND-"));
+        assertEquals("44.00", ((java.util.Map<?, ?>) response.getData()).get("stylistShareRecovered"));
+    }
+
+    @Test
+    void withoutBeingAskedTheStylistKeepsTheirPay() throws Exception {
+        BookAppointmentEntity appointment = paidOutAppointment();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        stripeRefunds(5000L);
+
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", refundOf("50.00"));
+
+        assertEquals("200", response.getStatusCode());
+        verify(payoutReversalService, never()).requestRefundReversal(any(), any(), any(), any(), any());
+        assertEquals(null, ((java.util.Map<?, ?>) response.getData()).get("stylistShareRecovered"));
+    }
+
+    @Test
+    void thereIsNothingToTakeBackBeforeTheStylistIsPaid() throws Exception {
+        BookAppointmentEntity appointment = capturedAppointment();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        stripeRefunds(5000L);
+        RefundRequestData data = refundOf("50.00");
+        data.setRecoverStylistShare(true);
+
+        services.paymentService.adminRefund("ADMIN1", data);
+
+        verify(payoutReversalService, never()).requestRefundReversal(any(), any(), any(), any(), any());
     }
 
     @Test

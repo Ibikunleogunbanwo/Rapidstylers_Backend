@@ -308,6 +308,15 @@ public class StripeService {
      */
     public com.stripe.model.TransferReversal reverseTransfer(String transferId, String reason,
                                                              String idempotencyKey) throws StripeException {
+        return reverseTransfer(transferId, null, reason, idempotencyKey);
+    }
+
+    /**
+     * Reverses part of a stylist payout transfer: amountCents, or what is left of
+     * the transfer when that is less. A null amount reverses everything left.
+     */
+    public com.stripe.model.TransferReversal reverseTransfer(String transferId, Long amountCents, String reason,
+                                                             String idempotencyKey) throws StripeException {
         TransferReversalCollectionCreateParams.Builder builder = TransferReversalCollectionCreateParams.builder();
         if (reason != null && !reason.isBlank()) {
             builder.putMetadata("reason", reason);
@@ -316,6 +325,13 @@ public class StripeService {
                 ? RequestOptions.builder().setIdempotencyKey(idempotencyKey).build()
                 : RequestOptions.builder().build();
         Transfer transfer = Transfer.retrieve(transferId);
+        if (amountCents != null) {
+            long left = transfer.getAmount() - (transfer.getAmountReversed() == null ? 0L : transfer.getAmountReversed());
+            if (left <= 0) {
+                throw new IllegalStateException("Transfer " + transferId + " is already fully reversed");
+            }
+            builder.setAmount(Math.min(amountCents, left));
+        }
         return transfer.getReversals().create(builder.build(), options);
     }
 

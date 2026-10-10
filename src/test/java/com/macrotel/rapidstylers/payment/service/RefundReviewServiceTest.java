@@ -41,6 +41,7 @@ class RefundReviewServiceTest {
         review.userRepo = mock(UserRepo.class);
         review.stylerRepo = mock(StylerRepo.class);
         review.subServiceRepo = mock(SubServiceRepo.class);
+        review.payoutReversalRepo = mock(com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo.class);
 
         UserEntity customer = new UserEntity();
         customer.setFirstname("Ada");
@@ -103,6 +104,7 @@ class RefundReviewServiceTest {
         assertEquals("15.00", data.get("platformFee"));
         assertEquals("110.00", data.get("stylistShare"));
         assertEquals(true, data.get("stylistPaidOut"));
+        assertEquals(List.of(), data.get("payoutRecoveries"));
         assertEquals(List.of(partial), data.get("refunds"));
     }
 

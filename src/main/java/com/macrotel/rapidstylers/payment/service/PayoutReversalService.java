@@ -51,19 +51,61 @@ public class PayoutReversalService {
     private String adminAlertEmail;
 
     /**
-     * Creates a reversal record (at most one per transfer) and attempts the
-     * Stripe reversal immediately. Safe to call from the refund path.
+     * Reversals tied to one refund carry this prefix plus the refund id. They take
+     * back only their amount (the stylist's part of that refund); any other
+     * reversal takes back everything left of the transfer.
+     */
+    static final String REFUND_LINKED = "REV-RFND-";
+
+    /**
+     * Creates a reversal record (at most one full reversal per transfer) and
+     * attempts the Stripe reversal immediately. Safe to call from the refund path.
      */
     public void requestReversal(String appointmentId, String transferId, String amount, String reason) {
         if (transferId == null || transferId.isBlank()) {
             return;
         }
         try {
-            if (!payoutReversalRepo.findByTransferId(transferId).isEmpty()) {
+            if (payoutReversalRepo.findByTransferId(transferId).stream().anyMatch(r -> !isRefundLinked(r))) {
                 return; // already tracked — the retry job owns it
             }
+        } catch (Exception ex) {
+            LOG.warning("Payout reversal request failed: " + ex.getMessage());
+            return;
+        }
+        create(appointmentId, transferId, amount, reason,
+                "REV-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase());
+    }
+
+    /**
+     * Takes back the stylist's part of one refund: amount from the transfer, once
+     * per refund. Used when an admin chooses to recover it on a refund.
+     */
+    public void requestRefundReversal(String appointmentId, String transferId, String amount, String reason,
+                                      String refundId) {
+        if (transferId == null || transferId.isBlank() || refundId == null || refundId.isBlank()) {
+            return;
+        }
+        String reversalId = REFUND_LINKED + refundId.replaceFirst("^RFND-", "");
+        try {
+            if (payoutReversalRepo.findByReversalId(reversalId).isPresent()) {
+                return;
+            }
+        } catch (Exception ex) {
+            LOG.warning("Payout reversal request failed: " + ex.getMessage());
+            return;
+        }
+        create(appointmentId, transferId, amount, reason, reversalId);
+    }
+
+    private static boolean isRefundLinked(PayoutReversalEntity record) {
+        return record.getReversalId() != null && record.getReversalId().startsWith(REFUND_LINKED);
+    }
+
+    private void create(String appointmentId, String transferId, String amount, String reason, String reversalId) {
+        try {
             PayoutReversalEntity record = new PayoutReversalEntity();
-            record.setReversalId("REV-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase());
+            record.setReversalId(reversalId);
             record.setAppointmentId(appointmentId);
             record.setTransferId(transferId);
             record.setAmount(amount);
@@ -97,10 +139,12 @@ public class PayoutReversalService {
     /** Attempts the Stripe reversal once and transitions the record. */
     private void attemptReversal(PayoutReversalEntity record) {
         try {
-            com.stripe.model.TransferReversal reversal = stripeService.reverseTransfer(
-                    record.getTransferId(),
-                    "Appointment " + record.getAppointmentId() + " cancelled after completion",
-                    "reversal_" + record.getTransferId() + "_" + record.getReversalId());
+            String key = "reversal_" + record.getTransferId() + "_" + record.getReversalId();
+            com.stripe.model.TransferReversal reversal = isRefundLinked(record)
+                    ? stripeService.reverseTransfer(record.getTransferId(), MoneyUtils.centsFromPrice(record.getAmount()),
+                            "Stylist share of a refund on appointment " + record.getAppointmentId(), key)
+                    : stripeService.reverseTransfer(record.getTransferId(),
+                            "Appointment " + record.getAppointmentId() + " cancelled after completion", key);
             record.setStatus("REVERSED");
             record.setStripeReversalId(reversal.getId());
             record.setLastError(null);

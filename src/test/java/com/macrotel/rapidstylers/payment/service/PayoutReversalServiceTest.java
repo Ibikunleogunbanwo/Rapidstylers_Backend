@@ -135,4 +135,46 @@ class PayoutReversalServiceTest {
         assertEquals(5, record.getAttempts());
         verify(emailConfig).sendSimpleMail(eq("ops@example.com"), contains("Payout recovery action required"), contains("tr_1"));
     }
+
+    // ── Reversals tied to one admin refund ────────────────────────────
+
+    @Test
+    void aRefundReversalTakesBackOnlyItsAmountOncePerRefund() throws Exception {
+        when(payoutReversalRepo.findByReversalId("REV-RFND-AB12CD34")).thenReturn(java.util.Optional.empty());
+        com.stripe.model.TransferReversal reversal = new com.stripe.model.TransferReversal();
+        reversal.setId("trrev_9");
+        doReturn(reversal).when(stripeService).reverseTransfer(eq("tr_1"), eq(4400L), anyString(),
+                eq("reversal_tr_1_REV-RFND-AB12CD34"));
+
+        service.requestRefundReversal("APPT1", "tr_1", "44.00", "refund", "RFND-AB12CD34");
+
+        ArgumentCaptor<PayoutReversalEntity> captor = ArgumentCaptor.forClass(PayoutReversalEntity.class);
+        verify(payoutReversalRepo, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertEquals("REVERSED", captor.getAllValues().get(1).getStatus());
+        assertEquals("44.00", captor.getAllValues().get(1).getAmount());
+    }
+
+    @Test
+    void theSameRefundIsNeverReversedTwice() throws Exception {
+        when(payoutReversalRepo.findByReversalId("REV-RFND-AB12CD34"))
+                .thenReturn(java.util.Optional.of(reversal("tr_1", "REVERSED", 1)));
+
+        service.requestRefundReversal("APPT1", "tr_1", "44.00", "refund", "RFND-AB12CD34");
+
+        verify(payoutReversalRepo, never()).save(any(PayoutReversalEntity.class));
+    }
+
+    @Test
+    void aCancellationStillTakesBackTheRestAfterARefundReversal() throws Exception {
+        PayoutReversalEntity earlier = reversal("tr_1", "REVERSED", 1);
+        earlier.setReversalId("REV-RFND-AB12CD34");
+        when(payoutReversalRepo.findByTransferId("tr_1")).thenReturn(List.of(earlier));
+        com.stripe.model.TransferReversal reversal = new com.stripe.model.TransferReversal();
+        reversal.setId("trrev_10");
+        doReturn(reversal).when(stripeService).reverseTransfer(eq("tr_1"), anyString(), startsWith("reversal_tr_1_REV-"));
+
+        service.requestReversal("APPT1", "tr_1", "66.00", "cancelled");
+
+        verify(stripeService).reverseTransfer(eq("tr_1"), anyString(), startsWith("reversal_tr_1_REV-"));
+    }
 }

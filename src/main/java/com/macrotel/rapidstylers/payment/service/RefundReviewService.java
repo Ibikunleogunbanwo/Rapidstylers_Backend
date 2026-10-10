@@ -5,7 +5,9 @@ import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
+import com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
@@ -49,6 +51,8 @@ public class RefundReviewService {
     StylerRepo stylerRepo;
     @Autowired
     SubServiceRepo subServiceRepo;
+    @Autowired
+    PayoutReversalRepo payoutReversalRepo;
 
     /** The payment behind one booking, for the admin about to refund it. */
     public BaseResponse paymentContext(String appointmentId) {
@@ -137,10 +141,23 @@ public class RefundReviewService {
         data.put("stylistShare", appointment.getStylistShareCents() == null ? null
                 : MoneyUtils.moneyCents(appointment.getStylistShareCents()));
         // A transfer means the stylist has been paid their share. An admin refund
-        // does not take it back, so the platform carries that part of the refund.
+        // takes their part back only when the admin asks (recoverStylistShare);
+        // otherwise the platform carries that part of the refund.
         boolean paidOut = appointment.getStripeTransferId() != null && !appointment.getStripeTransferId().isBlank();
         data.put("stylistPaidOut", paidOut);
         data.put("stripeTransferId", appointment.getStripeTransferId());
+        List<Map<String, Object>> recoveries = new ArrayList<>();
+        if (paidOut) {
+            for (PayoutReversalEntity reversal : payoutReversalRepo.findByTransferId(appointment.getStripeTransferId())) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("reversalId", reversal.getReversalId());
+                row.put("amount", reversal.getAmount());
+                row.put("status", reversal.getStatus());
+                row.put("createdAt", reversal.getCreatedAt());
+                recoveries.add(row);
+            }
+        }
+        data.put("payoutRecoveries", recoveries);
         return data;
     }
 
