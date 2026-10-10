@@ -7,10 +7,13 @@ import com.macrotel.rapidstylers.auth.repo.RefreshTokenRepo;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.security.jwt.AccessTokenRevocations;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Date;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -51,6 +58,11 @@ class UserSignInRefreshTokenTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @MockBean EmailConfig emailConfig;
+    // In-memory stand-in for the Redis cut-off store, so the logout test does not
+    // depend on a reachable Redis (it fails open without one). The Redis side is
+    // covered by AccessTokenRevocationsTest.
+    @MockBean AccessTokenRevocations accessTokenRevocations;
+    private final Map<String, Long> revokedBefore = new ConcurrentHashMap<>();
 
     @Autowired UserRepo userRepo;
     @Autowired RefreshTokenRepo refreshTokenRepo;
@@ -63,6 +75,15 @@ class UserSignInRefreshTokenTest {
 
     @BeforeEach
     void uniqueIdentity() {
+        doAnswer(call -> {
+            revokedBefore.put(call.getArgument(1) + ":" + call.getArgument(0), System.currentTimeMillis());
+            return null;
+        }).when(accessTokenRevocations).revokeAll(anyString(), anyString());
+        when(accessTokenRevocations.isRevoked(anyString(), anyString(), any())).thenAnswer(call -> {
+            Long cutoff = revokedBefore.get(call.getArgument(1) + ":" + call.getArgument(0));
+            Date issuedAt = call.getArgument(2);
+            return cutoff != null && issuedAt != null && issuedAt.getTime() < cutoff;
+        });
         long ts = System.currentTimeMillis();
         email = "pwlogin.cust." + ts + "@rapidstylers.test";
         userId = "U" + ts;
