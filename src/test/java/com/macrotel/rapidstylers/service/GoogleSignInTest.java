@@ -52,7 +52,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *     welcome notification and a CUSTOMER_WELCOME outbox event
  *
  * The real GoogleTokenVerifier is mocked because tests cannot mint a token
- * signed by Google's JWKS; AppService consumes only the verified claims, so
+ * signed by Google's JWKS; AuthService consumes only the verified claims, so
  * the same behavior is exercised without hitting Google.
  */
 @SpringBootTest

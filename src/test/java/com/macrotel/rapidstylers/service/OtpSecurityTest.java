@@ -54,7 +54,7 @@ class OtpSecurityTest {
     private static final String GENERIC_SENT = "A one-time password (OTP) code has been sent to your email. Please verify it.";
     private static final String RESET_SENT = "Password Reset Initiated, Check Mail for OTP Code";
 
-    private AppService appService;
+    private AuthService authService;
     private UserRepo userRepo;
     private StylerRepo stylerRepo;
     private OTPRepo otpRepo;
@@ -63,20 +63,20 @@ class OtpSecurityTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        authService = new AuthService();
         userRepo = mock(UserRepo.class);
         stylerRepo = mock(StylerRepo.class);
         otpRepo = mock(OTPRepo.class);
         emailConfig = mock(EmailConfig.class);
         rateLimiterService = mock(RateLimiterService.class);
 
-        appService.userRepo = userRepo;
-        appService.stylerRepo = stylerRepo;
-        appService.otpRepo = otpRepo;
-        appService.emailConfig = emailConfig;
-        appService.rateLimiterService = rateLimiterService;
-        appService.appUtils = new AppUtils();
-        appService.jwtUtil = mock(JwtUtil.class);
+        authService.userRepo = userRepo;
+        authService.stylerRepo = stylerRepo;
+        authService.otpRepo = otpRepo;
+        authService.emailConfig = emailConfig;
+        authService.rateLimiterService = rateLimiterService;
+        authService.appUtils = new AppUtils();
+        authService.jwtUtil = mock(JwtUtil.class);
 
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
         when(rateLimiterService.clientIp()).thenReturn("127.0.0.1");
@@ -90,7 +90,7 @@ class OtpSecurityTest {
 
     @Test
     void customerOtpStoredAsHashNotPlaintext() {
-        BaseResponse response = appService.generateSignUpOtpCode(otpData("new@example.com"));
+        BaseResponse response = authService.generateSignUpOtpCode(otpData("new@example.com"));
 
         assertEquals("200", response.getStatusCode());
         OTPEntity saved = captureSavedOtp();
@@ -104,7 +104,7 @@ class OtpSecurityTest {
 
     @Test
     void stylerOtpStoredAsHashNotPlaintext() {
-        BaseResponse response = appService.stylerGenerateOtp(otpData("vendor@example.com"));
+        BaseResponse response = authService.stylerGenerateOtp(otpData("vendor@example.com"));
 
         assertEquals("200", response.getStatusCode());
         OTPEntity saved = captureSavedOtp();
@@ -120,11 +120,11 @@ class OtpSecurityTest {
 
     @Test
     void customerVerifyRejectsWrongEmail() {
-        appService.generateSignUpOtpCode(otpData("real@example.com"));
+        authService.generateSignUpOtpCode(otpData("real@example.com"));
         String code = codeFromLastEmail();
         org.mockito.Mockito.clearInvocations(otpRepo, emailConfig);
 
-        BaseResponse response = appService.verifyUserOTP("other@example.com", code);
+        BaseResponse response = authService.verifyUserOTP("other@example.com", code);
 
         assertEquals("400", response.getStatusCode());
         assertEquals("Invalid OTP Code", response.getMessage());
@@ -133,7 +133,7 @@ class OtpSecurityTest {
 
     @Test
     void customerVerifyRejectsBlankEmail() {
-        BaseResponse response = appService.verifyUserOTP("", "123456");
+        BaseResponse response = authService.verifyUserOTP("", "123456");
         assertEquals("400", response.getStatusCode());
         assertEquals("Invalid OTP Code", response.getMessage());
         verify(otpRepo, never()).save(any());
@@ -144,7 +144,7 @@ class OtpSecurityTest {
         when(otpRepo.findLatestUnusedByEmail("real@example.com"))
                 .thenReturn(Optional.of(otpEntity("real@example.com", "USER SIGN UP", "111111")));
 
-        BaseResponse response = appService.verifyUserOTP("real@example.com", "222222");
+        BaseResponse response = authService.verifyUserOTP("real@example.com", "222222");
 
         assertEquals("400", response.getStatusCode());
         assertEquals("Invalid OTP Code", response.getMessage());
@@ -158,7 +158,7 @@ class OtpSecurityTest {
         when(otpRepo.findLatestUnusedByEmail("vendor@example.com"))
                 .thenReturn(Optional.of(otpEntity("vendor@example.com", "STYLER SIGN UP", "111111")));
 
-        BaseResponse response = appService.verifyUserOTP("vendor@example.com", "111111");
+        BaseResponse response = authService.verifyUserOTP("vendor@example.com", "111111");
 
         assertEquals("400", response.getStatusCode());
         assertEquals("Invalid OTP Code", response.getMessage());
@@ -170,7 +170,7 @@ class OtpSecurityTest {
         when(otpRepo.findLatestUnusedByEmail("real@example.com"))
                 .thenReturn(Optional.of(otpEntity("real@example.com", "USER SIGN UP", "111111")));
 
-        BaseResponse response = appService.stylerVerifyOtp("real@example.com", "111111");
+        BaseResponse response = authService.stylerVerifyOtp("real@example.com", "111111");
 
         assertEquals("400", response.getStatusCode());
         assertEquals("Invalid OTP Code", response.getMessage());
@@ -184,7 +184,7 @@ class OtpSecurityTest {
         when(otpRepo.findLatestUnusedByEmail("real@example.com"))
                 .thenReturn(Optional.of(otpEntity("real@example.com", "USER SIGN UP", "123456")));
 
-        BaseResponse response = appService.verifyUserOTP("real@example.com", "123456");
+        BaseResponse response = authService.verifyUserOTP("real@example.com", "123456");
 
         assertEquals("200", response.getStatusCode());
         assertEquals("Email Address Verify Successful", response.getMessage());
@@ -198,12 +198,12 @@ class OtpSecurityTest {
         when(otpRepo.findLatestUnusedByEmail("vendor@example.com"))
                 .thenReturn(Optional.of(otpEntity("vendor@example.com", "STYLER SIGN UP", "123456")));
 
-        BaseResponse response = appService.stylerVerifyOtp("vendor@example.com", "123456");
+        BaseResponse response = authService.stylerVerifyOtp("vendor@example.com", "123456");
 
         assertEquals("200", response.getStatusCode());
         assertEquals("Email Address Verified Successfully", response.getMessage());
         // The upload pass for the sign-up photos: the email, a pass role, and a short life.
-        verify(appService.jwtUtil).generateToken(eq("vendor@example.com"), eq("SIGNUP_UPLOAD"), any(Duration.class));
+        verify(authService.jwtUtil).generateToken(eq("vendor@example.com"), eq("SIGNUP_UPLOAD"), any(Duration.class));
         verify(otpRepo).save(argThat(otp -> otp.getIsUsed() != null && otp.getIsUsed().equals("0")));
         verify(rateLimiterService).clear("auth:vendor@example.com");
         verify(rateLimiterService).clear("auth_ip:127.0.0.1");
@@ -216,7 +216,7 @@ class OtpSecurityTest {
         when(userRepo.findByEmailAddress("taken@example.com"))
                 .thenReturn(Optional.of(mock(UserEntity.class)));
 
-        BaseResponse response = appService.generateSignUpOtpCode(otpData("taken@example.com"));
+        BaseResponse response = authService.generateSignUpOtpCode(otpData("taken@example.com"));
 
         assertEquals("200", response.getStatusCode(), "existing email must look like success");
         assertEquals(GENERIC_SENT, response.getMessage(), "response must be identical to a fresh email");
@@ -229,7 +229,7 @@ class OtpSecurityTest {
         when(stylerRepo.findByEmailAddress("styler@example.com"))
                 .thenReturn(Optional.of(mock(StylerEntity.class)));
 
-        BaseResponse response = appService.generateSignUpOtpCode(otpData("styler@example.com"));
+        BaseResponse response = authService.generateSignUpOtpCode(otpData("styler@example.com"));
 
         assertEquals("200", response.getStatusCode());
         assertEquals(GENERIC_SENT, response.getMessage());
@@ -242,7 +242,7 @@ class OtpSecurityTest {
         when(stylerRepo.findByEmailAddress("taken-vendor@example.com"))
                 .thenReturn(Optional.of(mock(StylerEntity.class)));
 
-        BaseResponse response = appService.stylerGenerateOtp(otpData("taken-vendor@example.com"));
+        BaseResponse response = authService.stylerGenerateOtp(otpData("taken-vendor@example.com"));
 
         assertEquals("200", response.getStatusCode(), "existing email must look like success");
         assertEquals(GENERIC_SENT, response.getMessage(), "response must be identical to a fresh email");
@@ -255,7 +255,7 @@ class OtpSecurityTest {
         when(userRepo.findByEmailAddress("customer@example.com"))
                 .thenReturn(Optional.of(mock(UserEntity.class)));
 
-        BaseResponse response = appService.stylerGenerateOtp(otpData("customer@example.com"));
+        BaseResponse response = authService.stylerGenerateOtp(otpData("customer@example.com"));
 
         assertEquals("200", response.getStatusCode());
         assertEquals(GENERIC_SENT, response.getMessage());
@@ -268,7 +268,7 @@ class OtpSecurityTest {
     @Test
     void resetOtpForUnknownEmailDoesNotEnumerate() {
         // userRepo mock returns empty by default in setUp.
-        BaseResponse response = appService.resetPasswordMessage(otpData("ghost@example.com"));
+        BaseResponse response = authService.resetPasswordMessage(otpData("ghost@example.com"));
 
         assertEquals("200", response.getStatusCode(), "unknown email must look like success");
         assertEquals(RESET_SENT, response.getMessage(), "response must be identical to a registered email");
@@ -281,7 +281,7 @@ class OtpSecurityTest {
         when(userRepo.findByEmailAddress("real@example.com"))
                 .thenReturn(Optional.of(mock(UserEntity.class)));
 
-        BaseResponse response = appService.resetPasswordMessage(otpData("real@example.com"));
+        BaseResponse response = authService.resetPasswordMessage(otpData("real@example.com"));
 
         assertEquals("200", response.getStatusCode());
         OTPEntity saved = captureSavedOtp();
@@ -300,7 +300,7 @@ class OtpSecurityTest {
         when(otpRepo.findLatestUnusedByEmail("real@example.com"))
                 .thenReturn(Optional.of(otpEntity("real@example.com", "FORGET PASSWORD", "123456")));
 
-        BaseResponse response = appService.verifyUserOTP("real@example.com", "123456");
+        BaseResponse response = authService.verifyUserOTP("real@example.com", "123456");
 
         assertEquals("200", response.getStatusCode());
         assertEquals("Email Address Verify Successful", response.getMessage());

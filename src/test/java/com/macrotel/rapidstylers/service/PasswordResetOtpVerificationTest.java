@@ -33,7 +33,7 @@ import static org.mockito.Mockito.*;
  */
 class PasswordResetOtpVerificationTest {
 
-    private AppService appService;
+    private AuthService authService;
     private UserRepo userRepo;
     private OTPRepo otpRepo;
     private EmailConfig emailConfig;
@@ -42,18 +42,18 @@ class PasswordResetOtpVerificationTest {
 
     @BeforeEach
     void setUp() {
-        appService = new AppService();
+        authService = new AuthService();
         userRepo = mock(UserRepo.class);
         otpRepo = mock(OTPRepo.class);
         emailConfig = mock(EmailConfig.class);
         rateLimiterService = mock(RateLimiterService.class);
 
-        appService.userRepo = userRepo;
-        appService.otpRepo = otpRepo;
-        appService.emailConfig = emailConfig;
-        appService.rateLimiterService = rateLimiterService;
+        authService.userRepo = userRepo;
+        authService.otpRepo = otpRepo;
+        authService.emailConfig = emailConfig;
+        authService.rateLimiterService = rateLimiterService;
         refreshTokenService = mock(RefreshTokenService.class);
-        appService.refreshTokenService = refreshTokenService;
+        authService.refreshTokenService = refreshTokenService;
 
         // Rate limiter always permits — individual tests override when needed
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
@@ -71,7 +71,7 @@ class PasswordResetOtpVerificationTest {
                 .thenReturn(Optional.empty());
 
         ForgotPasswordData data = resetData("user@example.com", "NewPass1!", "NewPass1!");
-        BaseResponse response = appService.resetPassword(data);
+        BaseResponse response = authService.resetPassword(data);
 
         assertEquals("400", response.getStatusCode());
         assertTrue(response.getMessage().toLowerCase().contains("not authorized"),
@@ -87,7 +87,7 @@ class PasswordResetOtpVerificationTest {
         when(otpRepo.verifyOtpSuccessForPurpose("user@example.com", "FORGET PASSWORD"))
                 .thenReturn(Optional.empty());
 
-        BaseResponse response = appService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
+        BaseResponse response = authService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
 
         assertEquals("400", response.getStatusCode());
         verify(userRepo, never()).save(any());
@@ -107,7 +107,7 @@ class PasswordResetOtpVerificationTest {
         when(otpRepo.verifyOtpSuccessForPurpose("user@example.com", "FORGET PASSWORD"))
                 .thenReturn(Optional.of(verifiedOtp));
 
-        BaseResponse response = appService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
+        BaseResponse response = authService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
 
         assertEquals("200", response.getStatusCode());
         assertEquals("Password Change Successful", response.getMessage());
@@ -131,7 +131,7 @@ class PasswordResetOtpVerificationTest {
         when(otpRepo.verifyOtpSuccessForPurpose("user@example.com", "FORGET PASSWORD"))
                 .thenReturn(Optional.of(verifiedOtp));
 
-        appService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
+        authService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
 
         // The consumed OTP row is DELETED after a successful reset. Re-saving it
         // with is_used="0" would not prevent reuse: "0" is exactly the state
@@ -152,13 +152,13 @@ class PasswordResetOtpVerificationTest {
         firstOtp.setIsUsed("0");
         when(otpRepo.verifyOtpSuccessForPurpose("user@example.com", "FORGET PASSWORD"))
                 .thenReturn(Optional.of(firstOtp));
-        appService.resetPassword(resetData("user@example.com", "Pass1111!", "Pass1111!"));
+        authService.resetPassword(resetData("user@example.com", "Pass1111!", "Pass1111!"));
 
         // Second reset: no new OTP verified (old one was consumed)
         when(otpRepo.verifyOtpSuccessForPurpose("user@example.com", "FORGET PASSWORD"))
                 .thenReturn(Optional.empty());
 
-        BaseResponse secondAttempt = appService.resetPassword(resetData("user@example.com", "Pass2222!", "Pass2222!"));
+        BaseResponse secondAttempt = authService.resetPassword(resetData("user@example.com", "Pass2222!", "Pass2222!"));
         assertEquals("400", secondAttempt.getStatusCode());
         assertTrue(secondAttempt.getMessage().toLowerCase().contains("not authorized"));
     }
@@ -167,7 +167,7 @@ class PasswordResetOtpVerificationTest {
 
     @Test
     void resetRejectedWhenPasswordsDoNotMatch() {
-        BaseResponse response = appService.resetPassword(
+        BaseResponse response = authService.resetPassword(
                 resetData("user@example.com", "Pass1111!", "Pass2222!"));
 
         assertEquals("400", response.getStatusCode());
@@ -182,7 +182,7 @@ class PasswordResetOtpVerificationTest {
     void resetRejectedForNonExistentEmail() {
         when(userRepo.findByEmailAddress("ghost@example.com")).thenReturn(Optional.empty());
 
-        BaseResponse response = appService.resetPassword(
+        BaseResponse response = authService.resetPassword(
                 resetData("ghost@example.com", "Pass1111!", "Pass1111!"));
 
         assertEquals("400", response.getStatusCode());
@@ -202,7 +202,7 @@ class PasswordResetOtpVerificationTest {
         when(otpRepo.verifyOtpSuccessForPurpose("user@example.com", "FORGET PASSWORD"))
                 .thenReturn(Optional.empty());
 
-        BaseResponse response = appService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
+        BaseResponse response = authService.resetPassword(resetData("user@example.com", "NewPass1!", "NewPass1!"));
 
         assertEquals("400", response.getStatusCode());
         assertTrue(response.getMessage().toLowerCase().contains("not authorized"));
@@ -217,7 +217,7 @@ class PasswordResetOtpVerificationTest {
         when(otpRepo.verifyOtpSuccessForPurpose("styler@example.com", "FORGET PASSWORD"))
                 .thenReturn(Optional.empty());
 
-        BaseResponse response = appService.resetPassword(resetData("styler@example.com", "NewPass1!", "NewPass1!"));
+        BaseResponse response = authService.resetPassword(resetData("styler@example.com", "NewPass1!", "NewPass1!"));
 
         assertEquals("400", response.getStatusCode());
     }
@@ -232,14 +232,14 @@ class PasswordResetOtpVerificationTest {
         data.setConfirmPassword(null);
 
         // The method catches exceptions internally and returns an error response
-        BaseResponse response = appService.resetPassword(data);
+        BaseResponse response = authService.resetPassword(data);
         assertEquals("400", response.getStatusCode());
     }
 
     @Test
     void resetPasswordTrimsAndComparesPasswords() {
         // Identical passwords — should proceed past password-match check to OTP check
-        BaseResponse response = appService.resetPassword(resetData("user@example.com", "Pass1111!", "Pass1111!"));
+        BaseResponse response = authService.resetPassword(resetData("user@example.com", "Pass1111!", "Pass1111!"));
         assertEquals("400", response.getStatusCode());
         // Fails at OTP check because no verified OTP exists
         assertFalse(response.getMessage().toLowerCase().contains("does not match"),

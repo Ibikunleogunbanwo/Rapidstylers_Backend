@@ -95,6 +95,10 @@ class StylerAddressRequirementTest {
         appService.rateLimiterService = rateLimiterService;
         appService.readCacheService = readCacheService;
         appService.geocodingService = geocodingService;
+        appService.accountIds = new AccountIds(userRepo, stylerRepo);
+        AuthService authService = new AuthService();
+        authService.rateLimiterService = rateLimiterService;
+        appService.authService = authService;
         appService.stripeService = stripeService;
 
         dtoService = new DTOService();

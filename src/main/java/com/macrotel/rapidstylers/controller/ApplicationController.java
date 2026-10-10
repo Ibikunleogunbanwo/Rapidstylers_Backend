@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.controller;
 
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.service.AppService;
+import com.macrotel.rapidstylers.service.AuthService;
 import com.macrotel.rapidstylers.config.EncryptionConfig;
 import com.macrotel.rapidstylers.service.GalleryService;
 import com.macrotel.rapidstylers.service.GeocodingService;
@@ -38,6 +39,8 @@ public class ApplicationController {
 
     @Autowired
     AppService appService;
+    @Autowired
+    AuthService authService;
     @Autowired
     GalleryService galleryService;
     @Autowired
@@ -87,7 +90,7 @@ public class ApplicationController {
     }
     @PostMapping("/generate_sign_up_otp_code")
     public ResponseEntity <BaseResponse> generateSignUpOtpCode(@Valid @RequestBody OTPData otpData){
-        BaseResponse baseResponse = appService.generateSignUpOtpCode(otpData);
+        BaseResponse baseResponse = authService.generateSignUpOtpCode(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -96,13 +99,13 @@ public class ApplicationController {
     public ResponseEntity <BaseResponse> verifyOtpCode(@RequestBody Map<String, String> body){
         String emailAddress = body.getOrDefault("emailAddress", "");
         String otpCode = body.getOrDefault("otpCode", "");
-        BaseResponse baseResponse = appService.verifyUserOTP(emailAddress, otpCode);
+        BaseResponse baseResponse = authService.verifyUserOTP(emailAddress, otpCode);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/create_user_account")
     public ResponseEntity <BaseResponse> createUserAccount(@Valid @RequestBody UserData userData){
-        BaseResponse baseResponse = appService.userSignUp(userData);
+        BaseResponse baseResponse = authService.userSignUp(userData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -118,7 +121,7 @@ public class ApplicationController {
         if (rejected != null) {
             return rejected;
         }
-        BaseResponse baseResponse = appService.signIn(signInData);
+        BaseResponse baseResponse = authService.signIn(signInData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -137,7 +140,7 @@ public class ApplicationController {
         // GoogleTokenVerifier, so the caller is already cryptographically
         // attested — a challenge here would add friction to real sign-ins
         // without removing any bot traffic that password guessing represents.
-        BaseResponse baseResponse = appService.signInWithGoogle(idToken);
+        BaseResponse baseResponse = authService.signInWithGoogle(idToken);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -155,13 +158,13 @@ public class ApplicationController {
 
     @PostMapping("/generate_reset_password_token")
     public ResponseEntity <BaseResponse> resetPasswordToken(@Valid @RequestBody OTPData otpData){
-        BaseResponse baseResponse = appService.resetPasswordMessage(otpData);
+        BaseResponse baseResponse = authService.resetPasswordMessage(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
     @PostMapping("/reset_user_password")
     public ResponseEntity <BaseResponse> resetUserPassword(@Valid @RequestBody ForgotPasswordData forgotPasswordData){
-        BaseResponse baseResponse = appService.resetPassword(forgotPasswordData);
+        BaseResponse baseResponse = authService.resetPassword(forgotPasswordData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -171,7 +174,7 @@ public class ApplicationController {
         if(accountId == null){
             return unauthorized();
         }
-        BaseResponse baseResponse = appService.updateUserPassword(forgotPasswordData, accountId);
+        BaseResponse baseResponse = authService.updateUserPassword(forgotPasswordData, accountId);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -289,7 +292,7 @@ public class ApplicationController {
 
     @PostMapping("/styler_generate_otp")
     public ResponseEntity<BaseResponse> stylerGenerateOtp(@Valid @RequestBody OTPData otpData){
-        BaseResponse baseResponse = appService.stylerGenerateOtp(otpData);
+        BaseResponse baseResponse = authService.stylerGenerateOtp(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -297,7 +300,7 @@ public class ApplicationController {
     public ResponseEntity<BaseResponse> stylerVerifyOtp(@RequestBody Map<String, String> body){
         String emailAddress = body.getOrDefault("emailAddress", "");
         String otpCode = body.getOrDefault("otpCode", "");
-        BaseResponse baseResponse = appService.stylerVerifyOtp(emailAddress, otpCode);
+        BaseResponse baseResponse = authService.stylerVerifyOtp(emailAddress, otpCode);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -333,7 +336,7 @@ public class ApplicationController {
         if(stylerId == null){
             return unauthorized();
         }
-        BaseResponse baseResponse = appService.stylerLogOut(stylerId);
+        BaseResponse baseResponse = authService.stylerLogOut(stylerId);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

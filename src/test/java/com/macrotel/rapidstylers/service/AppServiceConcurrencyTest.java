@@ -37,7 +37,7 @@ import static org.mockito.Mockito.when;
  * error/success state.
  *
  * {@link #concurrentCallsNeverBleedStateBetweenResponses()} hammers the real
- * AppService from many threads and asserts no response ever carries another
+ * AppService and AuthService from many threads and asserts no response ever carries another
  * call's token or state. {@link #legacySharedFieldPatternIsDetectedByTheHarness()}
  * runs the identical harness against a replica of the OLD shared-field pattern
  * and asserts that bleed IS detected — proving the harness can actually fail.
@@ -60,10 +60,12 @@ class AppServiceConcurrencyTest {
     }
 
     private AppService appService;
+    private AuthService authService;
 
     @BeforeEach
     void setUp() {
         appService = new AppService();
+        authService = new AuthService();
 
         UserRepo userRepo = mock(UserRepo.class);
         RateLimiterService rateLimiterService = mock(RateLimiterService.class);
@@ -102,16 +104,16 @@ class AppServiceConcurrencyTest {
                 .thenAnswer(invocation -> "RT_" + THREAD_MARKER.get());
 
         // Package-private fields — the test lives in the same package.
-        appService.userRepo = userRepo;
+        authService.userRepo = userRepo;
         StylerRepo stylerRepo = mock(StylerRepo.class);
         when(stylerRepo.findByEmailAddress(anyString())).thenReturn(Optional.empty());
-        appService.stylerRepo = stylerRepo;
-        appService.rateLimiterService = rateLimiterService;
-        appService.loginAttemptService = loginAttemptService;
-        appService.jwtUtil = jwtUtil;
-        appService.dtoService = dtoService;
-        appService.appUtils = appUtils;
-        appService.refreshTokenService = refreshTokenService;
+        authService.stylerRepo = stylerRepo;
+        authService.rateLimiterService = rateLimiterService;
+        authService.loginAttemptService = loginAttemptService;
+        authService.jwtUtil = jwtUtil;
+        authService.dtoService = dtoService;
+        authService.appUtils = appUtils;
+        authService.refreshTokenService = refreshTokenService;
     }
 
     @Test
@@ -124,12 +126,12 @@ class AppServiceConcurrencyTest {
 
             @Override
             public BaseResponse successWithToken() {
-                return appService.signIn(signIn(VALID_EMAIL));
+                return authService.signIn(signIn(VALID_EMAIL));
             }
 
             @Override
             public BaseResponse failingCall() {
-                return appService.signIn(signIn(INVALID_EMAIL));
+                return authService.signIn(signIn(INVALID_EMAIL));
             }
         });
         assertTrue(failures.isEmpty(),
