@@ -17,5 +17,5 @@ public interface ServiceRepo extends JpaRepository<ServiceEntity,Long> {
      * fails to build, which takes the whole application down rather than quietly
      * returning zero.
      */
-    long countByServiceImageUrl(String serviceImageUrl);
+    long countByServiceImageUrlContaining(String fragment);
 }

@@ -69,6 +69,7 @@ Take a stylist opening their reviews page: `GET /rapid_stylers/styler/reviews` w
 2. Decide who may call it, and add one line to the right list in `security/access/Routes.java`:
    - anyone: `PUBLIC`
    - one role: `ADMIN`, `STYLER` or `CUSTOMER`
+   - image uploads (stylist, admin, or a stylist still signing up): `UPLOAD`
    - any signed-in account: add nothing (closed by default does it).
 3. Run the tests. `RoutesTest` fails if a listed route has no controller (a typo), if a route is in two lists, or if a public route reads `accountId` (it would always be `null` there). `SecurityRulesTest` checks the real chain without a database; add a row to its table for the new route.
 
@@ -100,15 +101,32 @@ Every existing route keeps its access and the same 401 body. The one visible dif
 
 ## Left for later
 
-- **Bug 4, step 2:** `/styler_sign_in` is gone. `/user_sign_in` still skips the Turnstile bot check; the website stopped using it (sign-up now returns the session, and the customer forms use `/sign_in`), so it is deleted once that website version is live.
-- **`/get_upload_signature` is still public** for the same reason: the website now sends the stylist sign-up upload pass (role `SIGNUP_UPLOAD`, from `/styler_verify_otp`), and once that version is live the route moves to a list for `STYLER`, `ADMIN` and `SIGNUP_UPLOAD`.
-- **`/testing` is public.** Confirm nothing needs it; if not, delete it.
-- **`ApiKeyFilter` still exempts `/rapid_stylers/files/`**, a path no controller serves.
+- **`/testing` is public.** It returns a fixed text and touches no data. Confirm nothing needs it; if not, delete it.
+- **A revoked session keeps working for up to 15 minutes.** Signing out, a password change or disabling an admin burns the refresh tokens at once, but an access token already handed out stays valid until it expires (15 minutes). Closing that gap needs a server-side deny list; not worth it yet.
+- **Account ids are unique by checking before insert, not by the database.** Add a unique constraint once production is checked for existing duplicates.
+- **The booking's travel distance comes from the browser**, so the travel fee can be under-charged. That is a pricing fix for the bookings domain.
+- **No per-email cap on wrong OTP guesses** (there is a per-IP limit).
 - **Controllers read `accountId` from a request attribute.** The target is to read the signed-in account from Spring's principal; that happens when the controllers are split by domain.
 - **Spring Boot 3 renames:** `authorizeRequests` becomes `authorizeHttpRequests`, `mvcMatchers` and `antMatchers` become `requestMatchers`, `@EnableGlobalMethodSecurity` becomes `@EnableMethodSecurity`, and `javax.servlet` becomes `jakarta.servlet`.
+
+## The security pass on October 10, 2026 (step 2)
+
+| Hole | Fix |
+|---|---|
+| `/user_sign_in` skipped the Turnstile bot check | Deleted; customers sign in through `/sign_in` |
+| `/get_upload_signature` was public, so anyone could upload to our Cloudinary | Moved to `Routes.UPLOAD`: `STYLER`, `ADMIN` or the sign-up pass |
+| Any stylist could delete any image through `/delete_cloudinary_image` | It deletes only images no profile, portfolio, service or blog post uses, and only ids under `rapid_stylers/` |
+| The "is this image still used?" check could be fooled by a differently spelled URL | It matches on the image's public id |
+| The `ADMIN_PASSWORD` from `.env` also worked on `/sign_in`, even after the admin changed or was disabled | Removed; admins sign in only through `/admin_sign_in` (the admin login page) |
+| Resetting or changing a password left other devices signed in | Both sign out every other device; a password change hands this device a fresh token pair |
+| A disabled admin, or one whose password changed, could keep refreshing | Their refresh tokens are burned |
+| A short customer or stylist id could clash with an existing one | New ids are checked against both tables and redrawn |
+| Google sign-in on a deactivated account created a second account | It is refused |
+| Swagger and `/v3/api-docs` were public in production | Off unless `API_DOCS_ENABLED=true` (set it in your local `.env`) |
+| `ApiKeyFilter` exempted `/rapid_stylers/files/`, which no controller serves | Exemption removed |
 
 ## The sign-up upload pass
 
 A new stylist uploads their profile and ID photos before their account exists, so they have no sign-in token. Verifying their email code (`/styler_verify_otp`) hands out a pass instead: a token whose subject is the email and whose role is `SIGNUP_UPLOAD`, valid for two hours.
 
-Picture a visitor badge printed at reception. It gets you to one room (the upload signature) and nowhere else: unlisted routes need a real account role (`Roles.ACCOUNTS`), so the badge cannot reach them, and `JwtAuthFilter` gives it no `accountId` and no session activity, because it is not an account.
+Picture a visitor badge printed at reception. It gets you to one room (`Routes.UPLOAD`: the upload signature and deleting an unused image) and nowhere else: unlisted routes need a real account role (`Roles.ACCOUNTS`), so the badge cannot reach them, and `JwtAuthFilter` gives it no `accountId` and no session activity, because it is not an account.

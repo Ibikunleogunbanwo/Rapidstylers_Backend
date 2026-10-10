@@ -107,8 +107,11 @@ class PasswordResetJourneyTest {
         assertOk(apiPost("/create_user_account", userData));
         userId = userRepo.findByEmailAddress(email).orElseThrow().getUserId();
 
-        // Baseline: the original password signs in.
-        assertFalse(signIn(email, originalPassword).isBlank(), "original password must work before the reset");
+        // Baseline: the original password signs in. Keep that session's refresh
+        // token: the reset must end it.
+        JsonNode before = body(apiPost("/sign_in", Map.of("emailAddress", email, "password", originalPassword)));
+        assertEquals("200", before.get("statusCode").asText(), "original password must work before the reset: " + before);
+        String sessionBeforeReset = before.get("refreshToken").asText();
 
         // ---- 2. Request a reset token for the account ----
         assertOk(apiPost("/generate_reset_password_token", Map.of("emailAddress", email)));
@@ -128,6 +131,10 @@ class PasswordResetJourneyTest {
         JsonNode reset = body(apiPost("/reset_user_password", resetBody(email, newPassword)));
         assertEquals("200", reset.get("statusCode").asText(), "reset must succeed: " + reset);
         assertEquals("Password Change Successful", reset.get("message").asText());
+
+        // A reset signs out every device, so a stolen session cannot renew itself.
+        assertEquals(401, apiPost("/auth/refresh", Map.of("refreshToken", sessionBeforeReset)).getResponse().getStatus(),
+                "the session from before the reset must be revoked");
 
         // ---- 5. Old password rejected; new password signs in ----
         assertInvalidSignIn(email, originalPassword);
@@ -158,13 +165,13 @@ class PasswordResetJourneyTest {
     }
 
     private String signIn(String emailAddress, String password) throws Exception {
-        JsonNode response = body(apiPost("/user_sign_in", Map.of("emailAddress", emailAddress, "password", password)));
+        JsonNode response = body(apiPost("/sign_in", Map.of("emailAddress", emailAddress, "password", password)));
         assertEquals("200", response.get("statusCode").asText(), "sign-in failed: " + response);
         return response.get("token").asText();
     }
 
     private void assertInvalidSignIn(String emailAddress, String password) throws Exception {
-        JsonNode response = body(apiPost("/user_sign_in", Map.of("emailAddress", emailAddress, "password", password)));
+        JsonNode response = body(apiPost("/sign_in", Map.of("emailAddress", emailAddress, "password", password)));
         assertEquals("400", response.get("statusCode").asText(),
                 "sign-in with the old password must be rejected: " + response);
     }

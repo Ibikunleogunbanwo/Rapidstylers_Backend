@@ -2,6 +2,9 @@ package com.macrotel.rapidstylers.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.macrotel.rapidstylers.entity.AdminAccountEntity;
+import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.entity.IdentificationEntity;
@@ -77,6 +80,8 @@ class RegistrationToBookingJourneyTest {
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
+    @Autowired AdminAccountRepo adminAccountRepo;
+    @Autowired PasswordEncoder passwordEncoder;
     @MockBean EmailConfig emailConfig;
 
     @Autowired UserRepo userRepo;
@@ -94,8 +99,6 @@ class RegistrationToBookingJourneyTest {
     @Autowired ReadCacheService readCacheService;
 
     @Value("${app.api.key}") String apiKey;
-    @Value("${app.admin.email}") String adminEmail;
-    @Value("${app.admin.password}") String adminPassword;
 
     private String custEmail;
     private String stylerEmail;
@@ -208,6 +211,10 @@ class RegistrationToBookingJourneyTest {
         String uploadPass = verified.get("data").get("uploadToken").asText();
         assertFalse(uploadPass.isBlank(), "verifying the code must hand out an upload pass");
         assertEquals(401, rawStatus(apiPost("/auth/logout", null, uploadPass)));
+        // ...and it is what lets the stylist ask for a photo upload signature.
+        assertEquals(401, rawStatus(apiGet("/get_upload_signature?folderPrefix=profile", null)),
+                "nobody signs uploads for an anonymous caller");
+        assertEquals(200, rawStatus(apiGet("/get_upload_signature?folderPrefix=profile", uploadPass)));
 
         String identificationId = firstListId("/list_identification");
         String serviceTypeId = firstListId("/list_service");
@@ -246,7 +253,7 @@ class RegistrationToBookingJourneyTest {
                 "unexpected rejection message: " + unapproved.get("message").asText());
 
         // ---- 4. Admin approves -----------------------------------------------------
-        String adminToken = signIn("/sign_in", adminEmail, adminPassword);
+        String adminToken = adminToken();
         assertOk(apiGet("/admin/styler_verification_queue", adminToken));
         assertOk(apiPost("/admin/update_styler_verification",
                 Map.of("stylerId", stylerId, "action", "APPROVE"), adminToken));
@@ -349,6 +356,25 @@ class RegistrationToBookingJourneyTest {
         booking.put("noOfPeople", "1");
         booking.put("subServiceId", subServiceId);
         return booking;
+    }
+
+    /**
+     * Admins sign in on /admin_sign_in against an admin_accounts row. The test
+     * profile's ADMIN_PASSWORD is a weak default the boot seeder refuses, so the
+     * test seeds its own admin.
+     */
+    private String adminToken() throws Exception {
+        String email = "journey.admin@rapidstylers.test";
+        String password = "Journey-Admin-Pass-1";
+        if (adminAccountRepo.findByEmailIgnoreCase(email).isEmpty()) {
+            AdminAccountEntity admin = new AdminAccountEntity();
+            admin.setEmail(email);
+            admin.setPasswordHash(passwordEncoder.encode(password));
+            admin.setEnabled(true);
+            admin.setRole("ADMIN");
+            adminAccountRepo.save(admin);
+        }
+        return signIn("/admin_sign_in", email, password);
     }
 
     private String signIn(String path, String email, String password) throws Exception {

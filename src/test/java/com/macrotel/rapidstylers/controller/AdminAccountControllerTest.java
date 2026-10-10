@@ -5,6 +5,7 @@ import com.macrotel.rapidstylers.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.pojo.AdminPasswordData;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.service.RefreshTokenService;
 import com.macrotel.rapidstylers.service.StepUpService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,10 @@ class AdminAccountControllerTest {
         // these pure-DTO tests call the controller outside a real request thread.
         when(stepUp.verify(any(), any())).thenReturn(true);
         controller.setStepUpService(stepUp);
+        controller.setRefreshTokenService(refreshTokenService);
     }
+
+    private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
 
     private AdminAccountEntity admin() {
         AdminAccountEntity e = new AdminAccountEntity();
@@ -61,6 +65,18 @@ class AdminAccountControllerTest {
         assertEquals(AppConstants.SUCCESS_STATUS_CODE, result.getBody().getStatusCode());
         assertNotEquals("old-strong-pass-1", account.getPasswordHash());
         verify(repo).save(account);
+        // A reset password usually means a leaked one: end that admin's sessions.
+        verify(refreshTokenService).revokeAllForAccount("admin@example.com", "ADMIN");
+    }
+
+    @Test
+    void disablingAnAdminEndsTheirSessions() {
+        AdminAccountEntity account = admin();
+        when(repo.findById(5L)).thenReturn(Optional.of(account));
+
+        controller.disableAdmin(5L);
+
+        verify(refreshTokenService).revokeAllForAccount("admin@example.com", "ADMIN");
     }
 
     @Test

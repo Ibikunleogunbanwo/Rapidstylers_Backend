@@ -12,8 +12,8 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 /**
- * Shared x-api-key gate for every endpoint except public file serving, the
- * Stripe webhook and the health probe. It only checks the shared key; who the
+ * Shared x-api-key gate for every endpoint except the Stripe webhook and the
+ * health probe. It only checks the shared key; who the
  * caller is and which roles may use a route are handled by the security chain
  * (JwtAuthFilter, SecurityConfig, Routes), which runs before this filter.
  */
@@ -32,11 +32,10 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         String requestApiKey = request.getHeader("x-api-key");
         String requestUrl = request.getRequestURI();
 
-        // Public file serving and the Stripe webhook (signed, not key-gated) bypass the shared key.
+        // The Stripe webhook (signed, not key-gated) bypasses the shared key.
         // The actuator health endpoint is exempt so Docker/Nginx health checks work
         // without an API key; it reports only UP/DOWN status.
-        if ((requestApiKey == null && requestUrl.startsWith("/rapid_stylers/files/"))
-                || "/rapid_stylers/stripe/webhook".equals(requestUrl)
+        if ("/rapid_stylers/stripe/webhook".equals(requestUrl)
                 || "/actuator/health".equals(requestUrl)) {
             filterChain.doFilter(request, response);
         }

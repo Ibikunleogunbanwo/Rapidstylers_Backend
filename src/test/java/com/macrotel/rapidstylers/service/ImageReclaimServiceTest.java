@@ -33,6 +33,9 @@ class ImageReclaimServiceTest {
 
     private static final String ORPHAN_URL =
             "https://res.cloudinary.com/demo/image/upload/v1712345678/rapid_stylers/portfolio/work.jpg";
+    private static final String PUBLIC_ID = "rapid_stylers/portfolio/work";
+    /** What a stored URL of that asset contains, whichever way it is spelled. */
+    private static final String FRAGMENT = "/" + PUBLIC_ID;
 
     @BeforeEach
     void setUp() {
@@ -50,6 +53,37 @@ class ImageReclaimServiceTest {
         reclaimService.serviceRepo = serviceRepo;
 
         when(cloudinaryService.destroy(anyString())).thenReturn(true);
+        when(cloudinaryService.extractPublicId(ORPHAN_URL)).thenReturn(PUBLIC_ID);
+    }
+
+    @Test
+    void anotherSpellingOfAUsedImageIsStillCountedAsUsed() {
+        // The row stores the plain URL; the caller sends a variant (no version, a
+        // different extension, a query). The asset is the same, so it stays.
+        String variant = "https://res.cloudinary.com/demo/image/upload/rapid_stylers/portfolio/work.png?x";
+        when(cloudinaryService.extractPublicId(variant)).thenReturn(PUBLIC_ID);
+        when(stylerPortfolioRepo.countByImageUrlContaining(FRAGMENT)).thenReturn(1L);
+
+        assertFalse(reclaimService.reclaimIfUnreferenced(variant));
+        verify(cloudinaryService, never()).destroy(anyString());
+    }
+
+    @Test
+    void deleteByPublicIdOnlyRemovesOrphans() {
+        when(stylerRepo.countByProfileImageUrlContaining(FRAGMENT)).thenReturn(1L);
+        assertFalse(reclaimService.reclaimPublicIdIfUnreferenced(PUBLIC_ID), "someone's profile photo must be kept");
+
+        when(stylerRepo.countByProfileImageUrlContaining(FRAGMENT)).thenReturn(0L);
+        assertTrue(reclaimService.reclaimPublicIdIfUnreferenced(PUBLIC_ID));
+    }
+
+    @Test
+    void deleteByPublicIdRefusesIdsThisAppNeverIssued() {
+        assertFalse(reclaimService.reclaimPublicIdIfUnreferenced("someone_else/photo"));
+        assertFalse(reclaimService.reclaimPublicIdIfUnreferenced("rapid_stylers/../other"));
+        assertFalse(reclaimService.reclaimPublicIdIfUnreferenced(""));
+        assertFalse(reclaimService.reclaimPublicIdIfUnreferenced(null));
+        verify(cloudinaryService, never()).destroy(anyString());
     }
 
     @Test
@@ -64,7 +98,7 @@ class ImageReclaimServiceTest {
     void keepsAnImageAProfileStillUses() {
         // A profile photo is a reference like any other: someone else's row, or the
         // row this call is not about, still needs the picture to exist.
-        when(stylerRepo.countByProfileImageUrl(ORPHAN_URL)).thenReturn(1L);
+        when(stylerRepo.countByProfileImageUrlContaining(FRAGMENT)).thenReturn(1L);
 
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
         verify(cloudinaryService, never()).destroy(anyString());
@@ -73,19 +107,19 @@ class ImageReclaimServiceTest {
     @Test
     void keepsAnImageAnyOtherColumnUses() {
         // Each column that can hold an image is checked, not just the obvious one.
-        when(stylerRepo.countByIdentificationImageUrl(ORPHAN_URL)).thenReturn(1L);
+        when(stylerRepo.countByIdentificationImageUrlContaining(FRAGMENT)).thenReturn(1L);
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 
-        when(stylerRepo.countByIdentificationImageUrl(ORPHAN_URL)).thenReturn(0L);
-        when(stylerPortfolioRepo.countByImageUrl(ORPHAN_URL)).thenReturn(2L);
+        when(stylerRepo.countByIdentificationImageUrlContaining(FRAGMENT)).thenReturn(0L);
+        when(stylerPortfolioRepo.countByImageUrlContaining(FRAGMENT)).thenReturn(2L);
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 
-        when(stylerPortfolioRepo.countByImageUrl(ORPHAN_URL)).thenReturn(0L);
-        when(blogPostRepo.countByImageUrl(ORPHAN_URL)).thenReturn(1L);
+        when(stylerPortfolioRepo.countByImageUrlContaining(FRAGMENT)).thenReturn(0L);
+        when(blogPostRepo.countByImageUrlContaining(FRAGMENT)).thenReturn(1L);
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 
-        when(blogPostRepo.countByImageUrl(ORPHAN_URL)).thenReturn(0L);
-        when(serviceRepo.countByServiceImageUrl(ORPHAN_URL)).thenReturn(1L);
+        when(blogPostRepo.countByImageUrlContaining(FRAGMENT)).thenReturn(0L);
+        when(serviceRepo.countByServiceImageUrlContaining(FRAGMENT)).thenReturn(1L);
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 
         verify(cloudinaryService, never()).destroy(anyString());
@@ -106,7 +140,7 @@ class ImageReclaimServiceTest {
     void neverFailsTheOperationThatTriggeredIt() {
         // A database that cannot answer, or a Cloudinary that refuses, is a reason
         // to log and move on, never a reason to report failure to the user.
-        when(stylerRepo.countByProfileImageUrl(anyString()))
+        when(stylerRepo.countByProfileImageUrlContaining(anyString()))
                 .thenThrow(new RuntimeException("database is down"));
 
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));

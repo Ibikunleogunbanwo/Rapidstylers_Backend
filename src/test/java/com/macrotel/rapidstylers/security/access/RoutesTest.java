@@ -34,7 +34,7 @@ class RoutesTest {
             "ADMIN", Routes.ADMIN,
             "STYLER", Routes.STYLER,
             "CUSTOMER", Routes.CUSTOMER,
-            "ADMIN_OR_STYLER", Routes.ADMIN_OR_STYLER);
+            "UPLOAD", Routes.UPLOAD);
 
     @Test
     void everyListedRouteExistsInAController() throws IOException {

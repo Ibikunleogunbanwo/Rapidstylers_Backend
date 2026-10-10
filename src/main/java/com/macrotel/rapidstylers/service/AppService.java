@@ -173,12 +173,6 @@ public class AppService {
     // configured duration determines how much of the stylist's calendar is blocked.
     private static final int SLOT_GRANULARITY_MINUTES = 15;
 
-    @Value("${app.admin.email:}")
-    private String adminEmail;
-
-    @Value("${app.admin.password:}")
-    private String adminPassword;
-
     @Value("${app.time-zone:America/Edmonton}")
     private String appTimeZone;
 
@@ -403,12 +397,7 @@ public class AppService {
             //U<random> token so a minimal (email+password) account still gets an id.
             String fname = nullSafeName(userData.getFirstname());
             String lname = nullSafeName(userData.getLastname());
-            String userId;
-            if (!fname.isEmpty() && !lname.isEmpty()) {
-                userId = fname.charAt(0) + appUtils.randomDigit(4) + lname.charAt(0);
-            } else {
-                userId = "U" + appUtils.randomDigit(4);
-            }
+            String userId = newCustomerId(fname, lname);
             UserEntity userEntity = new UserEntity(userData);
             userEntity.setUserId(userId);
             userEntity.setRegistrationMethod("EMAIL");
@@ -445,9 +434,9 @@ public class AppService {
     }
 
     /**
-     * Unified sign-in for all three roles. Tries admin (env-configured), then
-     * styler, then customer; returns the account data with its role and a
-     * role-scoped JWT so the frontend can route to the right dashboard.
+     * Sign-in for stylists and customers, behind the bot check. Tries styler,
+     * then customer; returns the account data with its role and a role-scoped
+     * JWT so the frontend can route to the right dashboard.
      */
     public BaseResponse signIn(SignInData signInData){
         BaseResponse response = new BaseResponse(true); // local — never leak stale state on error
@@ -466,24 +455,10 @@ public class AppService {
                 return response;
             }
 
-            // 1. Admin (environment-configured credentials)
-            if(adminEmail != null && !adminEmail.isEmpty()
-                    && adminEmail.equalsIgnoreCase(emailAddress)
-                    && adminPassword.equals(password)){
-                Map<String, Object> adminData = new LinkedHashMap<>();
-                adminData.put("role", "ADMIN");
-                response.setStatusCode(SUCCESS_STATUS_CODE);
-                response.setMessage(SUCCESS_MESSAGE);
-                response.setToken(jwtUtil.generateToken("admin", "ADMIN"));
-                response.setRefreshToken(refreshTokenService.issue("admin", "ADMIN"));
-                response.setData(adminData);
-                rateLimiterService.clear("auth:" + emailAddress);
-                rateLimiterService.clear("auth_ip:" + ip);
-                recordLoginSuccess("ADMIN", "admin", emailAddress, ip);
-                return response;
-            }
+            // Admins never sign in here: they use /admin_sign_in, which checks the
+            // admin_accounts table (hashed passwords, disabled accounts, step-up).
 
-            // 2. Styler (vendor)
+            // 1. Styler (vendor)
             Optional<StylerEntity> styler = stylerRepo.findByEmailAddress(emailAddress);
             if(styler.isPresent() && appUtils.passwordMatches(password, styler.get().getPassword())){
                 StylerEntity stylerEntity = styler.get();
@@ -521,7 +496,7 @@ public class AppService {
                 return response;
             }
 
-            // 3. Customer
+            // 2. Customer
             Optional<UserEntity> user = userRepo.findByEmailAddress(emailAddress);
             if(user.isPresent() && "0".equals(user.get().getStatus())){
                 UserEntity userEntity = user.get();
@@ -560,76 +535,6 @@ public class AppService {
             response.setStatusCode(ERROR_STATUS_CODE);
             response.setMessage("Invalid Email Address or Password");
             response.setData(EMPTY_DATA);
-        }
-        catch (Exception ex){
-            LOG.warning(ex.getMessage());
-        }
-        return response;
-    }
-
-    public BaseResponse userSignIn(SignInData signInData){
-        BaseResponse response = new BaseResponse(true);
-        try{
-            //Validate UserSign In — fetch by email, verify in Java (BCrypt with legacy MD5 fallback)
-            String emailAddress = signInData.getEmailAddress();
-            String password = signInData.getPassword();
-            String ip = rateLimiterService.clientIp();
-            // Global lockout: failed logins/verifies (email or IP) block sign-in.
-            if (rateLimiterService.isBlocked("auth:" + emailAddress, AUTH_WINDOW_SECONDS, AUTH_MAX_FAILURES)
-                    || rateLimiterService.isBlocked("auth_ip:" + ip, AUTH_WINDOW_SECONDS, AUTH_IP_MAX_FAILURES)) {
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Too many failed attempts. Please try again later.");
-                response.setData(EMPTY_DATA);
-                recordLoginFailure("CUSTOMER", null, emailAddress, ip, "LOCKED_OUT");
-                return response;
-            }
-            Optional<UserEntity> userSignIn = userRepo.findByEmailAddress(emailAddress);
-            if(userSignIn.isEmpty()
-                    || !"0".equals(userSignIn.get().getStatus())){
-                rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
-                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
-                recordLoginFailure("CUSTOMER", userSignIn.map(UserEntity::getUserId).orElse(null),
-                        emailAddress, ip, "INVALID_CREDENTIALS");
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Email Address or Password");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            UserEntity userEntity = userSignIn.get();
-            // Provider binding: a Google-created account has no usable password
-            // and must sign in through Google, not email/password.
-            if ("GOOGLE".equals(userEntity.getRegistrationMethod())) {
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("This account uses Google sign-in. Please continue with Google.");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            if (!appUtils.passwordMatches(password, userEntity.getPassword())) {
-                rateLimiterService.record("auth:" + emailAddress, AUTH_WINDOW_SECONDS);
-                rateLimiterService.record("auth_ip:" + ip, AUTH_WINDOW_SECONDS);
-                recordLoginFailure("CUSTOMER", userEntity.getUserId(), emailAddress, ip, "INVALID_CREDENTIALS");
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Email Address or Password");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-            // Upgrade a legacy MD5 hash to BCrypt on first successful login
-            if(userEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
-                userEntity.setPassword(appUtils.encryptPassword(password));
-                userRepo.save(userEntity);
-            }
-            rateLimiterService.clear("auth:" + emailAddress);
-            rateLimiterService.clear("auth_ip:" + ip);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setToken(jwtUtil.generateToken(userEntity.getUserId(), "CUSTOMER"));
-            // Issue + persist a rotating refresh token, exactly like /sign_in and Google
-            // sign-in, so email/password customers get silent renewal and the server-side
-            // idle/absolute session caps apply to them. issue() also anchors the session
-            // start (markLogin), which the refresh endpoint's policy checks rely on.
-            response.setRefreshToken(refreshTokenService.issue(userEntity.getUserId(), "CUSTOMER"));
-            response.setData(dtoService.userAccountDTO(userEntity));
-            recordLoginSuccess("CUSTOMER", userEntity.getUserId(), emailAddress, ip);
         }
         catch (Exception ex){
             LOG.warning(ex.getMessage());
@@ -698,6 +603,17 @@ public class AppService {
                 return response;
             }
 
+            // A customer row in any other state (disabled, suspended) is still that
+            // person's account: refuse, rather than create a second account with the
+            // same email that walks around the block.
+            if (user.isPresent()) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("This account is not active. Please contact support.");
+                response.setData(EMPTY_DATA);
+                recordLoginFailure("CUSTOMER", user.get().getUserId(), email, ip, "ACCOUNT_INACTIVE");
+                return response;
+            }
+
             // No account yet -> auto-create a minimal customer from verified Google claims.
             UserData signupData = new UserData();
             signupData.setEmailAddress(email);
@@ -736,12 +652,7 @@ public class AppService {
     private UserEntity createMinimalCustomer(UserData signupData){
         String fname = nullSafeName(signupData.getFirstname());
         String lname = nullSafeName(signupData.getLastname());
-        String userId;
-        if (!fname.isEmpty() && !lname.isEmpty()) {
-            userId = fname.charAt(0) + appUtils.randomDigit(4) + lname.charAt(0);
-        } else {
-            userId = "U" + appUtils.randomDigit(4);
-        }
+        String userId = newCustomerId(fname, lname);
         UserEntity userEntity = new UserEntity(signupData);
         userEntity.setUserId(userId);
         userEntity.setRegistrationMethod("GOOGLE");
@@ -913,6 +824,9 @@ public class AppService {
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(encryptPassword);
             userRepo.save(userPrevData);
+            // A reset is how someone takes their account back: sign out every
+            // device, so a stolen session cannot keep renewing itself.
+            refreshTokenService.revokeAllForAccount(userPrevData.getUserId(), Roles.CUSTOMER);
 
             // Invalidate the OTP so it cannot authorize another reset. Re-saving
             // it with is_used='0' is NOT enough: '0' is exactly the state that
@@ -960,6 +874,10 @@ public class AppService {
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(newPassword);
             userRepo.save(userPrevData);
+            // Sign out every other device, and hand this one a fresh session.
+            refreshTokenService.revokeAllForAccount(accountId, Roles.CUSTOMER);
+            response.setToken(jwtUtil.generateToken(accountId, Roles.CUSTOMER));
+            response.setRefreshToken(refreshTokenService.issue(accountId, Roles.CUSTOMER));
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Password Change Successfully");
@@ -1560,6 +1478,9 @@ public class AppService {
                 return response;
             }
             StylerEntity stylerEntity = new StylerEntity(stylerData);
+            stylerEntity.setStylerId(freeAccountId(stylerEntity.getStylerId(),
+                    () -> stylerData.getFirstname().toUpperCase().charAt(0) + ""
+                            + stylerData.getLastname().toUpperCase().charAt(0) + appUtils.randomDigit(4)));
 
             // Geocode address → lat/lng if not already provided
             if(stylerEntity.getLatitude() == null || stylerEntity.getLongitude() == null){
@@ -5450,6 +5371,34 @@ public class AppService {
      *  (and emails) work for the minimal email+password registration. */
     private String nullSafeName(String name){
         return name == null ? "" : name.trim();
+    }
+
+    /**
+     * A new customer id: first initial, four random digits, last initial (or U and
+     * four digits), never one an account already holds.
+     */
+    private String newCustomerId(String fname, String lname) {
+        java.util.function.Supplier<String> candidate = (!fname.isEmpty() && !lname.isEmpty())
+                ? () -> fname.charAt(0) + appUtils.randomDigit(4) + lname.charAt(0)
+                : () -> "U" + appUtils.randomDigit(4);
+        return freeAccountId(candidate.get(), candidate);
+    }
+
+    /**
+     * The account id is the subject of every sign-in token, so two accounts
+     * sharing one would read and act on each other's bookings, cards and payouts.
+     * The ids are short (four random digits), so collisions are real: keep
+     * drawing until the id is free in both account tables.
+     */
+    private String freeAccountId(String first, java.util.function.Supplier<String> next) {
+        String id = first;
+        for (int attempt = 0; attempt < 100; attempt++) {
+            if (userRepo.findByUserId(id).isEmpty() && stylerRepo.findByStylerId(id).isEmpty()) {
+                return id;
+            }
+            id = next.get();
+        }
+        throw new IllegalStateException("No free account id after 100 attempts");
     }
 
     private void recordLoginSuccess(String accountType, String accountId, String emailAddress, String ipAddress) {

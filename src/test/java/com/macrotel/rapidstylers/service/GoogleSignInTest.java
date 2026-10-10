@@ -281,6 +281,28 @@ class GoogleSignInTest {
     }
 
     @Test
+    void inactiveCustomerIsRefusedInsteadOfGivenASecondAccount() throws Exception {
+        UserEntity user = new UserEntity();
+        user.setFirstname("Dana");
+        user.setLastname("Disabled");
+        user.setEmailAddress(email);
+        user.setPassword("$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST");
+        user.setStatus("1");
+        user.setRegistrationMethod("GOOGLE");
+        user.setUserId("G" + System.currentTimeMillis());
+        userRepo.save(user);
+        userId = user.getUserId();
+
+        when(googleTokenVerifier.verify(anyString())).thenReturn(verifiedClaims(email));
+
+        JsonNode body = postGoogle("valid-token");
+
+        assertEquals("400", body.get("statusCode").asText(), "an inactive account must not sign in: " + body);
+        assertEquals(1, userRepo.findAll().stream().filter(u -> email.equals(u.getEmailAddress())).count(),
+                "no second account may be created for the same email");
+    }
+
+    @Test
     void emailRegisteredCustomerCannotUseGoogleSignIn() throws Exception {
         UserEntity user = new UserEntity();
         user.setFirstname("Emily");
@@ -318,7 +340,7 @@ class GoogleSignInTest {
         userRepo.save(user);
         userId = user.getUserId();
 
-        MvcResult result = mockMvc.perform(post("/rapid_stylers/user_sign_in")
+        MvcResult result = mockMvc.perform(post("/rapid_stylers/sign_in")
                 .header("x-api-key", apiKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(

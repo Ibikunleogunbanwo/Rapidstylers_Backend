@@ -2,6 +2,9 @@ package com.macrotel.rapidstylers.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.macrotel.rapidstylers.entity.AdminAccountEntity;
+import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.entity.ServiceEntity;
@@ -74,6 +77,8 @@ class ConcurrentTwoCustomerBookingTest {
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
+    @Autowired AdminAccountRepo adminAccountRepo;
+    @Autowired PasswordEncoder passwordEncoder;
     @MockBean EmailConfig emailConfig;
 
     @Autowired UserRepo userRepo;
@@ -90,8 +95,6 @@ class ConcurrentTwoCustomerBookingTest {
     @Autowired ServiceRepo serviceRepo;
 
     @Value("${app.api.key}") String apiKey;
-    @Value("${app.admin.email}") String adminEmail;
-    @Value("${app.admin.password}") String adminPassword;
 
     private String custEmailA;
     private String custEmailB;
@@ -186,7 +189,7 @@ class ConcurrentTwoCustomerBookingTest {
 
         // ---- One stylist with an approved profile + service + availability -------
         stylerId = registerStyler();
-        String adminToken = signIn("/sign_in", adminEmail, adminPassword);
+        String adminToken = adminToken();
         apiPost("/admin/update_styler_verification",
                 Map.of("stylerId", stylerId, "action", "APPROVE"), adminToken, null);
         assertEquals("APPROVED",
@@ -279,7 +282,7 @@ class ConcurrentTwoCustomerBookingTest {
         userData.put("agreeToTerms", true);
         apiPost("/create_user_account", userData, null, null);
 
-        String token = signIn("/user_sign_in", email, "Test1234!");
+        String token = signIn("/sign_in", email, "Test1234!");
         String userId = userRepo.findByEmailAddress(email).orElseThrow().getUserId();
         return new String[]{token, userId};
     }
@@ -325,6 +328,25 @@ class ConcurrentTwoCustomerBookingTest {
 
     private boolean isSuccess(JsonNode node) {
         return node != null && node.has("statusCode") && "200".equals(node.get("statusCode").asText());
+    }
+
+    /**
+     * Admins sign in on /admin_sign_in against an admin_accounts row. The test
+     * profile's ADMIN_PASSWORD is a weak default the boot seeder refuses, so the
+     * test seeds its own admin.
+     */
+    private String adminToken() throws Exception {
+        String email = "journey.admin@rapidstylers.test";
+        String password = "Journey-Admin-Pass-1";
+        if (adminAccountRepo.findByEmailIgnoreCase(email).isEmpty()) {
+            AdminAccountEntity admin = new AdminAccountEntity();
+            admin.setEmail(email);
+            admin.setPasswordHash(passwordEncoder.encode(password));
+            admin.setEnabled(true);
+            admin.setRole("ADMIN");
+            adminAccountRepo.save(admin);
+        }
+        return signIn("/admin_sign_in", email, password);
     }
 
     private String signIn(String path, String email, String password) throws Exception {

@@ -35,13 +35,11 @@ public final class Routes {
             "/rapid_stylers/styler_verify_otp",
             "/rapid_stylers/create_styler",
             "/rapid_stylers/sign_in",
-            "/rapid_stylers/user_sign_in",
             "/rapid_stylers/google_sign_in",
             "/rapid_stylers/admin_sign_in",
             "/rapid_stylers/auth/refresh",
             "/rapid_stylers/generate_reset_password_token",
             "/rapid_stylers/reset_user_password",
-            "/rapid_stylers/get_upload_signature",
 
             // Catalog and search
             "/rapid_stylers/list_identification",
@@ -187,7 +185,13 @@ public final class Routes {
             "/rapid_stylers/apply_referral",
     };
 
-    public static final String[] ADMIN_OR_STYLER = {
+    /**
+     * Photo uploads: a signed-in stylist or admin, or a stylist still signing up
+     * who shows the upload pass from their email code. Deleting only ever removes
+     * an image nothing uses (see ImageReclaimService).
+     */
+    public static final String[] UPLOAD = {
+            "/rapid_stylers/get_upload_signature",
             "/rapid_stylers/delete_cloudinary_image",
     };
 }

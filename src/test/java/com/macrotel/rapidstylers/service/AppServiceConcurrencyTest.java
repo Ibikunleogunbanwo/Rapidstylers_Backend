@@ -5,6 +5,7 @@ import com.macrotel.rapidstylers.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.entity.UserEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.SignInData;
+import com.macrotel.rapidstylers.repo.StylerRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,7 +95,7 @@ class AppServiceConcurrencyTest {
             return dto;
         });
 
-        // /user_sign_in now issues a refresh token on success, so the harness
+        // /sign_in issues a refresh token on success, so the harness
         // must wire the service (leaving it null would NPE into the catch block).
         RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
         when(refreshTokenService.issue(anyString(), anyString()))
@@ -102,6 +103,9 @@ class AppServiceConcurrencyTest {
 
         // Package-private fields — the test lives in the same package.
         appService.userRepo = userRepo;
+        StylerRepo stylerRepo = mock(StylerRepo.class);
+        when(stylerRepo.findByEmailAddress(anyString())).thenReturn(Optional.empty());
+        appService.stylerRepo = stylerRepo;
         appService.rateLimiterService = rateLimiterService;
         appService.loginAttemptService = loginAttemptService;
         appService.jwtUtil = jwtUtil;
@@ -120,12 +124,12 @@ class AppServiceConcurrencyTest {
 
             @Override
             public BaseResponse successWithToken() {
-                return appService.userSignIn(signIn(VALID_EMAIL));
+                return appService.signIn(signIn(VALID_EMAIL));
             }
 
             @Override
             public BaseResponse failingCall() {
-                return appService.userSignIn(signIn(INVALID_EMAIL));
+                return appService.signIn(signIn(INVALID_EMAIL));
             }
         });
         assertTrue(failures.isEmpty(),

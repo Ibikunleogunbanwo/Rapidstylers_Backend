@@ -1,23 +1,17 @@
 package com.macrotel.rapidstylers.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
+import com.macrotel.rapidstylers.service.ImageReclaimService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -27,7 +21,6 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static com.macrotel.rapidstylers.config.AppConstants.ERROR_STATUS_CODE;
@@ -55,7 +48,6 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
 @RequestMapping("/rapid_stylers")
 public class CloudinaryController {
 
-    private static final Logger LOG = Logger.getLogger(CloudinaryController.class.getName());
 
     @Value("${cloudinary.cloud-name:}")
     private String cloudName;
@@ -77,6 +69,9 @@ public class CloudinaryController {
 
     @Autowired
     private RateLimiterService rateLimiterService;
+
+    @Autowired
+    private ImageReclaimService imageReclaimService;
 
     @GetMapping("/get_upload_signature")
     public ResponseEntity<BaseResponse> getUploadSignature(
@@ -178,56 +173,24 @@ public class CloudinaryController {
     }
 
     /**
-     * Deletes a previously-uploaded image. Used by the frontend to clean up
-     * images that were uploaded but never attached to an account (e.g. the
-     * create_styler call failed), so failed/abandoned signups don't leave
-     * orphaned images in the Cloudinary bucket.
+     * Deletes an uploaded image that nothing uses. The frontend calls it to clean
+     * up photos uploaded for a sign-up or portfolio save that then failed. It
+     * only ever removes an orphan: an image any profile, ID, portfolio, blog or
+     * service still points at is kept, so nobody can delete someone else's photo
+     * by sending its public id.
      */
     @PostMapping("/delete_cloudinary_image")
     public ResponseEntity<BaseResponse> deleteCloudinaryImage(@RequestBody Map<String, String> requestBody) {
         String publicId = requestBody.getOrDefault("publicId", "");
         BaseResponse response = new BaseResponse();
-        try {
-            long timestamp = Instant.now().getEpochSecond();
-            // Cloudinary signs the destroy params (public_id + timestamp),
-            // sorted alphabetically, with the API secret appended, SHA-1.
-            String toSign = "public_id=" + publicId + "&timestamp=" + timestamp + apiSecret;
-            String signature = sha1(toSign);
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-            LinkedMultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-            body.add("public_id", publicId);
-            body.add("api_key", apiKey);
-            body.add("timestamp", String.valueOf(timestamp));
-            body.add("signature", signature);
-
-            HttpEntity<LinkedMultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
-            ResponseEntity<String> cloudRes = restTemplate.postForEntity(
-                    "https://api.cloudinary.com/v1_1/" + cloudName + "/image/destroy",
-                    request, String.class);
-
-            JsonNode root = new ObjectMapper().readTree(cloudRes.getBody());
-            String result = root.path("result").asText();
-
-            if (!"ok".equals(result)) {
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Cloudinary delete returned: " + result);
-                response.setData(Collections.emptyList());
-                return ApiResponses.respond(response);
-            }
-
+        if (imageReclaimService.reclaimPublicIdIfUnreferenced(publicId)) {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Image deleted");
-            response.setData(Collections.emptyList());
-        } catch (Exception e) {
+        } else {
             response.setStatusCode(ERROR_STATUS_CODE);
-            LOG.warning("Cloudinary delete failed: " + e.getMessage());
-            response.setMessage("Delete failed. Please try again.");
-            response.setData(Collections.emptyList());
+            response.setMessage("Image was not deleted: it is still in use or already gone.");
         }
+        response.setData(Collections.emptyList());
         return ApiResponses.respond(response);
     }
 

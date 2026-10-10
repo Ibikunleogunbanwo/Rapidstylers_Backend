@@ -70,6 +70,8 @@ class SecurityRulesTest {
             "GET,    /rapid_stylers/list_service,                     ,         200",
             "POST,   /rapid_stylers/sign_in,                          ,         200",
             "POST,   /rapid_stylers/stripe/webhook,                   ,         200",
+            // The old unchallenged customer sign-in is gone (falls to closed by default)
+            "POST,   /rapid_stylers/user_sign_in,                     ,         401",
             // Role routes
             "POST,   /rapid_stylers/delete_cloudinary_image,          ,         401",
             "POST,   /rapid_stylers/delete_cloudinary_image,          ADMIN,    200",
@@ -100,8 +102,13 @@ class SecurityRulesTest {
             // The sign-up upload pass is not an account, so it opens nothing beyond public routes
             "POST,   /rapid_stylers/auth/logout,                      SIGNUP_UPLOAD, 401",
             "GET,    /rapid_stylers/user_data,                        SIGNUP_UPLOAD, 401",
-            "POST,   /rapid_stylers/delete_cloudinary_image,          SIGNUP_UPLOAD, 401",
+            "POST,   /rapid_stylers/delete_cloudinary_image,          SIGNUP_UPLOAD, 200",
             "GET,    /rapid_stylers/get_upload_signature,             SIGNUP_UPLOAD, 200",
+            // Upload signatures: stylists, admins and the sign-up pass, nobody else
+            "GET,    /rapid_stylers/get_upload_signature,             ,         401",
+            "GET,    /rapid_stylers/get_upload_signature,             CUSTOMER, 401",
+            "GET,    /rapid_stylers/get_upload_signature,             STYLER,   200",
+            "GET,    /rapid_stylers/get_upload_signature,             ADMIN,    200",
             // A trailing slash must not slip past a role rule
             "GET,    /rapid_stylers/user_data/,                       STYLER,   401",
             "GET,    /rapid_stylers/admin/kpis/,                      CUSTOMER, 401",

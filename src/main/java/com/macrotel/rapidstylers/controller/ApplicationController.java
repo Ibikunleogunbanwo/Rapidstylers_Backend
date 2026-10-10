@@ -108,23 +108,6 @@ public class ApplicationController {
     }
 
     /**
-     * Not bot-gated, deliberately. Besides the hero sign-in form, this endpoint
-     * is the automatic sign-in that immediately follows account creation in the
-     * signup journey, the secure-account step and the booking flow — none of
-     * which has a form on which a challenge could be rendered. Adding the gate
-     * here would break real signups while the equivalent credential check is
-     * still reachable, so it is left to rate limiting plus per-account lockout.
-     * Closing that properly needs a server-issued single-use auto-login ticket
-     * for the post-signup case; it is recorded as an open action in
-     * docs/pre-launch-security-audit.md rather than half-done here.
-     */
-    @PostMapping("/user_sign_in")
-    public ResponseEntity <BaseResponse> userSignIn(@Valid @RequestBody SignInData signInData){
-        BaseResponse baseResponse = appService.userSignIn(signInData);
-        HttpStatus status = ApiResponses.httpStatus(baseResponse);
-        return new ResponseEntity<>(baseResponse,status);
-    }
-    /**
      * The unified sign-in used by the site's login page for all three roles —
      * the endpoint a credential-stuffing bot actually reaches — so it carries
      * the bot-protection gate, paired with the Turnstile widget on that page.

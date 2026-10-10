@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /**
  * Gives back the Cloudinary assets that nothing points at any more.
@@ -19,8 +20,8 @@ import java.util.logging.Logger;
  * Cloudinary forever, because a row deletion says nothing to a CDN.
  *
  * The rule is intentionally one-directional and deliberately boring: an asset is
- * destroyed only when **no row in any of those five columns still holds its
- * URL**. That check is what makes this safe to call from anywhere, including
+ * destroyed only when **no row in any of those five columns still points at
+ * it** (matched by public id, so no spelling of the URL slips past). That check is what makes this safe to call from anywhere, including
  * from paths a stranger can trigger, because the only thing it can ever destroy
  * is an image that no record refers to, which is the definition of an orphan.
  * The same URL can legitimately be shared, and a shared image is never taken
@@ -55,17 +56,28 @@ public class ImageReclaimService {
     @Autowired
     ServiceRepo serviceRepo;
 
-    /** How many rows still point at this exact URL, across every column that holds an image. */
-    public long referenceCount(String url) {
-        if (url == null || url.isBlank()) {
-            return 0;
-        }
-        String trimmed = url.trim();
-        return stylerRepo.countByProfileImageUrl(trimmed)
-                + stylerRepo.countByIdentificationImageUrl(trimmed)
-                + stylerPortfolioRepo.countByImageUrl(trimmed)
-                + blogPostRepo.countByImageUrl(trimmed)
-                + serviceRepo.countByServiceImageUrl(trimmed);
+    /**
+     * The shape of a public id this app hands out: under the rapid_stylers folder,
+     * letters, digits, dashes and underscores only. Anything else is refused before
+     * a database or Cloudinary is asked about it.
+     */
+    private static final Pattern OUR_PUBLIC_ID = Pattern.compile("^rapid_stylers/[A-Za-z0-9_\\-/]+$");
+
+    /**
+     * How many rows still point at this asset, across every column that holds an
+     * image. Matched by public id, not by the exact URL: the same asset has many
+     * spellings (with or without the v123/ version, another extension, a ?query),
+     * and counting only one spelling let a caller pass a variant and have a
+     * still-used image destroyed. A loose match can only over-count, which keeps
+     * an image rather than losing one.
+     */
+    public long referenceCount(String publicId) {
+        String fragment = "/" + publicId;
+        return stylerRepo.countByProfileImageUrlContaining(fragment)
+                + stylerRepo.countByIdentificationImageUrlContaining(fragment)
+                + stylerPortfolioRepo.countByImageUrlContaining(fragment)
+                + blogPostRepo.countByImageUrlContaining(fragment)
+                + serviceRepo.countByServiceImageUrlContaining(fragment);
     }
 
     /**
@@ -77,18 +89,26 @@ public class ImageReclaimService {
         if (url == null || url.isBlank()) {
             return false;
         }
-        String trimmed = url.trim();
+        // Not a Cloudinary delivery URL (a static path served by this app, or an
+        // image hosted somewhere else): nothing here to delete.
+        return reclaimPublicIdIfUnreferenced(cloudinaryService.extractPublicId(url.trim()));
+    }
+
+    /**
+     * Destroys an asset by its public id, but only when nothing references it.
+     * This is the one way callers outside the server (the delete endpoint) may
+     * remove an image, so the most anyone can delete is an orphan.
+     *
+     * @return true when an asset was actually destroyed
+     */
+    public boolean reclaimPublicIdIfUnreferenced(String publicId) {
+        if (publicId == null || !OUR_PUBLIC_ID.matcher(publicId).matches() || publicId.contains("..")) {
+            return false;
+        }
         try {
-            long references = referenceCount(trimmed);
-            if (references > 0) {
+            if (referenceCount(publicId) > 0) {
                 // Still in use somewhere, so it is not an orphan. Silent by design:
                 // sharing an image is normal and not worth a log line per delete.
-                return false;
-            }
-            String publicId = cloudinaryService.extractPublicId(trimmed);
-            if (publicId == null) {
-                // Not a Cloudinary delivery URL: a static path served by this app,
-                // or an image hosted somewhere else. Nothing here to delete.
                 return false;
             }
             boolean destroyed = cloudinaryService.destroy(publicId);
@@ -99,7 +119,7 @@ public class ImageReclaimService {
         } catch (Exception ex) {
             // Cleanup is a courtesy, never a reason to fail the operation that
             // triggered it, and never a reason to lose an exception report either.
-            LOG.warning("Image reclaim failed for " + trimmed + ": " + ex.getMessage());
+            LOG.warning("Image reclaim failed for " + publicId + ": " + ex.getMessage());
             return false;
         }
     }

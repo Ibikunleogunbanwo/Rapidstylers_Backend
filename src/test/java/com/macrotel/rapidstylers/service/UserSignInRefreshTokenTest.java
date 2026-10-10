@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /**
  * Email/password customers must get the same session model as /sign_in and
- * Google sign-in: POST /user_sign_in returns a refresh token, persists it
+ * Google sign-in: POST /sign_in returns a refresh token, persists it
  * (SHA-256 hash) as a live refresh_tokens row, and the token actually rotates
  * over /auth/refresh — anchoring the server-side idle/absolute session caps.
  *
@@ -90,14 +90,14 @@ class UserSignInRefreshTokenTest {
         userRepo.save(user);
 
         // ---- Email/password login over the real HTTP stack ----
-        JsonNode body = body(apiPost("/user_sign_in",
+        JsonNode body = body(apiPost("/sign_in",
                 Map.of("emailAddress", email, "password", PASSWORD)));
 
         assertEquals("200", body.get("statusCode").asText(), "email/password login must succeed: " + body);
         assertFalse(body.get("token").asText().isBlank(), "must issue a JWT");
         String refreshToken = body.get("refreshToken").asText();
         assertFalse(refreshToken.isBlank(),
-                "/user_sign_in must return a refreshToken, like /sign_in and Google sign-in do");
+                "/sign_in must return a refreshToken, like Google sign-in does");
 
         // ---- The refresh token must be persisted as a live CUSTOMER row ----
         RefreshTokenEntity stored = refreshTokenRepo
@@ -131,6 +131,43 @@ class UserSignInRefreshTokenTest {
                 .andReturn();
         assertEquals(200, userDataResult.getResponse().getStatus(),
                 "refreshed access token must work on /user_data");
+    }
+
+    @Test
+    void changingThePasswordSignsOutEveryOtherDevice() throws Exception {
+        UserEntity user = new UserEntity();
+        user.setUserId(userId);
+        user.setFirstname("Pat");
+        user.setLastname("Password");
+        user.setEmailAddress(email);
+        user.setPassword(passwordEncoder.encode(PASSWORD));
+        user.setStatus("0");
+        userRepo.save(user);
+
+        JsonNode otherDevice = body(apiPost("/sign_in", Map.of("emailAddress", email, "password", PASSWORD)));
+        JsonNode thisDevice = body(apiPost("/sign_in", Map.of("emailAddress", email, "password", PASSWORD)));
+
+        MvcResult changed = mockMvc.perform(post("/rapid_stylers/update_user_password")
+                        .header("x-api-key", apiKey)
+                        .header("Authorization", "Bearer " + thisDevice.get("token").asText())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "emailAddress", email,
+                                "oldPassword", PASSWORD,
+                                "password", "NewPass2!",
+                                "confirmPassword", "NewPass2!"))))
+                .andReturn();
+        JsonNode changeBody = body(changed);
+        assertEquals("200", changeBody.get("statusCode").asText(), "password change must succeed: " + changeBody);
+
+        // Every session from before the change is over, including a stolen one...
+        assertEquals(401, apiPost("/auth/refresh",
+                Map.of("refreshToken", otherDevice.get("refreshToken").asText())).getResponse().getStatus());
+        assertEquals(401, apiPost("/auth/refresh",
+                Map.of("refreshToken", thisDevice.get("refreshToken").asText())).getResponse().getStatus());
+        // ...and the device that made the change carries on with the fresh one it was handed.
+        assertEquals(200, apiPost("/auth/refresh",
+                Map.of("refreshToken", changeBody.get("refreshToken").asText())).getResponse().getStatus());
     }
 
     private String sha256Hex(String input) throws Exception {

@@ -6,6 +6,8 @@ import com.macrotel.rapidstylers.pojo.AdminAccountData;
 import com.macrotel.rapidstylers.pojo.AdminPasswordData;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.security.access.Roles;
+import com.macrotel.rapidstylers.service.RefreshTokenService;
 import com.macrotel.rapidstylers.service.StepUpService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -46,6 +48,7 @@ public class AdminAccountController {
     private final PasswordEncoder passwordEncoder;
 
     private StepUpService stepUpService;
+    private RefreshTokenService refreshTokenService;
 
     public AdminAccountController(AdminAccountRepo adminAccountRepo, PasswordEncoder passwordEncoder) {
         this.adminAccountRepo = adminAccountRepo;
@@ -55,6 +58,19 @@ public class AdminAccountController {
     @Autowired
     public void setStepUpService(StepUpService stepUpService) {
         this.stepUpService = stepUpService;
+    }
+
+    @Autowired
+    public void setRefreshTokenService(RefreshTokenService refreshTokenService) {
+        this.refreshTokenService = refreshTokenService;
+    }
+
+    /**
+     * Ends every session of this admin. A disabled admin, or one whose password
+     * was just reset because it leaked, must not keep renewing their sign-in.
+     */
+    private void signOutEverywhere(AdminAccountEntity account) {
+        refreshTokenService.revokeAllForAccount(account.getEmail(), Roles.ADMIN);
     }
 
     @GetMapping
@@ -150,6 +166,7 @@ public class AdminAccountController {
         }
         account.setPasswordHash(passwordEncoder.encode(data.getPassword()));
         adminAccountRepo.save(account);
+        signOutEverywhere(account);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));
@@ -179,6 +196,9 @@ public class AdminAccountController {
         }
         account.setEnabled(enabled);
         adminAccountRepo.save(account);
+        if (!enabled) {
+            signOutEverywhere(account);
+        }
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));

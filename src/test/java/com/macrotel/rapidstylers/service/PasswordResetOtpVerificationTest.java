@@ -8,6 +8,7 @@ import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.repo.OTPRepo;
 import com.macrotel.rapidstylers.repo.UserRepo;
+import com.macrotel.rapidstylers.security.access.Roles;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,6 +38,7 @@ class PasswordResetOtpVerificationTest {
     private OTPRepo otpRepo;
     private EmailConfig emailConfig;
     private RateLimiterService rateLimiterService;
+    private RefreshTokenService refreshTokenService;
 
     @BeforeEach
     void setUp() {
@@ -50,6 +52,8 @@ class PasswordResetOtpVerificationTest {
         appService.otpRepo = otpRepo;
         appService.emailConfig = emailConfig;
         appService.rateLimiterService = rateLimiterService;
+        refreshTokenService = mock(RefreshTokenService.class);
+        appService.refreshTokenService = refreshTokenService;
 
         // Rate limiter always permits — individual tests override when needed
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
@@ -108,6 +112,8 @@ class PasswordResetOtpVerificationTest {
         assertEquals("200", response.getStatusCode());
         assertEquals("Password Change Successful", response.getMessage());
         verify(userRepo).save(any());
+        // every other device holding a refresh token is signed out
+        verify(refreshTokenService).revokeAllForAccount(user.getUserId(), Roles.CUSTOMER);
     }
 
     // ── OTP reuse prevention ──────────────────────────────────────────

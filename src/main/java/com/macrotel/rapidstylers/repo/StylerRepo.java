@@ -31,9 +31,9 @@ public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
     Optional<StylerEntity> findByStripeConnectAccountId(String stripeConnectAccountId);
 
     /** How many stylist records hold this exact image URL (used before destroying an asset). */
-    long countByProfileImageUrl(String profileImageUrl);
+    long countByProfileImageUrlContaining(String fragment);
 
-    long countByIdentificationImageUrl(String identificationImageUrl);
+    long countByIdentificationImageUrlContaining(String fragment);
 
     Optional<StylerEntity> findByPhoneNumber(String phoneNumber);
 
