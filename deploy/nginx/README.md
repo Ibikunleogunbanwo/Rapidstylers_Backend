@@ -13,7 +13,7 @@ limiting accurate through that chain.
 | File | Install to | Purpose |
 |---|---|---|
 | `sites-available/api.YOURDOMAIN.com.conf` | `/etc/nginx/sites-available/api.<your-domain>.conf` | TLS site: `api.<your-domain>` → `127.0.0.1:9095` |
-| `cloudflare-real-ip.conf` | `/etc/nginx/conf.d/` | Trust Cloudflare ranges; `CF-Connecting-IP` becomes the real client IP |
+| `cloudflare-real-ip.conf` | `/etc/nginx/conf.d/` | Trust Cloudflare ranges; `CF-Connecting-IP` becomes the real client IP; sets `$from_cloudflare` so the site refuses anything that skipped Cloudflare |
 
 ## Install
 
@@ -47,6 +47,8 @@ curl -i -H "x-api-key: $APP_API_KEY" \
      https://api.example.com/rapid_stylers/list_service  # 200
 # Real client IP reaches the app:
 grep -i "client" /var/log/nginx/access.log | tail -1   # should NOT be 104.16.x / 172.x
+# Direct hits that skip Cloudflare are refused (connection closed, no response):
+curl -k -i --resolve api.example.com:443:<VPS-IP> https://api.example.com/actuator/health  # run from your laptop: fails
 ```
 
 ## Notes
