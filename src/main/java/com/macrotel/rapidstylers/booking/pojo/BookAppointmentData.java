@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.booking.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.Pattern;
+import lombok.Data;
 
 @Data
 public class BookAppointmentData {

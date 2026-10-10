@@ -1,8 +1,7 @@
 package com.macrotel.rapidstylers.catalog.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.NotEmpty;
+import lombok.Data;
 
 @Data
 public class BlogPostData {

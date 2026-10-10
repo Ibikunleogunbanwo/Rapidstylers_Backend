@@ -1,13 +1,12 @@
 package com.macrotel.rapidstylers.common.service;
 
-import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.common.entity.AuditLogEntity;
 import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.config.EmailConfig;
+import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
-import java.util.logging.Logger;
 
 /**
  * Shared audit-log and ops-alert sink, so every domain service can record an

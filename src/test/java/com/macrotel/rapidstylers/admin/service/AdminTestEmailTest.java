@@ -1,8 +1,8 @@
 package com.macrotel.rapidstylers.admin.service;
 
-import com.macrotel.rapidstylers.support.TestServices;
-import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.support.TestServices;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

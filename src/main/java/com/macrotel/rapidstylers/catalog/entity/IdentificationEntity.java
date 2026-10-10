@@ -1,10 +1,9 @@
 package com.macrotel.rapidstylers.catalog.entity;
 
-import lombok.Data;
-
-import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDate;
+import javax.persistence.*;
+import lombok.Data;
 
 @Data
 @Entity

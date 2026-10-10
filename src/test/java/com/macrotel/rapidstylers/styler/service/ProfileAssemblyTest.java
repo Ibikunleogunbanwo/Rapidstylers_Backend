@@ -1,30 +1,27 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
-import com.macrotel.rapidstylers.support.TestServices;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
+import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.styler.dto.StylerPortfolioDTO;
-import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
 import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.styler.entity.AvailabilityExceptionEntity;
-import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
+import com.macrotel.rapidstylers.support.TestServices;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -33,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;

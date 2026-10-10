@@ -1,11 +1,18 @@
 package com.macrotel.rapidstylers.common.service;
 
+import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.customer.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.customer.dto.UserDataDTO;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
-import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.engagement.dto.FeedBackDTO;
+import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
+import com.macrotel.rapidstylers.engagement.entity.FeedbackEntity;
+import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.payment.dto.CardDetailsDTO;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
@@ -20,17 +27,9 @@ import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
-import com.macrotel.rapidstylers.engagement.dto.FeedBackDTO;
-import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
-import com.macrotel.rapidstylers.engagement.entity.FeedbackEntity;
-import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
-import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
-import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import java.util.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import java.util.*;
 
 import static com.macrotel.rapidstylers.config.AppConstants.DEFAULT_SERVICE_DURATION_MINUTES;
 import static com.macrotel.rapidstylers.config.AppConstants.EMPTY_DATA;

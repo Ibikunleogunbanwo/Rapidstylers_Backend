@@ -1,17 +1,16 @@
 package com.macrotel.rapidstylers.engagement.service;
 
-import com.macrotel.rapidstylers.support.TestServices;
-import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
-import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import com.macrotel.rapidstylers.engagement.pojo.NotificationPreferencesData;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
+import com.macrotel.rapidstylers.support.TestServices;
 import java.util.Collections;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;

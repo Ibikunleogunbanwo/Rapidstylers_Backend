@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.styler.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
+import lombok.Data;
 
 @Data
 public class AvailabilityData {

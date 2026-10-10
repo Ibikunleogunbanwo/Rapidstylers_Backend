@@ -1,8 +1,7 @@
 package com.macrotel.rapidstylers.payment.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.NotEmpty;
+import lombok.Data;
 
 @Data
 public class CardDetailsData {

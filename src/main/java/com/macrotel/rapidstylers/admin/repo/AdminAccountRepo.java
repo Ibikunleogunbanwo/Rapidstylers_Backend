@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.admin.repo;
 
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AdminAccountRepo extends JpaRepository<AdminAccountEntity, Long> {
     Optional<AdminAccountEntity> findByEmailIgnoreCase(String email);

@@ -1,13 +1,13 @@
 package com.macrotel.rapidstylers.customer.service;
 
+import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.customer.entity.SavedStylistEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.pojo.UpdateData;
 import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.common.web.Responses;
-import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;

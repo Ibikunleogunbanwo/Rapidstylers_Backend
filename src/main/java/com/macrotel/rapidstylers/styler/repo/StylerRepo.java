@@ -1,16 +1,14 @@
 package com.macrotel.rapidstylers.styler.repo;
 
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import javax.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
-import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
-
-import javax.persistence.LockModeType;
 
 public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
     @Query(value = "SELECT s FROM StylerEntity s WHERE s.emailAddress =:emailAddress AND s.status= '0'")

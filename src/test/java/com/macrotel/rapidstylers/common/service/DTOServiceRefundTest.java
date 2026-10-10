@@ -4,10 +4,9 @@ import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;

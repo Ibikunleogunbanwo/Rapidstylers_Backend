@@ -1,20 +1,15 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import org.springframework.test.util.ReflectionTestUtils;
-import com.macrotel.rapidstylers.common.service.AuditService;
 import com.google.gson.JsonParser;
-import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.service.AuditService;
+import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.stripe.model.Event;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +17,10 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

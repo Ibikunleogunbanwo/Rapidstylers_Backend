@@ -2,12 +2,11 @@ package com.macrotel.rapidstylers.styler.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-
-import java.util.logging.Logger;
 
 /**
  * Derives an IANA time zone identifier from a lat/lng via the Google Time

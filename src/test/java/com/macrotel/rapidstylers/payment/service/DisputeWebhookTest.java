@@ -1,19 +1,18 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import org.springframework.test.util.ReflectionTestUtils;
-import com.macrotel.rapidstylers.common.service.AuditService;
-import com.macrotel.rapidstylers.support.TestServices;
-import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.outbox.OutboxEventService;
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
-import com.stripe.model.Event;
 import com.google.gson.JsonParser;
+import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.service.AuditService;
+import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.outbox.OutboxEventService;
+import com.macrotel.rapidstylers.support.TestServices;
+import com.stripe.model.Event;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.Optional;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;

@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.common.web;
 
+import javax.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-
-import javax.servlet.http.HttpServletRequest;
 
 import static com.macrotel.rapidstylers.config.AppConstants.EMPTY_DATA;
 

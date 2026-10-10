@@ -1,8 +1,7 @@
 package com.macrotel.rapidstylers.styler.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.NotBlank;
+import lombok.Data;
 
 @Data
 public class VerificationActionData {

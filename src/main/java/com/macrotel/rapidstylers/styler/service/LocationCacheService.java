@@ -1,16 +1,14 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import com.macrotel.rapidstylers.config.ThrottledLog;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Logger;
 import org.springframework.data.geo.*;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.GeoOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.scheduling.annotation.Scheduled;
-
-import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.Logger;
 
 /**
  * Redis-backed geospatial index for stylist locations.

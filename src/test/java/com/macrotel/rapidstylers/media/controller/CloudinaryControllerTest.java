@@ -1,15 +1,14 @@
 package com.macrotel.rapidstylers.media.controller;
 
-import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Map;
 
 import static com.macrotel.rapidstylers.config.AppConstants.ERROR_STATUS_CODE;
 import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;

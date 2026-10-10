@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.payment.entity;
 
-import lombok.Data;
-
-import javax.persistence.*;
 import java.io.Serializable;
+import javax.persistence.*;
+import lombok.Data;
 
 /**
  * Runtime-configurable platform settings (key/value). Commission percent is

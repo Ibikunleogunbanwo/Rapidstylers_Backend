@@ -1,12 +1,11 @@
 package com.macrotel.rapidstylers.styler.entity;
 
 import com.macrotel.rapidstylers.styler.pojo.AvailabilityData;
-import lombok.Data;
-
-import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import javax.persistence.*;
+import lombok.Data;
 
 @Data
 @Entity

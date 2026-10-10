@@ -1,25 +1,24 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
-import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
-import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
+import com.macrotel.rapidstylers.support.TestServices;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;

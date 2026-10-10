@@ -1,10 +1,9 @@
 package com.macrotel.rapidstylers.admin.entity;
 
-import lombok.Data;
-
-import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import javax.persistence.*;
+import lombok.Data;
 
 /**
  * A database-backed admin account. The bootstrap admin (ADMIN_EMAIL /

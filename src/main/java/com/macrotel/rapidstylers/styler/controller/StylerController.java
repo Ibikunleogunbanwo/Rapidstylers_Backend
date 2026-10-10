@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.styler.controller;
 
+import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.common.web.CurrentAccount;
 import com.macrotel.rapidstylers.styler.pojo.ServiceUpdateData;
 import com.macrotel.rapidstylers.styler.pojo.StylerData;
 import com.macrotel.rapidstylers.styler.pojo.SubServiceData;
 import com.macrotel.rapidstylers.styler.pojo.VerificationActionData;
-import com.macrotel.rapidstylers.common.web.CurrentAccount;
-import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.styler.service.StylerService;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;

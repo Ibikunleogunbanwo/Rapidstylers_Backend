@@ -1,10 +1,9 @@
 package com.macrotel.rapidstylers.styler.pojo;
 
-import lombok.Data;
-
+import java.util.List;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
-import java.util.List;
+import lombok.Data;
 
 /**
  * Wrapper for availability updates. A {@code @Valid List<AvailabilityData>}

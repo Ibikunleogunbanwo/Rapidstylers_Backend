@@ -1,20 +1,17 @@
 package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.common.service.RateLimiterService;
-import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
-import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.security.access.Roles;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;

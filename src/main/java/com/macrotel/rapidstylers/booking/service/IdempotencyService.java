@@ -1,12 +1,11 @@
 package com.macrotel.rapidstylers.booking.service;
 
 import com.macrotel.rapidstylers.config.ThrottledLog;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Service;
-
 import java.time.Duration;
 import java.util.UUID;
 import java.util.logging.Logger;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
 
 /**
  * Atomic, short-lived claims used to prevent duplicate mutation requests.

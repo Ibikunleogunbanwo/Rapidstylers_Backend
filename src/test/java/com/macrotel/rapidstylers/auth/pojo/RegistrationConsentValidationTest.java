@@ -2,12 +2,11 @@ package com.macrotel.rapidstylers.auth.pojo;
 
 import com.macrotel.rapidstylers.customer.pojo.UserData;
 import com.macrotel.rapidstylers.styler.pojo.StylerData;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-
 import javax.validation.Validation;
 import javax.validation.Validator;
 import javax.validation.ValidatorFactory;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

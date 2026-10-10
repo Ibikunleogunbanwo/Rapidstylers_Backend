@@ -1,33 +1,31 @@
 package com.macrotel.rapidstylers.config;
 
-import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
+import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
+import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
+import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
+import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityRepo;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 
 /**
  * The public showroom: guarantees every service type carries a floor of

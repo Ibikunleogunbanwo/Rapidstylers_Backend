@@ -1,16 +1,15 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.common.service.AuditService;
-import com.macrotel.rapidstylers.payment.entity.PlatformSettingEntity;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.payment.entity.PlatformSettingEntity;
 import com.macrotel.rapidstylers.payment.repo.PlatformSettingRepo;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.Map;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;

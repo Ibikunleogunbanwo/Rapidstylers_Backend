@@ -1,10 +1,7 @@
 package com.macrotel.rapidstylers.booking.entity;
 
-import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
-import lombok.Data;
-
-import javax.persistence.*;
+import com.macrotel.rapidstylers.config.AppUtils;
 import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -12,6 +9,8 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
+import javax.persistence.*;
+import lombok.Data;
 
 @Data
 @Entity

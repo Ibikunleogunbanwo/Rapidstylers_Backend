@@ -1,13 +1,12 @@
 package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.common.service.RateLimiterService;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
-
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

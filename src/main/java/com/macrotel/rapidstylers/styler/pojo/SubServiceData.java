@@ -1,12 +1,11 @@
 package com.macrotel.rapidstylers.styler.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.AssertTrue;
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.Pattern;
+import lombok.Data;
 
 import static com.macrotel.rapidstylers.config.AppConstants.AMOUNT_VALIDATION_REGEX;
 import static com.macrotel.rapidstylers.config.AppConstants.DEFAULT_SERVICE_DURATION_MINUTES;

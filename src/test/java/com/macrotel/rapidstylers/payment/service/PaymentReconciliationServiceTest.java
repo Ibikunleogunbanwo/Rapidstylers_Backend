@@ -1,16 +1,15 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.config.EmailConfig;
 import com.stripe.model.PaymentIntent;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

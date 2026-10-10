@@ -1,20 +1,23 @@
 package com.macrotel.rapidstylers.admin.controller;
 
-import com.macrotel.rapidstylers.common.web.ApiResponses;
-import com.macrotel.rapidstylers.config.AdminAccountInitializer;
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.admin.pojo.AdminAccountData;
 import com.macrotel.rapidstylers.admin.pojo.AdminPasswordData;
-import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
-import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
 import com.macrotel.rapidstylers.auth.service.StepUpService;
+import com.macrotel.rapidstylers.common.web.ApiResponses;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.config.AdminAccountInitializer;
+import com.macrotel.rapidstylers.security.access.Roles;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import javax.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,16 +26,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import javax.validation.Valid;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import static com.macrotel.rapidstylers.config.AppConstants.ERROR_STATUS_CODE;
-import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
 import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_MESSAGE;
+import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
 
 /**
  * Admin account management. Every method is restricted to the ADMIN role via

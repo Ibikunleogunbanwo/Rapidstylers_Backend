@@ -1,13 +1,12 @@
 package com.macrotel.rapidstylers.config;
 
 import com.macrotel.rapidstylers.styler.service.StylerService;
+import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
-
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Warms the read cache after a cold start (deploy, Redis flush) so real users

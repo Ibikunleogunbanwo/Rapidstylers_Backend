@@ -1,10 +1,10 @@
 package com.macrotel.rapidstylers.catalog.service;
 
-import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.catalog.entity.BlogPostEntity;
-import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.catalog.pojo.BlogPostData;
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.support.TestServices;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

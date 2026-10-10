@@ -1,15 +1,5 @@
 package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.common.web.BaseResponse;
-import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.pojo.UserData;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
-import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
-import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
-import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.pojo.OTPData;
@@ -17,22 +7,31 @@ import com.macrotel.rapidstylers.auth.pojo.SignInData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.customer.entity.UserEntity;
+import com.macrotel.rapidstylers.customer.pojo.UserData;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
+import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
+import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
+import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.GoogleTokenVerifier;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.logging.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 

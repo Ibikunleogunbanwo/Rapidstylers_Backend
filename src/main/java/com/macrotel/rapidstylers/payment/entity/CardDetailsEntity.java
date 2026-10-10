@@ -1,11 +1,10 @@
 package com.macrotel.rapidstylers.payment.entity;
 
-import lombok.Data;
-
-import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import javax.persistence.*;
+import lombok.Data;
 
 /**
  * Card-on-file metadata. Raw card numbers, CVVs and expiry dates are NEVER

@@ -1,10 +1,9 @@
 package com.macrotel.rapidstylers.payment.entity;
 
-import lombok.Data;
-
-import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import javax.persistence.*;
+import lombok.Data;
 
 /**
  * Tracks recovery of a stylist payout transfer after a completed booking is

@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.catalog.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.Pattern;
+import lombok.Data;
 
 import static com.macrotel.rapidstylers.config.AppConstants.CHARACTER_VALIDATION_REGEX;
 

@@ -1,20 +1,19 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.common.entity.AuditLogEntity;
-import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
 import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
 import com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
-
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import java.util.logging.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
 
 /**
  * Recovers stylist payout transfers when a completed booking is cancelled and

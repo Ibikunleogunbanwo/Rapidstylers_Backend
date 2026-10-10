@@ -10,6 +10,7 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
 import com.stripe.model.SetupIntent;
 import com.stripe.model.Transfer;
+import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
@@ -18,15 +19,12 @@ import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentMethodAttachParams;
 import com.stripe.param.RefundCreateParams;
 import com.stripe.param.SetupIntentCreateParams;
-import com.stripe.param.TransferReversalCollectionCreateParams;
 import com.stripe.param.TransferCreateParams;
-import com.stripe.net.RequestOptions;
+import com.stripe.param.TransferReversalCollectionCreateParams;
+import java.util.Locale;
+import javax.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
-import javax.annotation.PostConstruct;
-import java.util.Locale;
-import java.util.Map;
 
 /**
  * Stripe integration for card-on-file payments.

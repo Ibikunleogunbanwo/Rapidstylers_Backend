@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.catalog.repo;
 
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ServiceRepo extends JpaRepository<ServiceEntity,Long> {
     Optional<ServiceEntity> findByServiceName(String serviceName);

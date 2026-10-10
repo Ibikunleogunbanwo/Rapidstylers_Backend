@@ -1,17 +1,15 @@
 package com.macrotel.rapidstylers.styler.service;
 
-import com.macrotel.rapidstylers.support.TestServices;
-import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
+import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
-
+import com.macrotel.rapidstylers.support.TestServices;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;

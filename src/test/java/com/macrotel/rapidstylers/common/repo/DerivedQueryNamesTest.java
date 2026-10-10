@@ -1,16 +1,8 @@
 package com.macrotel.rapidstylers.common.repo;
 
 import com.macrotel.rapidstylers.catalog.entity.BlogPostEntity;
-import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
-import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
-import org.springframework.core.type.filter.AssignableTypeFilter;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.util.ClassUtils;
-
+import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
@@ -27,6 +19,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AssignableTypeFilter;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.util.ClassUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

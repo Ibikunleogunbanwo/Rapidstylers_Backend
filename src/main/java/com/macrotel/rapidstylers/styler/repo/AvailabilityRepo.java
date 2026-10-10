@@ -1,11 +1,10 @@
 package com.macrotel.rapidstylers.styler.repo;
 
 import com.macrotel.rapidstylers.styler.entity.AvailabilityEntity;
+import java.util.List;
+import javax.transaction.Transactional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
-
-import javax.transaction.Transactional;
-import java.util.List;
 
 @Repository
 public interface AvailabilityRepo extends JpaRepository<AvailabilityEntity, Long> {

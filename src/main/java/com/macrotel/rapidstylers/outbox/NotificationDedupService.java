@@ -1,13 +1,12 @@
 package com.macrotel.rapidstylers.outbox;
 
 import com.macrotel.rapidstylers.config.ThrottledLog;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Service;
-
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
 
 /**
  * Consumer-side idempotency for notification emails, keyed on the outbox

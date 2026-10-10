@@ -1,8 +1,7 @@
 package com.macrotel.rapidstylers.engagement.pojo;
 
-import lombok.Data;
-
 import javax.validation.constraints.NotEmpty;
+import lombok.Data;
 
 @Data
 public class SupportTicketActionData {

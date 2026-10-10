@@ -3,10 +3,8 @@ package com.macrotel.rapidstylers.booking.dto;
 import com.macrotel.rapidstylers.customer.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
-import lombok.Data;
-
 import java.time.LocalDateTime;
-import java.util.HashMap;
+import lombok.Data;
 
 @Data
 public class AppointmentDTO {

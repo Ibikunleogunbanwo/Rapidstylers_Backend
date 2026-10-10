@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.common.web;
 
 import lombok.Data;
+
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 @Data

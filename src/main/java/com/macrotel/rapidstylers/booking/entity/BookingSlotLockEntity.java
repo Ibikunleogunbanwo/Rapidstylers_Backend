@@ -1,11 +1,10 @@
 package com.macrotel.rapidstylers.booking.entity;
 
-import lombok.Data;
-
-import javax.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import javax.persistence.*;
+import lombok.Data;
 
 @Data
 @Entity

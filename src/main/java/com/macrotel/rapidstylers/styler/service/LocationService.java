@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.styler.service;
 
-import org.springframework.stereotype.Service;
-
-import javax.servlet.http.HttpServletRequest;
 import java.util.*;
+import javax.servlet.http.HttpServletRequest;
+import org.springframework.stereotype.Service;
 
 /**
  * Detects the visitor's approximate location from the headers Cloudflare's
