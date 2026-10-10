@@ -1,16 +1,18 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.admin.service;
 
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
 import com.macrotel.rapidstylers.entity.*;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.pojo.*;
 import com.macrotel.rapidstylers.repo.*;
+import com.macrotel.rapidstylers.service.AuditService;
+import com.macrotel.rapidstylers.service.ReadCacheService;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.stripe.model.Event;
@@ -19,11 +21,15 @@ import java.util.*;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
+/**
+ * Admin dashboard tools: KPIs, audit log, cache stats, test email, recovery campaigns and failed outbox events.
+ */
 @Service
-public class AppService {
-    private static final Logger LOG = Logger.getLogger(AppService.class.getName());
+public class AdminService {
+    private static final Logger LOG = Logger.getLogger(AdminService.class.getName());
     @Autowired
     OTPRepo otpRepo;
     @Autowired
@@ -49,14 +55,6 @@ public class AppService {
     AuditService auditService = new AuditService();
     @Autowired
     StylerEligibility stylerEligibility;
-
-    public BaseResponse testing(){
-        BaseResponse response = new BaseResponse(true);
-        response.setStatusCode(SUCCESS_STATUS_CODE);
-        response.setMessage("API is working well");
-        response.setData(EMPTY_DATA);
-        return response;
-    }
 
     /**
      * Admin recovery-campaign funnel: every email that started a sign-up, with

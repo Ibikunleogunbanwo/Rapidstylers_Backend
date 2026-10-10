@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.service;
+package com.macrotel.rapidstylers.admin.service;
 
 import com.macrotel.rapidstylers.support.TestServices;
 import com.macrotel.rapidstylers.config.EmailConfig;
@@ -29,7 +29,7 @@ class AdminTestEmailTest {
         when(emailConfig.sendSimpleMail("ogunbanwoibikunlea@gmail.com", "RapidStylers test email",
                 "<h2>RapidStylers</h2><p>This is a test email sent from the admin console to verify email delivery.</p>"))
                 .thenReturn("Mail Sent Successfully...");
-        BaseResponse response = services.appService().sendTestEmail("ADMIN1", "ogunbanwoibikunlea@gmail.com");
+        BaseResponse response = services.adminService().sendTestEmail("ADMIN1", "ogunbanwoibikunlea@gmail.com");
         assertEquals("200", response.getStatusCode());
         verify(emailConfig).sendSimpleMail("ogunbanwoibikunlea@gmail.com", "RapidStylers test email",
                 "<h2>RapidStylers</h2><p>This is a test email sent from the admin console to verify email delivery.</p>");
@@ -37,7 +37,7 @@ class AdminTestEmailTest {
 
     @Test
     void rejectsMalformedRecipientWithoutSending() {
-        BaseResponse response = services.appService().sendTestEmail("ADMIN1", "not-an-email");
+        BaseResponse response = services.adminService().sendTestEmail("ADMIN1", "not-an-email");
         assertEquals("400", response.getStatusCode());
         verify(emailConfig, never()).sendSimpleMail(org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
@@ -48,7 +48,7 @@ class AdminTestEmailTest {
         when(emailConfig.sendSimpleMail(org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn("Error while Sending Mail");
-        BaseResponse response = services.appService().sendTestEmail("ADMIN1", "ogunbanwoibikunlea@gmail.com");
+        BaseResponse response = services.adminService().sendTestEmail("ADMIN1", "ogunbanwoibikunlea@gmail.com");
         assertEquals("400", response.getStatusCode());
     }
 }

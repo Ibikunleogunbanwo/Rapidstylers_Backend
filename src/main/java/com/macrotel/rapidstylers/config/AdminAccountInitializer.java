@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.config;
 
-import com.macrotel.rapidstylers.entity.AdminAccountEntity;
-import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
+import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

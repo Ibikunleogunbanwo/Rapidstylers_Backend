@@ -1,4 +1,4 @@
-package com.macrotel.rapidstylers.entity;
+package com.macrotel.rapidstylers.admin.entity;
 
 import lombok.Data;
 

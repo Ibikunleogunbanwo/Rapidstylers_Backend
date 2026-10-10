@@ -42,7 +42,7 @@ class DisputeWebhookTest {
         services.emailConfig = emailConfig;
         services.outboxEventService = mock(OutboxEventService.class);
         // Webhook handling lives in PaymentService — share the same mocks;
-        // the ops-alert address now sits on AuditService (moved from AppService).
+        // the ops-alert address sits on AuditService.
         AuditService sharedAudit = new AuditService();
         ReflectionTestUtils.setField(sharedAudit, "auditLogRepo", mock(AuditLogRepo.class));
         ReflectionTestUtils.setField(sharedAudit, "emailConfig", emailConfig);

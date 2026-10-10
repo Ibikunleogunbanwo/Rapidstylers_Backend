@@ -1,6 +1,6 @@
-package com.macrotel.rapidstylers.repo;
+package com.macrotel.rapidstylers.admin.repo;
 
-import com.macrotel.rapidstylers.entity.AdminAccountEntity;
+import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

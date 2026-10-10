@@ -26,7 +26,7 @@ public class EmailConfig {
 
     /**
      * Sends an email via the Resend REST API (replaces the old Gmail SMTP path).
-     * Keeps the same signature so callers in AppService are unaffected.
+     * Keeps the same signature so existing callers are unaffected.
      * Returns the same success/error strings as before.
      */
     public String sendSimpleMail(String receiverEmail, String subject, String body) {

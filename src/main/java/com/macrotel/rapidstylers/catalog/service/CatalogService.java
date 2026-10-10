@@ -441,7 +441,7 @@ public class CatalogService {
         return built;
     }
 
-    /** Null-safe eviction — unit tests constructing AppService directly (no cache wired) never break. */
+    /** Null-safe eviction — unit tests that build this service without a cache never break. */
     private void evict(String... keys){
         if(readCacheService != null){
             readCacheService.evict(keys);

@@ -13,8 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * booking at creation drives its payout, and the fee breakdown (platform fee vs
  * stylist net share) is computed from that snapshot — never from a later rate change.
  *
- * Commission logic now lives in PaymentService (carved out of AppService —
- * see docs/simplification-plan.md); this unit test targets it directly.
+ * Commission logic lives in PaymentService; this unit test targets it directly.
  */
 class CommissionSnapshotTest {
 

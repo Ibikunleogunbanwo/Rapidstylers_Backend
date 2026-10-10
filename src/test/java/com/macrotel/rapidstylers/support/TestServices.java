@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.macrotel.rapidstylers.admin.service.AdminService;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
 import com.macrotel.rapidstylers.auth.service.AuthService;
@@ -14,6 +15,8 @@ import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
+import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.customer.service.CustomerService;
 import com.macrotel.rapidstylers.engagement.repo.FeedBackRepo;
 import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;
@@ -34,9 +37,6 @@ import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.repo.AuditLogRepo;
-import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.service.AppService;
 import com.macrotel.rapidstylers.service.AuditService;
 import com.macrotel.rapidstylers.service.DTOService;
 import com.macrotel.rapidstylers.service.ImageReclaimService;
@@ -123,6 +123,7 @@ public class TestServices {
     public Boolean warmReadCachesEnabled;
 
     private static final List<Class<?>> SERVICES = List.of(
+            AdminService.class,
             BookingService.class,
             CatalogService.class,
             CustomerService.class,
@@ -133,7 +134,6 @@ public class TestServices {
             SupportService.class,
             CardService.class,
             ConnectAccountService.class,
-            AppService.class,
             AvailabilityService.class,
             PortfolioService.class,
             SearchService.class,
@@ -141,6 +141,10 @@ public class TestServices {
             StylerService.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
+
+    public AdminService adminService() {
+        return get(AdminService.class);
+    }
 
     public BookingService bookingService() {
         return get(BookingService.class);
@@ -180,10 +184,6 @@ public class TestServices {
 
     public ConnectAccountService connectAccountService() {
         return get(ConnectAccountService.class);
-    }
-
-    public AppService appService() {
-        return get(AppService.class);
     }
 
     public AvailabilityService availabilityService() {

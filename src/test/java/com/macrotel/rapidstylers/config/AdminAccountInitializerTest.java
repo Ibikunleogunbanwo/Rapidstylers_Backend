@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.config;
 
-import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;

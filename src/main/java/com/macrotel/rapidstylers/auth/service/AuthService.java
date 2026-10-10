@@ -41,9 +41,6 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 /**
  * Who you are: sign-up (customer and stylist email codes), sign-in (password
  * and Google), password reset and change, and stylist sign-out.
- *
- * <p>Moved out of {@link AppService} unchanged; the endpoints and their answers
- * are the same.
  */
 @Service
 public class AuthService {

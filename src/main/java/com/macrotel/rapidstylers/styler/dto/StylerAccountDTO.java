@@ -57,7 +57,7 @@ public class StylerAccountDTO {
      * badge. The same two lists already ride along on the profile payload under
      * these names, so the client reads one shape everywhere.
      *
-     * These are populated only by `AppService.listRowWithHours`, never inside the
+     * These are populated only by `StylerService.listRowWithHours`, never inside the
      * cached DTO build. The DTO is cached for minutes and shared by every
      * surface, so baking hours into it would both freeze them there and hand the
      * same instance to callers who must not modify it.

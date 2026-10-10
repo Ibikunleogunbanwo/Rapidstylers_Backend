@@ -1,7 +1,6 @@
 package com.macrotel.rapidstylers.auth.service;
 
-import com.macrotel.rapidstylers.support.TestServices;
-import com.macrotel.rapidstylers.service.AppService;
+import com.macrotel.rapidstylers.common.controller.StatusController;
 import com.macrotel.rapidstylers.service.DTOService;
 import com.macrotel.rapidstylers.service.RateLimiterService;
 import com.macrotel.rapidstylers.config.AppUtils;
@@ -41,12 +40,12 @@ import static org.mockito.Mockito.when;
  * error/success state.
  *
  * {@link #concurrentCallsNeverBleedStateBetweenResponses()} hammers the real
- * AppService and AuthService from many threads and asserts no response ever carries another
+ * status endpoint and AuthService from many threads and asserts no response ever carries another
  * call's token or state. {@link #legacySharedFieldPatternIsDetectedByTheHarness()}
  * runs the identical harness against a replica of the OLD shared-field pattern
  * and asserts that bleed IS detected — proving the harness can actually fail.
  */
-class AppServiceConcurrencyTest {
+class ResponseConcurrencyTest {
 
     private static final int THREADS = 8;
     private static final int ITERATIONS = 300;
@@ -63,12 +62,11 @@ class AppServiceConcurrencyTest {
         BaseResponse failingCall();   // must carry its own error and no token
     }
 
-    private TestServices services;
+    private final StatusController statusController = new StatusController();
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        services = new TestServices();
         authService = new AuthService();
 
         UserRepo userRepo = mock(UserRepo.class);
@@ -125,7 +123,7 @@ class AppServiceConcurrencyTest {
         ConcurrentLinkedQueue<String> failures = hammer(new Calls() {
             @Override
             public BaseResponse successOnly() {
-                return services.appService().testing();
+                return statusController.testing().getBody();
             }
 
             @Override

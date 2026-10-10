@@ -39,7 +39,7 @@ public class ImageReclaimService {
 
     private static final Logger LOG = Logger.getLogger(ImageReclaimService.class.getName());
 
-    // Package-private like AppService's own collaborators, so a unit test can hand
+    // Package-private like the domain services' collaborators, so a unit test can hand
     // in stand-ins without a Spring context.
     @Autowired
     CloudinaryService cloudinaryService;

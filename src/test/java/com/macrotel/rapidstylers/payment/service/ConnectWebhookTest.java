@@ -20,8 +20,7 @@ import static org.mockito.Mockito.when;
 
 class ConnectWebhookTest {
 
-    // Connect onboarding webhook handling now lives in PaymentService (carved
-    // out of AppService — see docs/simplification-plan.md).
+    // Connect onboarding webhook handling lives in PaymentService.
     private PaymentService paymentOps;
     private StylerRepo stylerRepo;
     private EmailConfig emailConfig;

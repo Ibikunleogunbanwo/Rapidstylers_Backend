@@ -20,8 +20,7 @@ import static org.mockito.Mockito.when;
 
 class PlatformSettingsTest {
 
-    // Commission settings logic now lives in PaymentService (carved out of
-    // AppService — see docs/simplification-plan.md); this unit test targets it directly.
+    // Commission settings logic lives in PaymentService; this unit test targets it directly.
     private PaymentService paymentOps;
     private PlatformSettingRepo platformSettingRepo;
 

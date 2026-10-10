@@ -46,16 +46,14 @@ import java.util.logging.Logger;
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 /**
- * Payment domain operations carved out of AppService (simplification-plan Step 2,
- * carve 1): Stripe webhooks, payment receipts, automatic and admin refunds,
- * stylist payout summaries, Connect onboarding status transitions, and the
- * platform-commission source of truth.
+ * Payment operations: Stripe webhooks, payment receipts, automatic and admin
+ * refunds, stylist payout summaries, Connect onboarding status transitions, and
+ * the platform-commission source of truth.
  *
  * Booking-side payment authorization (near-term authorize, scheduled
- * authorization, capture on acceptance) stays in AppService with the booking
- * workflow; it delegates its payment side effects (receipts, auto-refunds,
- * audit, ops alerts) to this service. The HTTP contract is unchanged —
- * ApplicationController still calls AppService, which delegates here.
+ * authorization, capture on acceptance) lives in BookingService with the
+ * booking workflow; it hands its payment side effects (receipts, auto-refunds)
+ * to this service.
  */
 @Service
 public class PaymentService {

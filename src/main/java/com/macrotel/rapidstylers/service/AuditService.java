@@ -10,9 +10,8 @@ import org.springframework.stereotype.Service;
 import java.util.logging.Logger;
 
 /**
- * Shared audit-log and ops-alert sink. Extracted from AppService so domain
- * services (payment ops first) can record audit trails without depending on
- * the app-wide service class.
+ * Shared audit-log and ops-alert sink, so every domain service can record an
+ * audit trail or alert the ops address the same way.
  */
 @Service
 public class AuditService {
@@ -30,8 +29,8 @@ public class AuditService {
     private String adminAlertEmail;
 
     /**
-     * Records an audit-trail row; never throws. Mirrors the original AppService
-     * audit(...) behavior (silent no-op when the repo is unavailable).
+     * Records an audit-trail row; never throws (a silent no-op when the repo
+     * is unavailable).
      */
     public void audit(String actorId, String actorRole, String action,
                       String resourceType, String resourceId, String details) {

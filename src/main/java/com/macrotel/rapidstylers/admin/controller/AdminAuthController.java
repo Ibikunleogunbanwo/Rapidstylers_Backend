@@ -1,9 +1,10 @@
-package com.macrotel.rapidstylers.controller;
+package com.macrotel.rapidstylers.admin.controller;
 
-import com.macrotel.rapidstylers.entity.AdminAccountEntity;
+import com.macrotel.rapidstylers.controller.ApiResponses;
+import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.pojo.BaseResponse;
 import com.macrotel.rapidstylers.auth.pojo.SignInData;
-import com.macrotel.rapidstylers.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.TurnstileVerifier;
 import com.macrotel.rapidstylers.auth.service.LoginAttemptService;

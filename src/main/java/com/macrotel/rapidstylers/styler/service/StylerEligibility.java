@@ -27,7 +27,7 @@ public class StylerEligibility {
 
     /**
      * True when Stripe payments are live. Null-safe so unit tests that build
-     * AppService without its collaborators treat payments as off (dev mode).
+     * this class without its collaborators treat payments as off (dev mode).
      */
     private boolean isStripePaymentsLive(){
         return stripeService != null && stripeService.isConfigured();
