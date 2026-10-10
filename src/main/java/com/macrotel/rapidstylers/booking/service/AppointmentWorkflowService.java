@@ -10,7 +10,6 @@ import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
-import com.macrotel.rapidstylers.payment.service.MoneyUtils;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
@@ -307,8 +306,9 @@ public class AppointmentWorkflowService {
                     try {
                         Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
                         String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
-                        long totalCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null
-                                ? appointment.getPrice() : appointment.getPaymentAmount());
+                        // What the platform keeps of the payment: a part refunded
+                        // before completion is not shared with the stylist.
+                        long totalCents = paymentService.refundableCents(appointment);
                         double percent = paymentService.effectiveCommissionPercentForBooking(appointment);
                         long commission = paymentService.commissionCents(totalCents, percent);
                         long stylistShareCents = totalCents - commission;

@@ -15,6 +15,7 @@ import com.macrotel.rapidstylers.support.TestServices;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -90,12 +91,103 @@ class RefundServiceTest {
         return appointment;
     }
 
+    private RefundEntity completedRefund(String amount) {
+        RefundEntity refund = new RefundEntity();
+        refund.setPaymentIntentId("pi_1");
+        refund.setAmount(amount);
+        refund.setStatus("COMPLETED");
+        return refund;
+    }
+
+    private RefundRequestData refundOf(String amount) {
+        RefundRequestData data = new RefundRequestData();
+        data.setAppointmentId("APPT1");
+        data.setAmount(amount);
+        return data;
+    }
+
+    private void stripeRefunds(long cents) throws Exception {
+        com.stripe.model.Refund stripeRefund = new com.stripe.model.Refund();
+        stripeRefund.setId("re_" + cents);
+        doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(cents), any(), any());
+    }
+
+    // ── Partial refunds ───────────────────────────────────────────────
+
+    @Test
+    void aPartialRefundKeepsTheRestCapturedAndSaysWhatIsLeft() throws Exception {
+        BookAppointmentEntity appointment = capturedAppointment();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        stripeRefunds(5000L);
+
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", refundOf("50.00"));
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals("CAPTURED", appointment.getPaymentStatus());
+        verify(bookAppointmentRepo, never()).save(appointment);
+        java.util.Map<?, ?> result = (java.util.Map<?, ?>) response.getData();
+        assertEquals("50.00", result.get("amount"));
+        assertEquals("125.00", result.get("capturedAmount"));
+        assertEquals("50.00", result.get("refundedTotal"));
+        assertEquals("75.00", result.get("refundableRemaining"));
+        assertEquals(false, result.get("fullyRefunded"));
+    }
+
+    @Test
+    void moreThanIsLeftIsRefusedWithTheAmountThatCanStillBeRefunded() throws Exception {
+        BookAppointmentEntity appointment = capturedAppointment();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(refundRepo.findByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(List.of(completedRefund("100.00")));
+
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", refundOf("50.00"));
+
+        assertEquals("400", response.getStatusCode());
+        assertEquals("You can refund at most $25.00 on this payment ($100.00 of $125.00 already refunded)",
+                response.getMessage());
+        verify(stripeService, never()).refundBookingPayment(anyString(), anyLong(), any(), any());
+        verify(refundRepo, never()).save(any(RefundEntity.class));
+    }
+
+    @Test
+    void theRefundThatReturnsTheLastOfThePaymentMarksItRefunded() throws Exception {
+        BookAppointmentEntity appointment = capturedAppointment();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(refundRepo.findByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(List.of(completedRefund("100.00")));
+        stripeRefunds(2500L);
+
+        // A blank amount refunds what is left, not the whole payment again.
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", refundOf(""));
+
+        assertEquals("200", response.getStatusCode());
+        verify(stripeService).refundBookingPayment(eq("pi_1"), eq(2500L), any(), any());
+        assertEquals("REFUNDED", appointment.getPaymentStatus());
+        assertEquals(true, ((java.util.Map<?, ?>) response.getData()).get("fullyRefunded"));
+    }
+
+    @Test
+    void cancellingAfterAPartialRefundReturnsTheRest() throws Exception {
+        BookAppointmentEntity appointment = capturedAppointment();
+        appointment.setStatus("3");
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(refundRepo.findByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(List.of(completedRefund("25.00")));
+        stripeRefunds(10000L);
+
+        BaseResponse response = services.appointmentWorkflowService().cancelAppointment("USER1", "APPT1");
+
+        assertEquals("200", response.getStatusCode());
+        verify(stripeService).refundBookingPayment(eq("pi_1"), eq(10000L), any(), any());
+        assertEquals("REFUNDED", appointment.getPaymentStatus());
+    }
+
     @Test
     void adminRefundRecordsRefundAndMarksBookingRefunded() throws Exception {
         BookAppointmentEntity appointment = capturedAppointment();
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
-        when(refundRepo.existsByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(false);
         com.stripe.model.Refund stripeRefund = new com.stripe.model.Refund();
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(12500L), any(), any());
@@ -124,7 +216,7 @@ class RefundServiceTest {
         BookAppointmentEntity appointment = capturedAppointment();
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
-        when(refundRepo.existsByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(true);
+        when(refundRepo.findByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(List.of(completedRefund("125.00")));
 
         RefundRequestData data = new RefundRequestData();
         data.setAppointmentId("APPT1");
@@ -155,7 +247,6 @@ class RefundServiceTest {
         BookAppointmentEntity appointment = capturedAppointment();
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
-        when(refundRepo.existsByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(false);
         com.stripe.model.Refund stripeRefund = new com.stripe.model.Refund();
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(5000L), any(), any());
@@ -175,7 +266,6 @@ class RefundServiceTest {
         appointment.setStatus("3");
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
-        when(refundRepo.existsByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(false);
         com.stripe.model.Refund stripeRefund = new com.stripe.model.Refund();
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(12500L), any(), any());
@@ -198,7 +288,6 @@ class RefundServiceTest {
         appointment.setStripeTransferId("tr_1"); // stylist payout already made
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
-        when(refundRepo.existsByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(false);
         com.stripe.model.Refund stripeRefund = new com.stripe.model.Refund();
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(12500L), any(), any());
@@ -222,7 +311,6 @@ class RefundServiceTest {
         appointment.setCompletedAt(LocalDateTime.now());
         when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
         when(stripeService.isConfigured()).thenReturn(true);
-        when(refundRepo.existsByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(false);
         com.stripe.model.Refund stripeRefund = new com.stripe.model.Refund();
         stripeRefund.setId("re_1");
         doReturn(stripeRefund).when(stripeService).refundBookingPayment(eq("pi_1"), eq(12500L), any(), any());

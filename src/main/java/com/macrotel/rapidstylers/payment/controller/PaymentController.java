@@ -10,6 +10,7 @@ import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentReconciliationService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.RefundReviewService;
 import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
@@ -37,6 +38,8 @@ public class PaymentController {
     StepUpService stepUpService;
     @Autowired
     PaymentReconciliationService paymentReconciliationService;
+    @Autowired
+    RefundReviewService refundReviewService;
 
     @PostMapping("/update_card_details")
     public ResponseEntity<BaseResponse> updateCardDetails(@Valid @RequestBody CardDetailsData cardDetailsData, HttpServletRequest request){
@@ -156,7 +159,17 @@ public class PaymentController {
     public ResponseEntity<BaseResponse> adminRefunds(HttpServletRequest request) {
         String adminId = CurrentAccount.adminId(request);
         if (adminId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(paymentService.adminRefunds(adminId));
+        return ApiResponses.respond(refundReviewService.refundsWithPayments());
+    }
+
+    /** The booking payment behind an appointment: charged, refunded, still refundable, paid out. */
+    @GetMapping("/admin/refund_context")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminRefundContext(@RequestParam("appointmentId") String appointmentId,
+                                                           HttpServletRequest request) {
+        String adminId = CurrentAccount.adminId(request);
+        if (adminId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(refundReviewService.paymentContext(appointmentId));
     }
 
     @GetMapping("/admin/payment_reconciliation")

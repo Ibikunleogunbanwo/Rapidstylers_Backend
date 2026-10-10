@@ -453,17 +453,14 @@ public class PaymentService {
     }
 
     /**
-     * Refunds a captured payment in full — used by automatic paths (reject /
-     * cancel after capture). Idempotent: skips when a completed refund already
-     * exists for the payment intent.
+     * Refunds whatever is left of a captured payment: all of it, or the rest
+     * after an earlier partial refund. Used by automatic paths (reject / cancel
+     * after capture). Idempotent: once the whole payment is back with the
+     * customer there is nothing left, so nothing is refunded again.
      */
     public void autoRefundCapturedPayment(BookAppointmentEntity appointment, String reason, String actorId) {
         try {
-            if (refundRepo.existsByPaymentIntentIdAndStatus(appointment.getPaymentIntentId(), "COMPLETED")) {
-                return;
-            }
-            long totalCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null
-                    ? appointment.getPrice() : appointment.getPaymentAmount());
+            long totalCents = refundableCents(appointment);
             if (totalCents <= 0) {
                 return;
             }
@@ -515,9 +512,17 @@ public class PaymentService {
     }
 
     /**
-     * Admin-initiated refund of a captured booking payment. Idempotent per
-     * payment intent: a completed refund blocks a second one, so retries and
-     * double-clicks never double-refund.
+     * Admin-initiated refund of a captured booking payment, in full or in part.
+     *
+     * <p>Partial refunds: a payment can be refunded in several parts until all of
+     * it is back with the customer. Each refund may be at most what is still
+     * refundable; asking for more is refused with that amount, never quietly
+     * cut down. A blank amount refunds everything still refundable. The booking
+     * stays CAPTURED while part of the money is kept and becomes REFUNDED only
+     * once the whole payment is returned, which is when further refunds stop.
+     *
+     * <p>The appointment row is locked, so two refunds for one payment run one
+     * after the other and the second sees what the first returned.
      */
     @Transactional(rollbackFor = Exception.class)
     public BaseResponse adminRefund(String adminId, RefundRequestData data) {
@@ -539,18 +544,24 @@ public class PaymentService {
             if (!"CAPTURED".equals(appointment.getPaymentStatus())) {
                 return errorResponse(response, "Payment is not captured — nothing to refund");
             }
-            if (refundRepo.existsByPaymentIntentIdAndStatus(appointment.getPaymentIntentId(), "COMPLETED")) {
+            long capturedCents = capturedCents(appointment);
+            long alreadyRefundedCents = refundedCents(appointment.getPaymentIntentId());
+            long refundableCents = Math.max(0, capturedCents - alreadyRefundedCents);
+            if (refundableCents <= 0) {
                 return errorResponse(response, "This payment has already been refunded");
             }
-            long totalCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null
-                    ? appointment.getPrice() : appointment.getPaymentAmount());
-            long refundCents = totalCents;
+            long refundCents = refundableCents;
             if (data.getAmount() != null && !data.getAmount().isBlank()) {
                 long requestedCents = MoneyUtils.centsFromPrice(data.getAmount());
                 if (requestedCents <= 0) {
                     return errorResponse(response, "Invalid refund amount");
                 }
-                refundCents = Math.min(requestedCents, totalCents);
+                if (requestedCents > refundableCents) {
+                    return errorResponse(response, "You can refund at most $" + MoneyUtils.moneyCents(refundableCents)
+                            + " on this payment ($" + MoneyUtils.moneyCents(alreadyRefundedCents)
+                            + " of $" + MoneyUtils.moneyCents(capturedCents) + " already refunded)");
+                }
+                refundCents = requestedCents;
             }
             if (refundCents <= 0) {
                 return errorResponse(response, "Invalid refund amount");
@@ -573,8 +584,12 @@ public class PaymentService {
                 refund.setStripeRefundId(stripeRefund.getId());
                 refund.setStatus("COMPLETED");
                 refund.setCompletedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-                appointment.setPaymentStatus("REFUNDED");
-                bookAppointmentRepo.save(appointment);
+                long refundedNowCents = alreadyRefundedCents + refundCents;
+                boolean fullyRefunded = refundedNowCents >= capturedCents;
+                if (fullyRefunded) {
+                    appointment.setPaymentStatus("REFUNDED");
+                    bookAppointmentRepo.save(appointment);
+                }
                 refundRepo.save(refund);
                 auditService.audit(adminId, "ADMIN", "PAYMENT_REFUND", "APPOINTMENT", appointment.getAppointmentId(),
                         "Refunded $" + refund.getAmount()
@@ -589,6 +604,10 @@ public class PaymentService {
                 result.put("amount", refund.getAmount());
                 result.put("status", "COMPLETED");
                 result.put("stripeRefundId", stripeRefund.getId());
+                result.put("capturedAmount", MoneyUtils.moneyCents(capturedCents));
+                result.put("refundedTotal", MoneyUtils.moneyCents(refundedNowCents));
+                result.put("refundableRemaining", MoneyUtils.moneyCents(Math.max(0, capturedCents - refundedNowCents)));
+                result.put("fullyRefunded", fullyRefunded);
                 response.setData(result);
             } catch (Exception ex) {
                 LOG.warning("Refund failed: " + ex.getMessage());
@@ -601,22 +620,6 @@ public class PaymentService {
             }
         } catch (Exception ex) {
             LOG.warning("Admin refund error: " + ex.getMessage());
-        }
-        return response;
-    }
-
-    /** Lists all refund records, newest first, for the admin view. */
-    public BaseResponse adminRefunds(String adminId) {
-        BaseResponse response = new BaseResponse(true);
-        try {
-            List<RefundEntity> refunds = refundRepo.findAll();
-            refunds.sort(java.util.Comparator.comparing(RefundEntity::getCreatedAt,
-                    java.util.Comparator.nullsLast(String::compareTo)).reversed());
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage("Refunds retrieved");
-            response.setData(refunds);
-        } catch (Exception ex) {
-            LOG.warning("Admin refund list error: " + ex.getMessage());
         }
         return response;
     }
@@ -708,6 +711,29 @@ public class PaymentService {
             }
         }
         return total;
+    }
+
+    /** What the customer was charged for this booking, in cents. */
+    public long capturedCents(BookAppointmentEntity appointment) {
+        return MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null
+                ? appointment.getPrice() : appointment.getPaymentAmount());
+    }
+
+    /** What has already gone back to the customer on this payment, in cents. */
+    public long refundedCents(String paymentIntentId) {
+        if (paymentIntentId == null || paymentIntentId.isBlank()) {
+            return 0L;
+        }
+        long cents = 0L;
+        for (RefundEntity refund : refundRepo.findByPaymentIntentIdAndStatus(paymentIntentId, "COMPLETED")) {
+            cents += MoneyUtils.centsFromPrice(refund.getAmount());
+        }
+        return cents;
+    }
+
+    /** The part of a captured payment that can still be refunded, in cents. */
+    public long refundableCents(BookAppointmentEntity appointment) {
+        return Math.max(0L, capturedCents(appointment) - refundedCents(appointment.getPaymentIntentId()));
     }
 
     private BaseResponse errorResponse(BaseResponse response, String message) {

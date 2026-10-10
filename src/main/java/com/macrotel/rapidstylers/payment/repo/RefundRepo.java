@@ -12,6 +12,6 @@ public interface RefundRepo extends JpaRepository<RefundEntity, Long> {
 
     List<RefundEntity> findByStatus(String status);
 
-    /** One completed refund per payment intent — the idempotency guard for double-refunds. */
-    boolean existsByPaymentIntentIdAndStatus(String paymentIntentId, String status);
+    /** The refunds of one payment in a given state; completed ones add up to what was returned. */
+    List<RefundEntity> findByPaymentIntentIdAndStatus(String paymentIntentId, String status);
 }

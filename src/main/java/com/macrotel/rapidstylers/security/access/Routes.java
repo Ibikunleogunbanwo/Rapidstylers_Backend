@@ -109,6 +109,7 @@ public final class Routes {
             // Payments
             "/rapid_stylers/admin/refund",
             "/rapid_stylers/admin/refunds",
+            "/rapid_stylers/admin/refund_context",
             "/rapid_stylers/admin/payment_reconciliation",
 
             // Admin accounts
