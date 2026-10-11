@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.styler.service;
 
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.media.service.CloudinaryService;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.media.service.UploadOwnership;
@@ -43,9 +43,9 @@ public class StylerProfileService {
     @Autowired
     StylerRepo stylerRepo;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    ServiceRepo serviceRepo;
+    CatalogRecords catalogRecords;
     @Autowired
     GeocodingService geocodingService;
     @Autowired
@@ -83,7 +83,7 @@ public class StylerProfileService {
         String phone = data.getPhoneNumber().trim();
         if (!phone.equals(styler.getPhoneNumber())
                 && (stylerRepo.findByPhoneNumber(phone).filter(other -> !stylerId.equals(other.getStylerId())).isPresent()
-                || userRepo.findByPhoneNumber(phone).isPresent())) {
+                || customerRecords.findByPhoneNumber(phone).isPresent())) {
             return Responses.errorResponse(response, "Phone number already registered");
         }
         styler.setFirstname(data.getFirstname().trim());
@@ -204,7 +204,7 @@ public class StylerProfileService {
 
     private boolean serviceTypeExists(String serviceTypeId) {
         try {
-            return serviceRepo.findById(Long.parseLong(serviceTypeId.trim())).isPresent();
+            return catalogRecords.findServiceById(Long.parseLong(serviceTypeId.trim())).isPresent();
         } catch (NumberFormatException ex) {
             return false;
         }

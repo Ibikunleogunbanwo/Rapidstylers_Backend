@@ -1,12 +1,12 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.media.service.CloudinaryService;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.media.service.UploadOwnership;
@@ -42,8 +42,8 @@ class StylerProfileServiceTest {
         profiles = new StylerProfileService();
         stylerRepo = mock(StylerRepo.class);
         profiles.stylerRepo = stylerRepo;
-        profiles.userRepo = mock(UserRepo.class);
-        profiles.serviceRepo = mock(ServiceRepo.class);
+        profiles.customerRecords = mock(CustomerRecords.class);
+        profiles.catalogRecords = mock(CatalogRecords.class);
         profiles.geocodingService = mock(GeocodingService.class);
         profiles.googleTimezoneService = mock(GoogleTimezoneService.class);
         profiles.locationCacheService = mock(LocationCacheService.class);
@@ -69,7 +69,7 @@ class StylerProfileServiceTest {
         chloe.setTimeZoneSource("google");
         chloe.setProfileImageUrl("https://res.cloudinary.com/x/image/upload/rapid_stylers/profile/old.jpg");
         when(stylerRepo.findByStylerId("CM1234")).thenReturn(Optional.of(chloe));
-        when(profiles.serviceRepo.findById(3L)).thenReturn(Optional.of(new ServiceEntity()));
+        when(profiles.catalogRecords.findServiceById(3L)).thenReturn(Optional.of(new ServiceEntity()));
     }
 
     private StylerBusinessInfoData business() {
@@ -101,7 +101,7 @@ class StylerProfileServiceTest {
 
     @Test
     void aPhoneNumberSomeoneElseHasIsRefused() {
-        when(profiles.userRepo.findByPhoneNumber("4035550199")).thenReturn(Optional.of(new UserEntity()));
+        when(profiles.customerRecords.findByPhoneNumber("4035550199")).thenReturn(Optional.of(new UserEntity()));
         StylerPersonalInfoData data = new StylerPersonalInfoData();
         data.setFirstname("Chloe");
         data.setLastname("Martin");

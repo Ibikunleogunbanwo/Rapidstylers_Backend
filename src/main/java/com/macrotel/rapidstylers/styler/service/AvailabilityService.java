@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
@@ -37,7 +37,7 @@ public class AvailabilityService {
     @Autowired
     StylerRepo stylerRepo;
     @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
     AvailabilityRepo availabilityRepo;
     @Autowired
@@ -61,8 +61,8 @@ public class AvailabilityService {
         // Canonical rows are the source of truth. The legacy query keeps old
         // rows visible until their temporal columns are backfilled.
         List<BookAppointmentEntity> dayBookings = new ArrayList<>();
-        List<BookAppointmentEntity> canonical = bookAppointmentRepo.findByStylerIdAndAppointmentDateValue(stylerId, requestedDate);
-        List<BookAppointmentEntity> legacy = bookAppointmentRepo.findByStylerIdAndAppointmentDate(stylerId, appointmentDate);
+        List<BookAppointmentEntity> canonical = appointmentRecords.findByStylerIdAndAppointmentDateValue(stylerId, requestedDate);
+        List<BookAppointmentEntity> legacy = appointmentRecords.findByStylerIdAndAppointmentDate(stylerId, appointmentDate);
         if(canonical != null) dayBookings.addAll(canonical);
         if(legacy != null){
             for(BookAppointmentEntity booking : legacy){

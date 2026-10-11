@@ -1,9 +1,9 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
@@ -30,11 +30,11 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class SearchService {
     private static final Logger LOG = Logger.getLogger(SearchService.class.getName());
     @Autowired
-    ServiceRepo serviceRepo;
+    CatalogRecords catalogRecords;
     @Autowired
     StylerRepo stylerRepo;
     @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
     GeocodingService geocodingService;
     @Autowired
@@ -205,7 +205,7 @@ public class SearchService {
     public BaseResponse getStylerByService(String serviceId){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<ServiceEntity> isServiceIdExist = serviceRepo.findById(Long.valueOf(serviceId));
+            Optional<ServiceEntity> isServiceIdExist = catalogRecords.findServiceById(Long.valueOf(serviceId));
             if(isServiceIdExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid service Id");
@@ -382,7 +382,7 @@ public class SearchService {
         double distance = dto.getDistanceKm() == null ? 1000.0 : dto.getDistanceKm();
         double rating = dto.getAverageRating() == null ? 0.0 : dto.getAverageRating();
         long reviews = dto.getReviewCount() == null ? 0L : dto.getReviewCount();
-        long completed = bookAppointmentRepo.findByStylerId(dto.getStylerId()).stream().filter(a -> "0".equals(a.getStatus())).count();
+        long completed = appointmentRecords.findByStylerId(dto.getStylerId()).stream().filter(a -> "0".equals(a.getStatus())).count();
         double coldStartBoost = reviews == 0 ? 1.0 : 0.0;
         return (rating * 20.0) + Math.min(completed, 100) * 0.25 + coldStartBoost - Math.min(distance, 1000) * 0.35;
     }

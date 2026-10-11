@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.admin.service.AdminService;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
+import com.macrotel.rapidstylers.auth.service.AuthRecords;
 import com.macrotel.rapidstylers.auth.service.AuthService;
 import com.macrotel.rapidstylers.auth.service.OtpService;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
@@ -16,6 +17,7 @@ import com.macrotel.rapidstylers.booking.service.PaymentAuthorizationService;
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.common.service.AuditService;
@@ -170,7 +172,9 @@ public class TestServices {
             AppointmentRecords.class,
             StylerRecords.class,
             CustomerRecords.class,
-            CardRecords.class);
+            CardRecords.class,
+            CatalogRecords.class,
+            AuthRecords.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 

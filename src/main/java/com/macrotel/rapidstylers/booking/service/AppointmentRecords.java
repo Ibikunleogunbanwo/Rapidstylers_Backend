@@ -51,6 +51,14 @@ public class AppointmentRecords {
         return bookAppointmentRepo.findByPaymentIntentId(paymentIntentId);
     }
 
+    public List<BookAppointmentEntity> findByStylerIdAndAppointmentDate(String stylerId, String appointmentDate) {
+        return bookAppointmentRepo.findByStylerIdAndAppointmentDate(stylerId, appointmentDate);
+    }
+
+    public List<BookAppointmentEntity> findByStylerIdAndAppointmentDateValue(String stylerId, java.time.LocalDate appointmentDate) {
+        return bookAppointmentRepo.findByStylerIdAndAppointmentDateValue(stylerId, appointmentDate);
+    }
+
     public List<BookAppointmentEntity> findByStylerId(String stylerId) {
         return bookAppointmentRepo.findByStylerId(stylerId);
     }

@@ -2,15 +2,14 @@ package com.macrotel.rapidstylers.styler.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
-import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
+import com.macrotel.rapidstylers.auth.service.AuthRecords;
 import com.macrotel.rapidstylers.auth.service.AuthService;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
@@ -18,7 +17,7 @@ import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.engagement.service.ReviewService;
@@ -57,19 +56,17 @@ public class StylerService {
     ImageReclaimService imageReclaimService;
     private static final Logger LOG = Logger.getLogger(StylerService.class.getName());
     @Autowired
-    OTPRepo otpRepo;
+    AuthRecords authRecords;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    IdentificationRepo identificationRepo;
-    @Autowired
-    ServiceRepo serviceRepo;
+    CatalogRecords catalogRecords;
     @Autowired
     StylerRepo stylerRepo;
     @Autowired
     SubServiceRepo subServiceRepo;
     @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
     GeocodingService geocodingService;
     // Initialized inline so bare construction (unit tests) behaves as a
@@ -158,7 +155,7 @@ public class StylerService {
             }
             //Check email across BOTH tables
             Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(stylerData.getEmailAddress());
-            Optional<UserEntity> isUserEmailExist = userRepo.findByEmailAddress(stylerData.getEmailAddress());
+            Optional<UserEntity> isUserEmailExist = customerRecords.findByEmailAddress(stylerData.getEmailAddress());
             if(isStylerEmailExist.isPresent() || isUserEmailExist.isPresent()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Email Address already exists, Kindly choose another email");
@@ -173,7 +170,7 @@ public class StylerService {
                 return response;
             }
             // Enforce email verification: a STYLER SIGN UP OTP must have been verified.
-            Optional<OTPEntity> verifiedOtp = otpRepo.verifyOtpSuccessForPurpose(stylerData.getEmailAddress(), "STYLER SIGN UP");
+            Optional<OTPEntity> verifiedOtp = authRecords.verifiedOtpFor(stylerData.getEmailAddress(), "STYLER SIGN UP");
             if(verifiedOtp.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Email Address is yet to be verified");
@@ -182,7 +179,7 @@ public class StylerService {
             }
             //Check phone number across both tables
             Optional<StylerEntity> isStylerPhoneExist = stylerRepo.findByPhoneNumber(stylerData.getPhoneNumber());
-            Optional<UserEntity> isUserPhoneExist = userRepo.findByPhoneNumber(stylerData.getPhoneNumber());
+            Optional<UserEntity> isUserPhoneExist = customerRecords.findByPhoneNumber(stylerData.getPhoneNumber());
             if(isStylerPhoneExist.isPresent() || isUserPhoneExist.isPresent()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Phone number already registered");
@@ -190,14 +187,14 @@ public class StylerService {
                 return response;
             }
             //Check if identificationId and ServiceId exist
-            Optional<IdentificationEntity> isIdentificationExist = identificationRepo.findById(Long.parseLong(stylerData.getIdentificationTypeId()));
+            Optional<IdentificationEntity> isIdentificationExist = catalogRecords.findIdentificationById(Long.parseLong(stylerData.getIdentificationTypeId()));
             if(isIdentificationExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Identification Type, Contact Admin");
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            Optional<ServiceEntity> isServiceTypeExist = serviceRepo.findById(Long.parseLong(stylerData.getServiceTypeId()));
+            Optional<ServiceEntity> isServiceTypeExist = catalogRecords.findServiceById(Long.parseLong(stylerData.getServiceTypeId()));
             if(isServiceTypeExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Service Type, Contact Admin");
@@ -268,7 +265,7 @@ public class StylerService {
     private String stylerServiceName(String serviceTypeId){
         if(serviceTypeId == null || serviceTypeId.isEmpty()) return "";
         try{
-            Optional<ServiceEntity> svc = serviceRepo.findById(Long.valueOf(serviceTypeId));
+            Optional<ServiceEntity> svc = catalogRecords.findServiceById(Long.valueOf(serviceTypeId));
             return svc.map(ServiceEntity::getServiceName).orElse("");
         }
         catch (NumberFormatException e){
@@ -543,7 +540,7 @@ public class StylerService {
                 ReadCacheService.KEY_STYLER_APPOINTMENTS + stylerId,
                 ReadCacheService.APPOINTMENTS_TTL, ReadCacheService.APPOINTMENTS_JITTER,
                 () -> {
-                    List<BookAppointmentEntity> rows = bookAppointmentRepo.findByStylerId(stylerId);
+                    List<BookAppointmentEntity> rows = appointmentRecords.findByStylerId(stylerId);
                     Map<String, Object> payload = new LinkedHashMap<>();
                     payload.put("appointmentCount", String.valueOf(rows == null ? 0 : rows.size()));
                     List<Object> bookedSlots = new ArrayList<>();

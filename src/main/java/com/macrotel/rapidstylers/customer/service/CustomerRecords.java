@@ -7,7 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * The customer domain's front door for other domains (payment today). Only
+ * The customer domain's front door for other domains. Only
  * customer code reaches {@link UserRepo} directly.
  */
 @Service
@@ -25,5 +25,13 @@ public class CustomerRecords {
 
     public Optional<UserEntity> findByUserId(String userId) {
         return userRepo.findByUserId(userId);
+    }
+
+    public Optional<UserEntity> findByEmailAddress(String emailAddress) {
+        return userRepo.findByEmailAddress(emailAddress);
+    }
+
+    public Optional<UserEntity> findByPhoneNumber(String phoneNumber) {
+        return userRepo.findByPhoneNumber(phoneNumber);
     }
 }
