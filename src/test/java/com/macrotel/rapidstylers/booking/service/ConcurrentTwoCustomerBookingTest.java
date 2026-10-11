@@ -314,7 +314,8 @@ class ConcurrentTwoCustomerBookingTest {
         assertTrue(isSuccess(resultA) && isSuccess(resultB),
                 "both copies of one request must report the booking: " + resultA + " || " + resultB);
         // A late retry, after the first answer was lost, replays the same booking.
-        assertTrue(isSuccess(body(apiPost("/book_appointment", booking, cust[0], key))));
+        JsonNode late = body(apiPost("/book_appointment", booking, cust[0], key));
+        assertTrue(isSuccess(late));
 
         List<BookAppointmentEntity> booked = appointmentRepo.findAll().stream()
                 .filter(a -> stylerId.equals(a.getStylerId()))
@@ -322,6 +323,10 @@ class ConcurrentTwoCustomerBookingTest {
         assertEquals(1, booked.size(), "one request must make one booking");
         assertEquals(key, booked.get(0).getIdempotencyKey());
         appointmentId = booked.get(0).getAppointmentId();
+        // Every answer to this key names that one booking.
+        for (JsonNode answer : List.of(resultA, resultB, late)) {
+            assertEquals(appointmentId, answer.path("data").path("appointmentId").asText(), answer.toString());
+        }
 
         // The same key cannot be stretched over a different booking.
         Map<String, Object> otherTime = new LinkedHashMap<>(booking);

@@ -131,12 +131,16 @@ public class BookingService {
         return response;
     }
 
-    /** What a successful booking request answers, first time and on every replay. */
-    static BaseResponse bookedResponse(){
+    /**
+     * What a successful booking request answers, first time and on every replay:
+     * the same booking id both times, so a client whose first answer was lost
+     * learns which booking it made.
+     */
+    static BaseResponse bookedResponse(String appointmentId){
         BaseResponse response = new BaseResponse(true);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage("Appointment booked successfully");
-        response.setData(EMPTY_DATA);
+        response.setData(java.util.Map.of("appointmentId", appointmentId));
         return response;
     }
 
@@ -356,7 +360,7 @@ public class BookingService {
 
             // The stylist's profile shows booked slots — refresh it for the next viewer.
             evict(ReadCacheService.KEY_STYLER_APPOINTMENTS + bookAppointmentData.getStylerId());
-            response = bookedResponse();
+            response = bookedResponse(appointment.getAppointmentId());
         }
         catch(DataIntegrityViolationException ex){
             // Let the transactional proxy roll back the appointment and slot

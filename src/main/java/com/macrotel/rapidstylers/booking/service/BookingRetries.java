@@ -27,7 +27,7 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
  * request that failed leaves the key free for the next try.
  *
  * <ul>
- *   <li>Same key, same request, booking exists: answer as the first time did.</li>
+ *   <li>Same key, same request, booking exists: answer as the first time did, with the same booking id.</li>
  *   <li>Same key, different request or different account: refuse (422).</li>
  *   <li>Two requests with one key at once: the unique index makes the second wait
  *       for the first, then it finds the booking and replays it.</li>
@@ -90,7 +90,7 @@ public class BookingRetries {
             return Optional.of(refused);
         }
         LOG.info("Replaying booking " + booking.getAppointmentId() + " for a retried request");
-        return Optional.of(BookingService.bookedResponse());
+        return Optional.of(BookingService.bookedResponse(booking.getAppointmentId()));
     }
 
     /**

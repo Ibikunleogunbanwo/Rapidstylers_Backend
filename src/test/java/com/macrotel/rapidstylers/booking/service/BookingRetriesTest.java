@@ -49,7 +49,7 @@ class BookingRetriesTest {
     void aRequestWithoutAKeyIsBookedAsBefore() {
         BookAppointmentData data = request();
         data.setIdempotencyKey("  ");
-        BaseResponse booked = BookingService.bookedResponse();
+        BaseResponse booked = BookingService.bookedResponse("APPT-1");
         when(bookingService.bookAppointment(data)).thenReturn(booked);
 
         assertSame(booked, retries.book(data));
@@ -59,7 +59,7 @@ class BookingRetriesTest {
     @Test
     void theFirstRequestBooksAndRecordsItsFingerprint() {
         BookAppointmentData data = request();
-        when(bookingService.bookAppointment(eq(data), anyString())).thenReturn(BookingService.bookedResponse());
+        when(bookingService.bookAppointment(eq(data), anyString())).thenReturn(BookingService.bookedResponse("APPT-1"));
 
         BaseResponse response = retries.book(data);
 
@@ -76,6 +76,8 @@ class BookingRetriesTest {
 
         assertEquals("200", response.getStatusCode());
         assertEquals("Appointment booked successfully", response.getMessage());
+        assertEquals(java.util.Map.of("appointmentId", "APPT-1"), response.getData(),
+                "the replay names the booking the first request made");
         verify(bookingService, never()).bookAppointment(any(), any());
         verify(bookingService, never()).bookAppointment(any());
     }
@@ -158,7 +160,7 @@ class BookingRetriesTest {
         BaseResponse declined = Responses.errorResponse(new BaseResponse(true), "Your card was declined");
         when(bookingService.bookAppointment(eq(data), anyString()))
                 .thenReturn(declined)
-                .thenReturn(BookingService.bookedResponse());
+                .thenReturn(BookingService.bookedResponse("APPT-1"));
 
         assertSame(declined, retries.book(data));
         // Nothing was saved under the key, so the next try books for real.
