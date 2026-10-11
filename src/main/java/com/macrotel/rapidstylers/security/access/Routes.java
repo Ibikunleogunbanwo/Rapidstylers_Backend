@@ -68,6 +68,9 @@ public final class Routes {
             "/rapid_stylers/generate_reset_password_token",
             "/rapid_stylers/reset_user_password",
 
+            // Sign-up funnel visit beacon
+            "/rapid_stylers/funnel_visit",
+
             // Signed by Stripe instead of a token
             "/rapid_stylers/stripe/webhook",
     }, BROWSE);
@@ -140,6 +143,9 @@ public final class Routes {
             "/rapid_stylers/admin/gallery_image_history",
             "/rapid_stylers/admin/approve_gallery_image",
             "/rapid_stylers/admin/reject_gallery_image",
+
+            // Sign-up funnel
+            "/rapid_stylers/admin/signup_funnel",
 
             // Admin accounts
             "/rapid_stylers/admin/accounts",

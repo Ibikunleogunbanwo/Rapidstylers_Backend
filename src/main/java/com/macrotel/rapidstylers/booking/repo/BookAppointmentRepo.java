@@ -78,4 +78,7 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
     @Query("SELECT b.userId, COUNT(b), MAX(b.appointmentDateValue) FROM BookAppointmentEntity b "
             + "WHERE b.userId IN :userIds GROUP BY b.userId")
     List<Object[]> bookingStatsForUsers(@Param("userIds") java.util.Collection<String> userIds);
+
+    /** How many bookings a customer has ever made (the sign-up funnel's "first booking"). */
+    long countByUserId(String userId);
 }

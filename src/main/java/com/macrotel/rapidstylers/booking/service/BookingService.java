@@ -8,6 +8,7 @@ import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.FunnelService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
@@ -56,6 +57,9 @@ public class BookingService {
     static final String ALREADY_SUBMITTED = "This booking request is already being processed or was already submitted";
     @Autowired
     DTOService dtoService;
+    /** Sign-up funnel tally; null in unit tests that build this service by hand. */
+    @Autowired(required = false)
+    FunnelService funnelService;
     private static final Logger LOG = Logger.getLogger(BookingService.class.getName());
     @Autowired
     CustomerRecords customerRecords;
@@ -348,6 +352,10 @@ public class BookingService {
                 }
             }
             bookAppointmentRepo.saveAndFlush(appointment);
+            if(bookAppointmentRepo.countByUserId(appointment.getUserId()) == 1){
+                // Counted once this booking commits; a slot collision rolls it back uncounted.
+                funnel(FunnelService.FIRST_BOOKING, "CUSTOMER", appointment.getUserId());
+            }
             reserveBookingSlots(appointment, appointmentDate, appointmentStart, durationMinutes);
             auditService.audit(bookAppointmentData.getUserId(), "CUSTOMER", "CREATE_BOOKING", "APPOINTMENT",
                     appointment.getAppointmentId(), "Booking request created");
@@ -605,5 +613,11 @@ public class BookingService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    private void funnel(String step, String role, String subject){
+        if(funnelService != null){
+            funnelService.record(step, role, subject);
+        }
     }
 }

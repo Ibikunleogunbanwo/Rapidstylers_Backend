@@ -6,6 +6,7 @@ import com.macrotel.rapidstylers.auth.pojo.SignInData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.service.FunnelService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
@@ -44,6 +45,9 @@ public class AuthService {
     CustomerRecords customerRecords;
     @Autowired
     StylerRecords stylerRecords;
+    /** Sign-up funnel tally; null in unit tests that build this service by hand. */
+    @Autowired(required = false)
+    FunnelService funnelService;
     @Autowired
     CardRecords cardRecords;
     @Autowired
@@ -136,6 +140,7 @@ public class AuthService {
             userEntity.setUserId(userId);
             userEntity.setRegistrationMethod("EMAIL");
             customerRecords.save(userEntity);
+            funnel(FunnelService.ACCOUNT_CREATED, "CUSTOMER", userId);
 
             //Create a space for user in the card_details table
             CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
@@ -391,6 +396,7 @@ public class AuthService {
         userEntity.setUserId(userId);
         userEntity.setRegistrationMethod("GOOGLE");
         customerRecords.save(userEntity);
+        funnel(FunnelService.ACCOUNT_CREATED, "CUSTOMER", userId);
         CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
         cardDetailsEntity.setUserId(userId);
         cardRecords.save(cardDetailsEntity);
@@ -560,5 +566,11 @@ public class AuthService {
      *  (and emails) work for the minimal email+password registration. */
     private String nullSafeName(String name){
         return name == null ? "" : name.trim();
+    }
+
+    private void funnel(String step, String role, String subject){
+        if(funnelService != null){
+            funnelService.record(step, role, subject);
+        }
     }
 }

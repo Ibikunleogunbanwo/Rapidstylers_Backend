@@ -337,7 +337,7 @@ public class AdminRevenueService {
         return day;
     }
 
-    private static LocalDate next(LocalDate start, String groupBy) {
+    static LocalDate next(LocalDate start, String groupBy) {
         if ("week".equals(groupBy)) return start.plusWeeks(1);
         if ("month".equals(groupBy)) return start.plusMonths(1);
         return start.plusDays(1);

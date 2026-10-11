@@ -13,6 +13,7 @@ import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.catalog.service.CatalogService;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
+import com.macrotel.rapidstylers.common.service.FunnelService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
@@ -52,6 +53,9 @@ public class StylerService {
     AppUtils appUtils = new AppUtils();
     @Autowired
     DTOService dtoService;
+    /** Sign-up funnel tally; null in unit tests that build this service by hand. */
+    @Autowired(required = false)
+    FunnelService funnelService;
     @Autowired
     ImageReclaimService imageReclaimService;
     private static final Logger LOG = Logger.getLogger(StylerService.class.getName());
@@ -246,6 +250,7 @@ public class StylerService {
             }
 
             stylerRepo.save(stylerEntity);
+            funnel(FunnelService.ACCOUNT_CREATED, "STYLIST", stylerEntity.getStylerId());
 
             // Index in Redis geospatial cache for fast radius search
             if(stylerEntity.getLatitude() != null && stylerEntity.getLongitude() != null){
@@ -794,5 +799,11 @@ public class StylerService {
             sb.append(", ").append(stylerData.getCountry());
         }
         return sb.toString();
+    }
+
+    private void funnel(String step, String role, String subject){
+        if(funnelService != null){
+            funnelService.record(step, role, subject);
+        }
     }
 }

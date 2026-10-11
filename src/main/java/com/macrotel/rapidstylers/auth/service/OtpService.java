@@ -4,6 +4,7 @@ import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.auth.pojo.OTPData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
+import com.macrotel.rapidstylers.common.service.FunnelService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
@@ -50,6 +51,9 @@ public class OtpService {
     CustomerRecords customerRecords;
     @Autowired
     StylerRecords stylerRecords;
+    /** Sign-up funnel tally; null in unit tests that build this service by hand. */
+    @Autowired(required = false)
+    FunnelService funnelService;
     @Autowired
     EmailConfig emailConfig;
     @Autowired
@@ -116,6 +120,7 @@ public class OtpService {
 
             //Send Mail to user (shared, purpose-neutral OTP email — see sendOtpEmail)
             sendOtpEmail(email, appUtils.extractUsername(email), otpCode);
+            funnel(FunnelService.SIGNUP_STARTED, "CUSTOMER", email);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
@@ -191,6 +196,9 @@ public class OtpService {
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Email Address Verify Successful");
                 response.setData(otpValue);
+                if(otpPurpose.equals("USER SIGN UP")){
+                    funnel(FunnelService.EMAIL_VERIFIED, "CUSTOMER", emailAddress);
+                }
                 // Successful verification clears the failure budget for this email/IP.
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
@@ -335,6 +343,7 @@ public class OtpService {
 
             // Send email (shared, purpose-neutral OTP email — see sendOtpEmail)
             sendOtpEmail(emailAddress, appUtils.extractUsername(emailAddress), otpCode);
+            funnel(FunnelService.SIGNUP_STARTED, "STYLIST", emailAddress);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
@@ -435,6 +444,7 @@ public class OtpService {
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Email Address Verified Successfully");
                 response.setData(otpValue);
+                funnel(FunnelService.EMAIL_VERIFIED, "STYLIST", emailAddress);
                 // Successful verification clears the failure budget for this email/IP.
                 rateLimiterService.clear("auth:" + emailAddress);
                 rateLimiterService.clear("auth_ip:" + ip);
@@ -446,5 +456,11 @@ public class OtpService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    private void funnel(String step, String role, String subject){
+        if(funnelService != null){
+            funnelService.record(step, role, subject);
+        }
     }
 }
