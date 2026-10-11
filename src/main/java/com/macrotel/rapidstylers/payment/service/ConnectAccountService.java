@@ -198,6 +198,7 @@ public class ConnectAccountService {
         // books. `bookable` is the same gate public search uses.
         data.put("addressOnFile", StylerEligibility.hasStreetAddress(styler));
         data.put("bookable", stylerEligibility.isBookableStyler(styler));
+        data.put("inServiceArea", stylerEligibility.isInServiceArea(styler));
         data.put("totalCommission", MoneyUtils.money(commission));
         data.put("netRevenue", MoneyUtils.money(netRevenue));
         data.put("popularServices", popularServices);

@@ -203,6 +203,22 @@ public class ReadCacheService {
         }
     }
 
+    /** Best-effort delete of every key starting with {@code prefix} (rare admin-wide changes). Never throws. */
+    public void evictPrefix(String prefix) {
+        if (prefix == null || prefix.isEmpty()) {
+            return;
+        }
+        try {
+            java.util.Set<String> keys = redisTemplate.keys(prefix + "*");
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+                totalEvictions.addAndGet(keys.size());
+            }
+        } catch (Exception ex) {
+            logDegradation(cacheName(prefix), ex, "evict");
+        }
+    }
+
     /** Cumulative cache-effectiveness snapshot for the admin cache_stats endpoint. */
     public Map<String, Object> stats() {
         long hits = totalHits.get();

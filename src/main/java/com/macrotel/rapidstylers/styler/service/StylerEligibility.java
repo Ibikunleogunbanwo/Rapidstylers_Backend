@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.catalog.service.ServiceAreaService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import java.util.*;
@@ -9,12 +10,15 @@ import org.springframework.stereotype.Component;
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 /**
- * Answers 'can customers see and book this stylist?' (approved, has an address, payouts ready).
+ * Answers 'can customers see and book this stylist?' (approved, has an address, in a served area, payouts ready).
  */
 @Component
 public class StylerEligibility {
     @Autowired
     StripeService stripeService;
+    /** Where the platform works; null in unit tests that build this class by hand (everywhere counts). */
+    @Autowired(required = false)
+    ServiceAreaService serviceAreaService;
 
     // ── Professional verification workflow (admin) ─────────────────────
 
@@ -52,7 +56,16 @@ public class StylerEligibility {
         if(!hasStreetAddress(styler)){
             return false;
         }
+        // Outside the provinces and cities the admin serves, nobody can book them.
+        if(!isInServiceArea(styler)){
+            return false;
+        }
         return !isStripePaymentsLive() || "COMPLETE".equals(styler.getConnectOnboardingStatus());
+    }
+
+    /** Inside an area the admin serves (always true while no areas are set). */
+    public boolean isInServiceArea(StylerEntity styler){
+        return serviceAreaService == null || serviceAreaService.covers(styler);
     }
 
     /**

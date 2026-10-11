@@ -193,6 +193,9 @@ public class BookingService {
             if(!stylerEligibility.isApprovedStyler(isStylerExist.get())){
                 return Responses.errorResponse(response, "This professional is not yet available for booking");
             }
+            if(!stylerEligibility.isInServiceArea(isStylerExist.get())){
+                return Responses.errorResponse(response, "This professional is outside the areas we currently serve");
+            }
             // Visiting the professional is the default delivery, and a customer
             // with no destination cannot travel. Approval already refuses an
             // address-less profile, so this only catches legacy rows approved

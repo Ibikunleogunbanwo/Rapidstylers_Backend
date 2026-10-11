@@ -50,6 +50,7 @@ public final class Routes {
             "/rapid_stylers/place_details",
             "/rapid_stylers/detect-location",
             "/rapid_stylers/reverse-geocode",
+            "/rapid_stylers/service_areas",
     };
 
     /** Anyone may call these: sign-up, sign-in, browsing ({@link #BROWSE}), the Stripe webhook. */
@@ -146,6 +147,11 @@ public final class Routes {
 
             // Sign-up funnel
             "/rapid_stylers/admin/signup_funnel",
+
+            // Locations
+            "/rapid_stylers/admin/service_areas",
+            "/rapid_stylers/admin/save_service_area",
+            "/rapid_stylers/admin/delete_service_area",
 
             // Admin accounts
             "/rapid_stylers/admin/accounts",
