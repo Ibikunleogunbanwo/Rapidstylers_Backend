@@ -43,6 +43,12 @@ class GlobalExceptionHandlerTest {
             return Long.parseLong(id);
         }
 
+        @GetMapping("/refused")
+        String refused() {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED, "Invalid webhook signature");
+        }
+
         @GetMapping("/boom")
         String boom() {
             throw new IllegalStateException("jdbc:mysql://db-host:3306 password=secret");
@@ -106,5 +112,13 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.message").value("Something went wrong. Please try again later."))
                 .andExpect(content().string(not(containsString("jdbc"))))
                 .andExpect(content().string(not(containsString("secret"))));
+    }
+
+    @Test
+    void aChosenStatusIsKeptNotTurnedInto500() throws Exception {
+        mockMvc.perform(get("/refused"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.statusCode").value("401"))
+                .andExpect(jsonPath("$.message").value("Invalid webhook signature"));
     }
 }

@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
 
 import static com.macrotel.rapidstylers.config.AppConstants.ERROR_STATUS_CODE;
 
@@ -116,6 +118,14 @@ public class GlobalExceptionHandler {
         baseResponse.setStatusCode(ERROR_STATUS_CODE);
         baseResponse.setMessage(ex.getMessage());
         return baseResponse;
+    }
+
+    // Code that already chose its answer (the Resend webhook's 401/400/503)
+    // keeps it; without this the catch-all below turned it into a 500.
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<BaseResponse> handleResponseStatus(ResponseStatusException ex) {
+        String message = ex.getReason() != null ? ex.getReason() : ex.getStatus().getReasonPhrase();
+        return ResponseEntity.status(ex.getStatus()).body(clientError(String.valueOf(ex.getRawStatusCode()), message));
     }
 
     private static BaseResponse clientError(String statusCode, String message) {
