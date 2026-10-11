@@ -61,7 +61,7 @@ jobs:
       # (API keys, passwords, private keys...). This is what caught the leaked
       # Google API key and the admin-password fragment after the fact — now it
       # runs before code can ever reach GitHub.
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
