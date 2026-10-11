@@ -59,6 +59,22 @@ class PaymentReconciliationServiceTest {
         assertEquals("${app.payment.reconcile-initial-delay-ms:60000}", scheduled.initialDelayString());
     }
 
+    /**
+     * A bare {@code created=<epoch>} is an EXACT second match to Stripe, not a
+     * lower bound, so it would return zero intents and the drift check would
+     * report "0 issue(s)" while examining nothing. The lookback must be the
+     * range form {@code created[gte]}.
+     */
+    @Test
+    void lookbackFilterIsARangeNotAnExactSecondMatch() {
+        Map<String, Object> params = PaymentReconciliationService.listParams(1791465689L).toMap();
+
+        Object created = params.get("created");
+        assertTrue(created instanceof Map, "created must be a range object, not a bare timestamp: " + created);
+        assertEquals(1791465689L, ((Number) ((Map<?, ?>) created).get("gte")).longValue());
+        assertEquals(100L, ((Number) params.get("limit")).longValue());
+    }
+
     @Test
     void noDriftWhenStripeSucceededAndLocalCaptured() {
         when(bookAppointmentRepo.findAll()).thenReturn(List.of(appointment("pi_1", "CAPTURED", "0")));

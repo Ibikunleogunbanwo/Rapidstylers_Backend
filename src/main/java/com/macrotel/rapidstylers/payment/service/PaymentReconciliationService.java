@@ -104,13 +104,23 @@ public class PaymentReconciliationService {
         return response;
     }
 
+    /**
+     * List params for the lookback window. Kept package-private so the range
+     * shape is unit-testable: a bare {@code created=<epoch>} is an EXACT
+     * second match in Stripe's API, not a lower bound, so it must be built as
+     * {@code created[gte]} or the drift check silently examines nothing.
+     */
+    static PaymentIntentListParams listParams(long sinceEpoch) {
+        return PaymentIntentListParams.builder()
+                .setCreated(PaymentIntentListParams.Created.builder().setGte(sinceEpoch).build())
+                .setLimit(100L)
+                .build();
+    }
+
     /** Returns PaymentIntents created within the configured lookback window. */
     List<PaymentIntent> fetchRecentIntents() throws StripeException {
         long sinceEpoch = System.currentTimeMillis() / 1000 - windowHours * 3600;
-        PaymentIntentListParams params = PaymentIntentListParams.builder()
-                .setCreated(sinceEpoch)
-                .setLimit(100L)
-                .build();
+        PaymentIntentListParams params = listParams(sinceEpoch);
         PaymentIntentCollection collection = PaymentIntent.list(params);
         if (collection == null || collection.getData() == null) {
             return Collections.emptyList();
