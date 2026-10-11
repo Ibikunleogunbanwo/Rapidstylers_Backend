@@ -68,16 +68,30 @@ class CloudinaryControllerTest {
         Map<?, ?> params = params(response);
 
         assertEquals("jpg,jpeg,png,webp,gif", params.get("allowed_formats"));
-        assertEquals(java.util.Set.of("api_key", "timestamp", "folder", "allowed_formats", "signature"),
+        assertEquals(java.util.Set.of("api_key", "timestamp", "folder", "allowed_formats", "transformation", "signature"),
                 params.keySet());
+        assertEquals("c_limit,h_2000,w_2000", params.get("transformation"));
 
         String expected = sha1("allowed_formats=jpg,jpeg,png,webp,gif"
                 + "&folder=rapid_stylers/profile"
                 + "&timestamp=" + params.get("timestamp")
+                + "&transformation=c_limit,h_2000,w_2000"
                 + "secret");
         assertEquals(expected, params.get("signature"));
         // The size ceiling still reaches the client, outside the signed fields.
         assertEquals("5242880", ((Map<?, ?>) response.getBody().getData()).get("maxFileSize"));
+    }
+
+    /** With the size cap switched off, nothing about it is sent or signed. */
+    @Test
+    void blankIncomingTransformationIsNeitherSentNorSigned() throws Exception {
+        ReflectionTestUtils.setField(controller, "incomingTransformation", " ");
+
+        Map<?, ?> params = params(controller.getUploadSignature("profile"));
+
+        assertEquals(java.util.Set.of("api_key", "timestamp", "folder", "allowed_formats", "signature"), params.keySet());
+        assertEquals(sha1("allowed_formats=jpg,jpeg,png,webp,gif&folder=rapid_stylers/profile&timestamp="
+                + params.get("timestamp") + "secret"), params.get("signature"));
     }
 
     /**

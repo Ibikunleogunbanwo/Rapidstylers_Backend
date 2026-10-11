@@ -77,6 +77,16 @@ public class CloudinaryController {
     @Value("${cloudinary.max-file-size-bytes:5242880}")
     private long maxFileSizeBytes;
 
+    /**
+     * Cloudinary's upload API has no file-size parameter, so the size the
+     * client checks (maxFileSize) can be bypassed. This signed "incoming
+     * transformation" is the server-side bound: whatever is sent, Cloudinary
+     * stores at most 2000x2000 pixels, so a stored image stays a few MB at
+     * most. Blank turns it off.
+     */
+    @Value("${cloudinary.incoming-transformation:c_limit,h_2000,w_2000}")
+    private String incomingTransformation = "c_limit,h_2000,w_2000";
+
     @Autowired
     private RateLimiterService rateLimiterService;
 
@@ -131,9 +141,12 @@ public class CloudinaryController {
 
             // Cloudinary signs the exact params sent with the upload, sorted
             // alphabetically, with the API secret appended, then SHA-1 hashed.
+            String transformation = incomingTransformation == null ? "" : incomingTransformation.trim();
             String toSign = "allowed_formats=" + formats
                     + "&folder=" + folder
-                    + "&timestamp=" + timestamp + apiSecret;
+                    + "&timestamp=" + timestamp
+                    + (transformation.isEmpty() ? "" : "&transformation=" + transformation)
+                    + apiSecret;
             String signature = sha1(toSign);
 
             // Returned ready to send as multipart fields. The client forwards
@@ -144,6 +157,9 @@ public class CloudinaryController {
             params.put("timestamp", String.valueOf(timestamp));
             params.put("folder", folder);
             params.put("allowed_formats", formats);
+            if (!transformation.isEmpty()) {
+                params.put("transformation", transformation);
+            }
             params.put("signature", signature);
 
             Map<String, Object> data = new LinkedHashMap<>();

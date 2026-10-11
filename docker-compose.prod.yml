@@ -126,6 +126,7 @@ services:
       # part of the signature, so a client cannot widen them.
       CLOUDINARY_ALLOWED_FORMATS: ${CLOUDINARY_ALLOWED_FORMATS:-jpg,jpeg,png,webp,gif}
       CLOUDINARY_MAX_FILE_SIZE_BYTES: ${CLOUDINARY_MAX_FILE_SIZE_BYTES:-5242880}
+      CLOUDINARY_INCOMING_TRANSFORMATION: ${CLOUDINARY_INCOMING_TRANSFORMATION:-c_limit,h_2000,w_2000}
       # Cloudflare Turnstile bot protection on the sign-in endpoints. Empty
       # disables the challenge (the app still boots); setting it turns it on.
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
