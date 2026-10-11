@@ -12,6 +12,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -89,6 +92,41 @@ class TravelSettingsTest {
     void missingStylerRejected() {
         when(stylerRepo.findByStylerId("NOPE")).thenReturn(Optional.empty());
         assertEquals("400", services.availabilityService().updateStylerTravelSettings("NOPE", 15.0, "10.00").getStatusCode());
+    }
+
+    @Test
+    void aStylistChoosesWhichAppointmentLocationsTheyOffer() {
+        StylerEntity styler = styler();
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
+        Map<?, ?> before = (Map<?, ?>) services.availabilityService().stylerTravelSettings("STYLER1").getData();
+        assertEquals(true, before.get("offersSalonVisits"), "everyone offers both until they choose");
+        assertEquals(true, before.get("offersHomeVisits"));
+
+        AvailabilityService.LocationOptions homeOnly = new AvailabilityService.LocationOptions();
+        homeOnly.offersSalonVisits = false;
+        homeOnly.maxTravelKm = 30.0;
+        Map<?, ?> after = (Map<?, ?>) services.availabilityService()
+                .updateStylerTravelSettings("STYLER1", 15.0, "10.00", homeOnly).getData();
+        assertFalse(styler.isOffersSalonVisits());
+        assertTrue(styler.isOffersHomeVisits(), "a field left out keeps its saved value");
+        assertEquals(30.0, styler.getMaxTravelKm());
+        assertEquals(false, after.get("offersSalonVisits"));
+
+        AvailabilityService.LocationOptions neither = new AvailabilityService.LocationOptions();
+        neither.offersHomeVisits = false;
+        assertEquals("Offer at least one appointment location", services.availabilityService()
+                .updateStylerTravelSettings("STYLER1", 15.0, "10.00", neither).getMessage());
+        assertTrue(styler.isOffersHomeVisits());
+
+        AvailabilityService.LocationOptions tooFar = new AvailabilityService.LocationOptions();
+        tooFar.maxTravelKm = 900.0;
+        assertNotEquals("200", services.availabilityService()
+                .updateStylerTravelSettings("STYLER1", 15.0, "10.00", tooFar).getStatusCode());
+
+        AvailabilityService.LocationOptions noLimit = new AvailabilityService.LocationOptions();
+        noLimit.clearMaxTravelKm = true;
+        services.availabilityService().updateStylerTravelSettings("STYLER1", 15.0, "10.00", noLimit);
+        assertNull(styler.getMaxTravelKm());
     }
 
     private StylerEntity styler() {

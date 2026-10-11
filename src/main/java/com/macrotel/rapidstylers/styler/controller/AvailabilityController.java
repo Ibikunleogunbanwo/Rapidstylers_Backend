@@ -65,7 +65,16 @@ public class AvailabilityController {
         Object included = body.get("includedTravelKm");
         Double includedKm = included == null ? null : Double.valueOf(included.toString());
         String fee = body.get("baseTravelFee") == null ? null : String.valueOf(body.get("baseTravelFee"));
-        BaseResponse baseResponse = availabilityService.updateStylerTravelSettings(accountId, includedKm, fee);
+        AvailabilityService.LocationOptions options = null;
+        if(body.containsKey("offersSalonVisits") || body.containsKey("offersHomeVisits") || body.containsKey("maxTravelKm")){
+            options = new AvailabilityService.LocationOptions();
+            options.offersSalonVisits = flag(body.get("offersSalonVisits"));
+            options.offersHomeVisits = flag(body.get("offersHomeVisits"));
+            Object maxKm = body.get("maxTravelKm");
+            options.clearMaxTravelKm = body.containsKey("maxTravelKm") && (maxKm == null || maxKm.toString().isBlank());
+            options.maxTravelKm = options.clearMaxTravelKm || maxKm == null ? null : Double.valueOf(maxKm.toString());
+        }
+        BaseResponse baseResponse = availabilityService.updateStylerTravelSettings(accountId, includedKm, fee, options);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
@@ -101,5 +110,9 @@ public class AvailabilityController {
         BaseResponse baseResponse = availabilityService.deleteAvailabilityException(accountId, body.get("exceptionId"));
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
+    }
+
+    private static Boolean flag(Object raw){
+        return raw == null ? null : Boolean.valueOf(raw.toString());
     }
 }

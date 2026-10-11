@@ -56,6 +56,15 @@ public class StylerEntity implements Serializable {
     private Double includedTravelKm;
     /** Flat home-visit fee charged once the distance exceeds the included radius (no per-km pricing). */
     private String baseTravelFee;
+    /** Clients may come to the stylist's salon or studio. */
+    @Column(name = "offers_salon_visits", nullable = false)
+    private boolean offersSalonVisits = true;
+    /** The stylist goes to the client's address. */
+    @Column(name = "offers_home_visits", nullable = false)
+    private boolean offersHomeVisits = true;
+    /** The furthest a home visit may be, in km. Null: no limit. */
+    @Column(name = "max_travel_km")
+    private Double maxTravelKm;
     // Professional verification workflow: PENDING / APPROVED / REJECTED / SUSPENDED.
     // New registrations start PENDING and only APPROVED stylers are visible in
     // public search and bookable. Distinct from `status` (active/inactive account).

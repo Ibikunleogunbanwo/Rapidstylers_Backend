@@ -442,7 +442,14 @@ public class BookingService {
         BigDecimal travelFee = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
         String visitAddress = null;
-        if(isHomeService(data.getServiceTime())){
+        boolean homeVisit = isHomeService(data.getServiceTime());
+        if(homeVisit && !styler.isOffersHomeVisits()){
+            throw new IllegalArgumentException("This professional doesn't offer home visits. Please choose to visit them instead");
+        }
+        if(!homeVisit && !styler.isOffersSalonVisits()){
+            throw new IllegalArgumentException("This professional only offers home visits. Please choose home service");
+        }
+        if(homeVisit){
             if(data.getServiceAddress() != null && !data.getServiceAddress().isBlank()){
                 // Measured here, from the address, so the request can't name its own distance.
                 VisitLocation visit = locateVisit(data.getServiceAddress().trim(), styler);
@@ -457,6 +464,10 @@ public class BookingService {
                 if(distanceKm < 0){
                     throw new IllegalArgumentException("Travel distance cannot be negative");
                 }
+            }
+            if(styler.getMaxTravelKm() != null && distanceKm > styler.getMaxTravelKm()){
+                throw new IllegalArgumentException("This address is " + distanceKm + " km away. This professional travels up to "
+                        + styler.getMaxTravelKm() + " km for home visits");
             }
             billableKm = roundKm(Math.max(0.0, distanceKm - includedKm));
             // Flat home-visit fee beyond the included radius — no per-km pricing.

@@ -394,6 +394,7 @@ public class AvailabilityService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("includedTravelKm", styler.get().getIncludedTravelKm() == null ? 15.0 : styler.get().getIncludedTravelKm());
         data.put("baseTravelFee", styler.get().getBaseTravelFee() == null ? "0.00" : styler.get().getBaseTravelFee());
+        putLocationOptions(data, styler.get());
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(data);
@@ -402,6 +403,23 @@ public class AvailabilityService {
 
     /** Updates the stylist's flat home-visit fee and the included free radius. */
     public BaseResponse updateStylerTravelSettings(String stylerId, Double includedTravelKm, String baseTravelFee){
+        return updateStylerTravelSettings(stylerId, includedTravelKm, baseTravelFee, null);
+    }
+
+    /**
+     * Which appointment locations a stylist offers. Null fields keep what is
+     * saved; {@code clearMaxTravelKm} removes the home-visit distance limit.
+     */
+    public static final class LocationOptions {
+        public Boolean offersSalonVisits;
+        public Boolean offersHomeVisits;
+        public Double maxTravelKm;
+        public boolean clearMaxTravelKm;
+    }
+
+    /** The home-visit fee and radius, plus (when given) which appointment locations the stylist offers. */
+    public BaseResponse updateStylerTravelSettings(String stylerId, Double includedTravelKm, String baseTravelFee,
+                                                   LocationOptions options){
         BaseResponse response = new BaseResponse(true);
         try{
             Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
@@ -427,6 +445,21 @@ public class AvailabilityService {
                 return Responses.errorResponse(response, "Home visit fee must be a valid amount");
             }
             StylerEntity styler = isStylerExist.get();
+            if(options != null){
+                boolean salon = options.offersSalonVisits == null ? styler.isOffersSalonVisits() : options.offersSalonVisits;
+                boolean home = options.offersHomeVisits == null ? styler.isOffersHomeVisits() : options.offersHomeVisits;
+                if(!salon && !home){
+                    return Responses.errorResponse(response, "Offer at least one appointment location");
+                }
+                Double maxKm = options.clearMaxTravelKm ? null
+                        : options.maxTravelKm == null ? styler.getMaxTravelKm() : options.maxTravelKm;
+                if(maxKm != null && (maxKm <= 0 || maxKm > 500)){
+                    return Responses.errorResponse(response, "Maximum travel distance must be between 1 and 500 km");
+                }
+                styler.setOffersSalonVisits(salon);
+                styler.setOffersHomeVisits(home);
+                styler.setMaxTravelKm(maxKm);
+            }
             String previousFee = styler.getBaseTravelFee();
             styler.setIncludedTravelKm(includedKm);
             styler.setBaseTravelFee(fee);
@@ -440,6 +473,7 @@ public class AvailabilityService {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("includedTravelKm", includedKm);
             data.put("baseTravelFee", fee);
+            putLocationOptions(data, styler);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Home visit settings updated");
             response.setData(data);
@@ -448,6 +482,12 @@ public class AvailabilityService {
             LOG.warning("Home visit settings update failed: " + ex.getMessage());
             return Responses.errorResponse(response, "Could not update home visit settings");
         }
+    }
+
+    private static void putLocationOptions(Map<String, Object> data, StylerEntity styler){
+        data.put("offersSalonVisits", styler.isOffersSalonVisits());
+        data.put("offersHomeVisits", styler.isOffersHomeVisits());
+        data.put("maxTravelKm", styler.getMaxTravelKm());
     }
 
     /**

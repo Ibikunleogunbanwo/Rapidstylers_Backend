@@ -103,6 +103,9 @@ public class DTOService {
         stylerAccountDTO.setLongitude(stylerEntity.getLongitude());
         stylerAccountDTO.setIncludedTravelKm(stylerEntity.getIncludedTravelKm() == null ? 15.0 : stylerEntity.getIncludedTravelKm());
         stylerAccountDTO.setBaseTravelFee(stylerEntity.getBaseTravelFee() == null ? "0.00" : stylerEntity.getBaseTravelFee());
+        stylerAccountDTO.setOffersSalonVisits(stylerEntity.isOffersSalonVisits());
+        stylerAccountDTO.setOffersHomeVisits(stylerEntity.isOffersHomeVisits());
+        stylerAccountDTO.setMaxTravelKm(stylerEntity.getMaxTravelKm());
         stylerAccountDTO.setPhoneNumber(stylerEntity.getPhoneNumber());
         stylerAccountDTO.setDescription(stylerEntity.getDescription());
         stylerAccountDTO.setVerificationStatus(stylerEntity.getVerificationStatus());

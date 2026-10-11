@@ -749,6 +749,46 @@ class BookingWorkflowTest {
     }
 
     @Test
+    void bookingOnlyAllowsTheLocationsTheStylistOffers() {
+        StylerEntity homeOnly = homeVisitStyler();
+        homeOnly.setOffersSalonVisits(false);
+        stubBookableHomeVisit(homeOnly);
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(homeOnly));
+        BookAppointmentData visit = bookingData();
+        visit.setServiceTime("visitBarber");
+        assertEquals("This professional only offers home visits. Please choose home service",
+                services.bookingService().bookAppointment(visit).getMessage());
+        assertEquals("This professional only offers home visits. Please choose home service",
+                services.bookingService().estimateBooking(visit).getMessage(), "the price preview says so too");
+
+        homeOnly.setOffersSalonVisits(true);
+        homeOnly.setOffersHomeVisits(false);
+        BookAppointmentData home = bookingData();
+        home.setServiceTime("homeService");
+        home.setTravelDistanceKm(5.0);
+        assertEquals("This professional doesn't offer home visits. Please choose to visit them instead",
+                services.bookingService().bookAppointment(home).getMessage());
+        verify(appointmentRepo, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void aHomeVisitBeyondTheStylistsLimitIsRefused() {
+        StylerEntity styler = homeVisitStyler();
+        styler.setMaxTravelKm(20.0);
+        stubBookableHomeVisit(styler);
+        BookAppointmentData far = bookingData();
+        far.setServiceTime("homeService");
+        far.setTravelDistanceKm(26.5);
+        assertEquals("This address is 26.5 km away. This professional travels up to 20.0 km for home visits",
+                services.bookingService().bookAppointment(far).getMessage());
+
+        BookAppointmentData near = bookingData();
+        near.setServiceTime("homeService");
+        near.setTravelDistanceKm(19.0);
+        assertEquals("200", services.bookingService().bookAppointment(near).getStatusCode());
+    }
+
+    @Test
     void aPromoCodeLowersTheChargeButNotTheBookingPrice() {
         PromotionService promotions = promoted(2000L);
         BookAppointmentData data = bookingData();

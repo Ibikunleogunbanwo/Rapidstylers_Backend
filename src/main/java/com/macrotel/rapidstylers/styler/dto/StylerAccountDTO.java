@@ -32,6 +32,10 @@ public class StylerAccountDTO {
     private Double distanceKm;
     private Double includedTravelKm;
     private String baseTravelFee;
+    /** Appointment locations this stylist offers; booking refuses the others. */
+    private Boolean offersSalonVisits;
+    private Boolean offersHomeVisits;
+    private Double maxTravelKm;
     // true when the stylist can receive payouts (Connect onboarding COMPLETE,
     // or payments are not configured at all). Drives the marketplace "payments
     // pending" flag and the booking block.
