@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * The styler domain's front door for other domains (payment today): stylist
+ * The styler domain's front door for other domains (payment and booking): stylist
  * records and the services each stylist offers. Only styler code reaches
  * {@link StylerRepo} and {@link SubServiceRepo} directly.
  */
@@ -32,6 +32,11 @@ public class StylerRecords {
 
     public Optional<StylerEntity> findByStylerId(String stylerId) {
         return stylerRepo.findByStylerId(stylerId);
+    }
+
+    /** Locks the stylist row until the caller's transaction ends. */
+    public Optional<StylerEntity> findByStylerIdForUpdate(String stylerId) {
+        return stylerRepo.findByStylerIdForUpdate(stylerId);
     }
 
     public Optional<StylerEntity> findByStripeConnectAccountId(String stripeConnectAccountId) {

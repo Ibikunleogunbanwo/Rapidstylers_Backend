@@ -46,6 +46,7 @@ import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.payment.service.CardService;
+import com.macrotel.rapidstylers.payment.service.CardRecords;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
@@ -168,7 +169,8 @@ public class TestServices {
             StylerProfileService.class,
             AppointmentRecords.class,
             StylerRecords.class,
-            CustomerRecords.class);
+            CustomerRecords.class,
+            CardRecords.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 

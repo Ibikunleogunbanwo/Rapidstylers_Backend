@@ -3,12 +3,12 @@ package com.macrotel.rapidstylers.booking.service;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
-import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
+import com.macrotel.rapidstylers.payment.service.CardRecords;
 import com.macrotel.rapidstylers.payment.service.MoneyUtils;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
 import com.stripe.model.PaymentIntent;
 import java.time.LocalDate;
@@ -35,9 +35,9 @@ public class PaymentAuthorizationService {
     @Autowired
     BookAppointmentRepo bookAppointmentRepo;
     @Autowired
-    CardDetailsRepo cardDetailsRepo;
+    CardRecords cardRecords;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
     StripeService stripeService;
     // Initialized inline so bare construction (unit tests) behaves as before;
@@ -94,14 +94,14 @@ public class PaymentAuthorizationService {
     @Transactional(rollbackFor = Exception.class)
     public PaymentAttemptResult authorizeScheduledPayment(BookAppointmentEntity appointment, boolean captureAfterAuthorization){
         try {
-            Optional<CardDetailsEntity> card = cardDetailsRepo.findByUserId(appointment.getUserId());
+            Optional<CardDetailsEntity> card = cardRecords.findByUserId(appointment.getUserId());
             if(card.isEmpty() || card.get().getStripeCustomerId() == null || card.get().getStripePaymentMethodId() == null){
                 appointment.setPaymentStatus("PAYMENT_FAILED");
                 appointment.setPaymentFailureCode("NO_PAYMENT_METHOD");
                 bookAppointmentRepo.save(appointment);
                 return PaymentAttemptResult.failure("NO_PAYMENT_METHOD", "Please add a payment method to complete this booking");
             }
-            Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
+            Optional<StylerEntity> styler = stylerRecords.findByStylerId(appointment.getStylerId());
             String destination = styler.filter(s -> s.getStripeConnectAccountId() != null && !s.getStripeConnectAccountId().isBlank())
                     .map(StylerEntity::getStripeConnectAccountId).orElse(null);
             long amountCents = MoneyUtils.centsFromPrice(appointment.getPaymentAmount() == null ? appointment.getPrice() : appointment.getPaymentAmount());

@@ -13,7 +13,7 @@ import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
 import com.stripe.model.Customer;
 import java.time.LocalDate;
@@ -41,7 +41,7 @@ public class AppointmentWorkflowService {
     @Autowired
     BookingSlotLockRepo bookingSlotLockRepo;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
     StripeService stripeService;
     @Autowired
@@ -231,7 +231,7 @@ public class AppointmentWorkflowService {
             }
             // A stylist needs somewhere to be paid before taking on paid work.
             if("3".equals(newStatus) && requirePayoutAccountToAccept && stripeService.isConfigured()
-                    && !PayoutReleaseService.canReceivePayouts(stylerRepo.findByStylerId(appointment.getStylerId()).orElse(null))){
+                    && !PayoutReleaseService.canReceivePayouts(stylerRecords.findByStylerId(appointment.getStylerId()).orElse(null))){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Finish your payout setup on the Payouts page before accepting bookings, so you can be paid for them.");
                 response.setData(Collections.singletonMap("payoutSetupRequired", true));

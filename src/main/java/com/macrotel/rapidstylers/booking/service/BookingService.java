@@ -11,18 +11,17 @@ import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
-import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
+import com.macrotel.rapidstylers.payment.service.CardRecords;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.MoneyUtils;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
 import com.macrotel.rapidstylers.styler.service.GeoDistance;
 import com.macrotel.rapidstylers.styler.service.GeocodingService;
@@ -59,15 +58,13 @@ public class BookingService {
     DTOService dtoService;
     private static final Logger LOG = Logger.getLogger(BookingService.class.getName());
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
-    @Autowired
-    SubServiceRepo subServiceRepo;
+    StylerRecords stylerRecords;
     @Autowired
     BookAppointmentRepo bookAppointmentRepo;
     @Autowired
-    CardDetailsRepo cardDetailsRepo;
+    CardRecords cardRecords;
     @Autowired
     BookingSlotLockRepo bookingSlotLockRepo;
     @Autowired
@@ -110,14 +107,14 @@ public class BookingService {
     public BaseResponse estimateBooking(BookAppointmentData bookAppointmentData){
         BaseResponse response = new BaseResponse(true);
         try {
-            Optional<StylerEntity> styler = stylerRepo.findByStylerId(bookAppointmentData.getStylerId());
+            Optional<StylerEntity> styler = stylerRecords.findByStylerId(bookAppointmentData.getStylerId());
             if(styler.isEmpty()){
                 return Responses.errorResponse(response, "Invalid Styler Id");
             }
             if(!stylerEligibility.isApprovedStyler(styler.get())){
                 return Responses.errorResponse(response, "This professional is not yet available for booking");
             }
-            Optional<SubServiceEntity> subService = subServiceRepo.isServiceExistById(
+            Optional<SubServiceEntity> subService = stylerRecords.findSubService(
                     bookAppointmentData.getStylerId(), Long.parseLong(bookAppointmentData.getSubServiceId()));
             if(subService.isEmpty()){
                 return Responses.errorResponse(response, "Invalid service for this stylist");
@@ -171,8 +168,8 @@ public class BookingService {
             // first database read on purpose: MySQL fixes what a transaction can see
             // at its first plain read, so every read below sees whatever a request
             // that held this lock before us committed.
-            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerIdForUpdate(bookAppointmentData.getStylerId());
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(bookAppointmentData.getUserId());
+            Optional<StylerEntity> isStylerExist = stylerRecords.findByStylerIdForUpdate(bookAppointmentData.getStylerId());
+            Optional<UserEntity> isUserExist = customerRecords.findByUserId(bookAppointmentData.getUserId());
             if(isUserExist.isEmpty()){
                 return Responses.errorResponse(response, "Invalid User Id, Kindly create account");
             }
@@ -210,7 +207,7 @@ public class BookingService {
             int durationMinutes;
             TravelPricing pricing;
             try {
-                Optional<SubServiceEntity> subService = subServiceRepo.isServiceExistById(
+                Optional<SubServiceEntity> subService = stylerRecords.findSubService(
                         bookAppointmentData.getStylerId(), Long.parseLong(subServiceId));
                 if(subService.isEmpty()){
                     return Responses.errorResponse(response, "Invalid service for this stylist");
@@ -285,7 +282,7 @@ public class BookingService {
                     // Reuse an existing Stripe customer id if the user has one; otherwise
                     // create one purely to host the authorization (no card persisted).
                     try {
-                        String customerId = cardDetailsRepo.findByUserId(bookAppointmentData.getUserId())
+                        String customerId = cardRecords.findByUserId(bookAppointmentData.getUserId())
                                 .map(CardDetailsEntity::getStripeCustomerId)
                                 .filter(cid -> cid != null && !cid.isEmpty())
                                 .orElseGet(() -> {
@@ -328,7 +325,7 @@ public class BookingService {
                     // reference (never the raw card) so the scheduler can authorize
                     // within the window; capture-on-acceptance still uses the intent id.
                     try {
-                        String existingCustomerId = cardDetailsRepo.findByUserId(bookAppointmentData.getUserId())
+                        String existingCustomerId = cardRecords.findByUserId(bookAppointmentData.getUserId())
                                 .map(CardDetailsEntity::getStripeCustomerId)
                                 .filter(cid -> cid != null && !cid.isEmpty())
                                 .orElse(null);
@@ -533,7 +530,7 @@ public class BookingService {
     public BaseResponse stylerAppointments(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<StylerEntity> isStylerExist = stylerRepo.findByStylerId(stylerId);
+            Optional<StylerEntity> isStylerExist = stylerRecords.findByStylerId(stylerId);
             if(isStylerExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Styler Id");
@@ -559,7 +556,7 @@ public class BookingService {
     public BaseResponse listUserAppointment(String userId){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
+            Optional<UserEntity> isUserExist = customerRecords.findByUserId(userId);
             if(isUserExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid User Id, Kindly create account");
@@ -584,7 +581,7 @@ public class BookingService {
     public BaseResponse listUserPendingAppointment(String userId){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
+            Optional<UserEntity> isUserExist = customerRecords.findByUserId(userId);
             if(isUserExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid User Id, Kindly create account");
