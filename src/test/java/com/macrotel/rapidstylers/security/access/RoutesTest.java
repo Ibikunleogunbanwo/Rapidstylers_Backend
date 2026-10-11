@@ -27,7 +27,7 @@ class RoutesTest {
     private static final Path SOURCES = Path.of("src/main/java/com/macrotel/rapidstylers");
     private static final Pattern CLASS_MAPPING = Pattern.compile("@RequestMapping\\(\"([^\"]+)\"\\)");
     private static final Pattern METHOD_MAPPING =
-            Pattern.compile("@(?:Get|Post|Put|Delete|Patch)Mapping(?:\\((?:value\\s*=\\s*)?\"([^\"]*)\"\\))?");
+            Pattern.compile("@(?:Get|Post|Put|Delete|Patch)Mapping(?:\\((?:value\\s*=\\s*)?\"([^\"]*)\"[^)]*\\))?");
 
     private static final Map<String, String[]> LISTS = Map.of(
             "PUBLIC", Routes.PUBLIC,

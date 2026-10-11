@@ -36,6 +36,8 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         // The actuator health endpoint is exempt so Docker/Nginx health checks work
         // without an API key; it reports only UP/DOWN status.
         if ("/rapid_stylers/stripe/webhook".equals(requestUrl)
+                || "/rapid_stylers/resend/webhook".equals(requestUrl)
+                || "/rapid_stylers/newsletter_one_click_unsubscribe".equals(requestUrl)
                 || "/actuator/health".equals(requestUrl)) {
             filterChain.doFilter(request, response);
         }

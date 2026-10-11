@@ -210,6 +210,32 @@ class StylerAddressRequirementTest {
         verify(stylerRepo).save(any(StylerEntity.class));
     }
 
+    @Test
+    void successfulSignupQueuesOneStylistWelcomeButAnInvalidSignupDoesNot() {
+        stubSignupPreconditions();
+        // One instance throughout: each services.stylerService() call re-wires
+        // the real collaborators and would undo the stub set below.
+        StylerService stylers = services.stylerService();
+        var repo = mock(com.macrotel.rapidstylers.outbox.OutboxEventRepo.class);
+        var outbox = new com.macrotel.rapidstylers.outbox.OutboxEventService(repo, new ObjectMapper());
+        ReflectionTestUtils.setField(outbox, "domainEventsTopic", "test-events");
+        ReflectionTestUtils.setField(stylers, "outboxEventService", outbox);
+        assertEquals("400", stylers.createStyler(signupData(null, " ")).getStatusCode());
+        org.mockito.Mockito.verifyNoInteractions(repo);
+        assertEquals("200", stylers.createStyler(signupData("700 2 St SW", null)).getStatusCode());
+        var event = org.mockito.ArgumentCaptor.forClass(com.macrotel.rapidstylers.outbox.OutboxEventEntity.class);
+        verify(repo).save(event.capture());
+        assertEquals("STYLER_WELCOME", event.getValue().getEventType().name());
+        assertEquals("STYLER", event.getValue().getAggregateType());
+        assertTrue(event.getValue().getPayload().contains(signupData("700 2 St SW", null).getEmailAddress()));
+        var retries = mock(StylerSignupRetries.class);
+        BaseResponse alreadyCreated = new BaseResponse(true); alreadyCreated.setStatusCode("200");
+        when(retries.alreadyCreated(any())).thenReturn(alreadyCreated);
+        ReflectionTestUtils.setField(stylers, "stylerSignupRetries", retries);
+        assertEquals("200", stylers.createStyler(signupData("700 2 St SW", null)).getStatusCode());
+        verify(repo, org.mockito.Mockito.times(1)).save(any());
+    }
+
     /* ── approval ────────────────────────────────────────────────────────── */
 
     @Test

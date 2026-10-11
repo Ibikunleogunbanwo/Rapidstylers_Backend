@@ -32,12 +32,25 @@ public class EmailConfig {
      * Returns the same success/error strings as before.
      */
     public String sendSimpleMail(String receiverEmail, String subject, String body) {
+        return send(receiverEmail, subject, body, Map.of());
+    }
+
+    public String sendNewsletterMail(String receiverEmail, String subject, String body, String unsubscribeUrl) {
+        try {
+            URI uri = URI.create(unsubscribeUrl);
+            if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null || unsubscribeUrl.contains("\r") || unsubscribeUrl.contains("\n")) return "Error while Sending Mail";
+        } catch (RuntimeException ex) { return "Error while Sending Mail"; }
+        return send(receiverEmail, subject, body, Map.of("List-Unsubscribe", "<" + unsubscribeUrl + ">", "List-Unsubscribe-Post", "List-Unsubscribe=One-Click"));
+    }
+
+    private String send(String receiverEmail, String subject, String body, Map<String, String> headers) {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("from", sender);
             payload.put("to", List.of(receiverEmail));
             payload.put("subject", subject);
             payload.put("html", body);
+            if (!headers.isEmpty()) payload.put("headers", headers);
 
             String json = objectMapper.writeValueAsString(payload);
 

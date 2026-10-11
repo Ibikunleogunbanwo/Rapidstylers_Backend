@@ -122,6 +122,12 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY}
       RESEND_FROM: ${RESEND_FROM}
       RESEND_API_URL: ${RESEND_API_URL:-https://api.resend.com/emails}
+      # Signing secret of the Resend bounce/complaint webhook (not the API key).
+      # Empty keeps the webhook switched off (it answers 503).
+      RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:-}
+      # Bases for newsletter links: one-click unsubscribe (API) and the footer page (website).
+      NEWSLETTER_API_URL: ${NEWSLETTER_API_URL:-https://api.rapidstylers.ca}
+      NEWSLETTER_SITE_URL: ${NEWSLETTER_SITE_URL:-https://rapidstylers.ca}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}

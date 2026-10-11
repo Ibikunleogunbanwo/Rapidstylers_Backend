@@ -36,6 +36,9 @@ public class NewsletterMailer {
     @Value("${app.newsletter.site-url:https://rapidstylers.ca}")
     String siteUrl = "https://rapidstylers.ca";
 
+    @Value("${app.newsletter.api-url:https://api.rapidstylers.ca}")
+    String apiUrl = "https://api.rapidstylers.ca";
+
     @Transactional
     public void deliver(String eventType, Map<String, String> event) {
         if ("NEWSLETTER_CONFIRM".equals(eventType)) {
@@ -79,7 +82,8 @@ public class NewsletterMailer {
         } else {
             SiteContentRules.RenderedEmail mail = render(c.get().getSubject(), c.get().getBody(),
                     siteUrl + "/newsletter/unsubscribe?token=" + s.get().getUnsubscribeToken());
-            String result = emailConfig.sendSimpleMail(d.getEmail(), mail.subject, mail.html);
+            String result = emailConfig.sendNewsletterMail(d.getEmail(), mail.subject, mail.html,
+                    apiUrl.replaceAll("/+$", "") + "/rapid_stylers/newsletter_one_click_unsubscribe?token=" + s.get().getUnsubscribeToken());
             boolean sent = result != null && result.startsWith("Mail Sent");
             d.setStatus(sent ? "SENT" : "FAILED");
             d.setError(sent ? null : String.valueOf(result).substring(0, Math.min(String.valueOf(result).length(), 500)));

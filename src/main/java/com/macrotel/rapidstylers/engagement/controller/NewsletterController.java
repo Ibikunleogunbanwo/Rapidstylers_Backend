@@ -47,6 +47,16 @@ public class NewsletterController {
         return ApiResponses.respond(subscriptionService.unsubscribe(text(body.get("token"))));
     }
 
+    /** RFC 8058: mailbox providers POST this marker, without cookies or an API key. GET never writes. */
+    @PostMapping(value = "/newsletter_one_click_unsubscribe", consumes = {"application/x-www-form-urlencoded", "multipart/form-data"})
+    public ResponseEntity<BaseResponse> oneClickUnsubscribe(@RequestParam String token,
+            @RequestParam(value = "List-Unsubscribe", required = false) String marker) {
+        if (!token.matches("[0-9a-f]{64}") || !"One-Click".equals(marker)) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ApiResponses.respond(subscriptionService.unsubscribe(token));
+    }
+
     @GetMapping("/newsletter_preferences")
     public ResponseEntity<BaseResponse> preferences(@RequestParam String token) {
         return ApiResponses.respond(subscriptionService.preferences(token));

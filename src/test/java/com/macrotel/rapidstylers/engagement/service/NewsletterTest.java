@@ -68,6 +68,7 @@ class NewsletterTest {
     void setUp() {
         ReflectionTestUtils.setField(subscriptions, "rateLimiter", null);
         when(emailConfig.sendSimpleMail(anyString(), anyString(), anyString())).thenReturn("Mail Sent Successfully...");
+        when(emailConfig.sendNewsletterMail(anyString(), anyString(), anyString(), anyString())).thenReturn("Mail Sent Successfully...");
     }
 
     @AfterEach
@@ -200,12 +201,12 @@ class NewsletterTest {
         assertEquals("SENT", campaignRepo.findById(id).orElseThrow().getStatus());
         assertEquals(3, deliveryRepo.countByCampaignIdAndStatus(id, "SENT"));
         assertEquals(1, deliveryRepo.countByCampaignIdAndStatus(id, "SKIPPED"));
-        verify(emailConfig, never()).sendSimpleMail(eq(blocked), anyString(), anyString());
-        verify(emailConfig, never()).sendSimpleMail(eq(first.getEmail()), anyString(), anyString());
+        verify(emailConfig, never()).sendNewsletterMail(eq(blocked), anyString(), anyString(), anyString());
+        verify(emailConfig, never()).sendNewsletterMail(eq(first.getEmail()), anyString(), anyString(), anyString());
 
         ArgumentCaptor<String> html = ArgumentCaptor.forClass(String.class);
         String someone = people.stream().filter(p -> !p.equals(first.getEmail())).findFirst().orElseThrow();
-        verify(emailConfig).sendSimpleMail(eq(someone), eq("Fall news"), html.capture());
+        verify(emailConfig).sendNewsletterMail(eq(someone), eq("Fall news"), html.capture(), anyString());
         assertTrue(html.getValue().startsWith("<p>Hello &lt;script&gt;x&lt;/script&gt; &amp; welcome.</p><p>See you soon</p>"), html.getValue());
         assertTrue(html.getValue().contains("/newsletter/unsubscribe?token="
                 + subscriberRepo.findByEmail(someone).orElseThrow().getUnsubscribeToken()));
@@ -213,7 +214,7 @@ class NewsletterTest {
         // A delivery handled twice sends once.
         NewsletterDeliveryEntity sent = deliveryRepo.findByCampaignIdAndStatus(id, "SENT").get(0);
         mailer.deliver("NEWSLETTER_EMAIL", Map.of("deliveryId", String.valueOf(sent.getId())));
-        verify(emailConfig, times(1)).sendSimpleMail(eq(sent.getEmail()), anyString(), anyString());
+        verify(emailConfig, times(1)).sendNewsletterMail(eq(sent.getEmail()), anyString(), anyString(), anyString());
     }
 
     @Test

@@ -50,6 +50,8 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
  */
 @Service
 public class StylerService {
+    @Autowired(required = false)
+    com.macrotel.rapidstylers.outbox.OutboxEventService outboxEventService;
     AppUtils appUtils = new AppUtils();
     @Autowired
     DTOService dtoService;
@@ -129,6 +131,7 @@ public class StylerService {
      * response finds the account it already made and says so instead of "email
      * already exists", so the website can send the stylist to sign in.
      */
+    @org.springframework.transaction.annotation.Transactional
     public BaseResponse createStyler(StylerData stylerData){
         String email = stylerData.getEmailAddress();
         if(imageReclaimService.uploadedByAnotherSignup(email, stylerData.getProfileImageUrl())
@@ -258,6 +261,7 @@ public class StylerService {
             }
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
+            if (outboxEventService != null) outboxEventService.stylistWelcomeEmail(stylerEntity);
             response.setMessage("Stylers Account Created Successful");
             response.setData(EMPTY_DATA);
         }

@@ -37,6 +37,9 @@ public class NotificationEventConsumer {
     @Autowired(required = false)
     private NewsletterMailer newsletterMailer;
 
+    @Autowired(required = false)
+    private com.macrotel.rapidstylers.catalog.service.SiteContentService siteContentService;
+
     @Value("${app.kafka.topics.domain-events-retry:rapidstylers.domain-events.retry}")
     private String retryTopic;
 
@@ -86,12 +89,22 @@ public class NotificationEventConsumer {
                 if (!email.isBlank()) {
                     String firstName = event.getOrDefault("firstname", "");
                     String greeting = firstName.isBlank() ? "Welcome to RapidStylers" : "Welcome to RapidStylers, " + firstName;
-                    emailConfig.sendSimpleMail(email, "Welcome to RapidStylers",
-                            "<p>" + greeting + "!</p>"
+                    sendTemplate(email, "welcome_customer", Map.of("firstName", firstName), "Welcome to RapidStylers",
+                            "<p>" + org.springframework.web.util.HtmlUtils.htmlEscape(greeting) + "!</p>"
                             + "<p>Your account is ready. Complete your profile and book your first "
                             + "appointment with a top-rated beauty professional.</p>"
                             + "<p>– The RapidStylers Team</p>");
                 }
+                acknowledge(acknowledgment);
+                return;
+            }
+            if ("STYLER_WELCOME".equals(eventType)) {
+                Map<String, String> event = readPayload(payload);
+                String email = event.getOrDefault("emailAddress", "");
+                if (!email.isBlank()) sendTemplate(email, "welcome_stylist", Map.of("firstName", value(event.get("firstname"), "there")),
+                        "Welcome to RapidStylers", "<p>Welcome to RapidStylers, "
+                        + org.springframework.web.util.HtmlUtils.htmlEscape(value(event.get("firstname"), "there"))
+                        + "!</p><p>Your stylist account is ready. Complete your profile and verification to start taking bookings.</p>");
                 acknowledge(acknowledgment);
                 return;
             }
@@ -132,7 +145,7 @@ public class NotificationEventConsumer {
             Map<String, String> event = readPayload(payload);
             Optional<SubServiceEntity> service = service(event);
             String subject = "RapidStylers - Appointment " + event.getOrDefault("eventLabel", "Update");
-            sendToBoth(event, service, subject, this::bookingBody);
+            sendToBoth(event, service, subject, this::bookingBody, bookingTemplate(eventType));
 
             acknowledge(acknowledgment);
 
@@ -275,6 +288,11 @@ public class NotificationEventConsumer {
 
     private void sendToBoth(Map<String, String> event, Optional<SubServiceEntity> service, String subject,
                             BodyBuilder bodyBuilder) {
+        sendToBoth(event, service, subject, bodyBuilder, null);
+    }
+
+    private void sendToBoth(Map<String, String> event, Optional<SubServiceEntity> service, String subject,
+                            BodyBuilder bodyBuilder, String template) {
         Optional<UserEntity> user = customerRecords.findByUserId(event.getOrDefault("customerId", ""));
         Optional<StylerEntity> styler = stylerRecords.findByStylerId(event.getOrDefault("stylerId", ""));
 
@@ -289,13 +307,43 @@ public class NotificationEventConsumer {
 
         user.map(UserEntity::getEmailAddress)
                 .filter(email -> !email.isBlank())
-                .ifPresent(email -> emailConfig.sendSimpleMail(email, subject, bodyBuilder.build(
+                .ifPresent(email -> sendTemplate(email, template, Map.of(
+                        "firstName", user.map(UserEntity::getFirstname).orElse(""),
+                        "serviceName", service.map(SubServiceEntity::getName).orElse("Appointment"),
+                        "stylistName", styler.map(StylerEntity::getBusinessName).orElseGet(() -> styler.map(StylerEntity::getFirstname).orElse("Your stylist")),
+                        "appointmentDate", value(event.get("appointmentDate"), "TBC"),
+                        "appointmentTime", displayArrivalTime(event.get("arrivalTime")) + zoneSuffix), subject, bodyBuilder.build(
                         event.get("customerHeadline"), event.get("customerDetail"), service, event, zoneSuffix)));
 
         styler.map(StylerEntity::getEmailAddress)
                 .filter(email -> !email.isBlank())
                 .ifPresent(email -> emailConfig.sendSimpleMail(email, subject, bodyBuilder.build(
                         event.get("stylerHeadline"), event.get("stylerDetail"), service, event, zoneSuffix)));
+    }
+
+    private String bookingTemplate(String eventType) {
+        if (eventType == null) return null;
+        return switch (eventType) {
+            case "BOOKING_REQUESTED" -> "booking_received";
+            case "BOOKING_CONFIRMED" -> "booking_confirmed";
+            case "BOOKING_CANCELLED" -> "booking_cancelled";
+            default -> null;
+        };
+    }
+
+    private void sendTemplate(String email, String template, Map<String, String> values, String subject, String body) {
+        if (siteContentService != null && template != null) {
+            try {
+                var rendered = siteContentService.renderEmail(template, values);
+                if (rendered.isPresent() && !rendered.get().subject.isBlank() && !rendered.get().html.isBlank()) {
+                    subject = rendered.get().subject;
+                    body = rendered.get().html;
+                }
+            } catch (RuntimeException ex) {
+                LOG.warning("Published email template unavailable; using built-in wording");
+            }
+        }
+        emailConfig.sendSimpleMail(email, subject, body);
     }
 
     private String bookingBody(String headline, String detail, Optional<SubServiceEntity> service,

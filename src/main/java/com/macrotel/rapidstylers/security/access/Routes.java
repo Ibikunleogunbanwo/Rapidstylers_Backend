@@ -79,6 +79,8 @@ public final class Routes {
             "/rapid_stylers/newsletter_confirm",
             "/rapid_stylers/newsletter_unsubscribe",
             "/rapid_stylers/newsletter_preferences",
+            "/rapid_stylers/newsletter_one_click_unsubscribe",
+            "/rapid_stylers/resend/webhook",
 
             // Signed by Stripe instead of a token
             "/rapid_stylers/stripe/webhook",

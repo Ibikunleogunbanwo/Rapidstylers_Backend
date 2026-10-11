@@ -17,6 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EmailConfigTest {
 
     @Test
+    void newsletterRejectsInsecureMalformedOrBlankUnsubscribeUrlsBeforeSending() {
+        EmailConfig config = new EmailConfig();
+        for (String url : new String[]{"", "http://api.example.test/unsubscribe", "https://example.test/\r\nInjected", "https://user:password@example.test/unsubscribe", "https://example.test/unsubscribe#fragment"}) {
+            assertEquals("Error while Sending Mail", config.sendNewsletterMail("customer@example.test", "News", "Body", url));
+        }
+    }
+
+    @Test
     void sendsEmailToConfiguredLoopbackEndpoint() throws Exception {
         var endpointField = ReflectionUtils.findField(EmailConfig.class, "resendApiUrl");
         assertNotNull(endpointField, "EmailConfig must allow a local test inbox endpoint");
@@ -53,6 +61,13 @@ class EmailConfigTest {
             assertTrue(payload.get().contains("customer@example.test"));
             assertTrue(payload.get().contains("Test subject"));
             assertTrue(payload.get().contains("Test body"));
+            assertTrue(!new com.fasterxml.jackson.databind.ObjectMapper().readTree(payload.get()).has("headers"), "Transactional sends do not receive newsletter unsubscribe headers");
+            var newsletterMethod = ReflectionUtils.findMethod(EmailConfig.class, "sendNewsletterMail", String.class, String.class, String.class, String.class);
+            assertNotNull(newsletterMethod, "Newsletter sends must provide RFC 8058 headers");
+            assertEquals("Mail Sent Successfully...", newsletterMethod.invoke(config, "customer@example.test", "Newsletter", "<p>News</p>", "https://api.example.test/rapid_stylers/newsletter_one_click_unsubscribe?token=" + "a".repeat(64)));
+            var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(payload.get());
+            assertEquals("List-Unsubscribe=One-Click", json.path("headers").path("List-Unsubscribe-Post").asText());
+            assertEquals("<https://api.example.test/rapid_stylers/newsletter_one_click_unsubscribe?token=" + "a".repeat(64) + ">", json.path("headers").path("List-Unsubscribe").asText());
         } finally {
             inbox.stop(0);
         }

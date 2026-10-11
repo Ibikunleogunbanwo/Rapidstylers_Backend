@@ -102,6 +102,19 @@ public class OutboxEventService {
         outboxEventRepo.save(event);
     }
 
+    /** Queued in the same transaction as a newly created stylist account. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void stylistWelcomeEmail(com.macrotel.rapidstylers.styler.entity.StylerEntity stylist) {
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(OutboxEventType.STYLER_WELCOME);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("STYLER");
+        event.setAggregateId(nullSafe(stylist.getStylerId()));
+        event.setPayload(toJson(Map.of("emailAddress", nullSafe(stylist.getEmailAddress()),
+                "firstname", nullSafe(stylist.getFirstname()), "accountId", nullSafe(stylist.getStylerId()))));
+        outboxEventRepo.save(event);
+    }
+
     /**
      * Emits a SIGNUP_REMINDER event for the given campaign stage (1 = 24h
      * reminder, 2 = 7 days, 3 = 14 days, 4 = 1 month) so a customer who

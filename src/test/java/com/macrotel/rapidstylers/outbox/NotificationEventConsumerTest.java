@@ -268,6 +268,49 @@ class NotificationEventConsumerTest {
         verify(ack).acknowledge();
     }
 
+    @Test
+    void publishedBookingTemplateUsesRealRecipientAndEscapedAppointmentValues() {
+        stylerWith("Ontario", null);
+        var templates = new com.macrotel.rapidstylers.catalog.service.SiteContentService();
+        var repo = mock(com.macrotel.rapidstylers.catalog.repo.SiteContentRepo.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(templates, "contentRepo", repo);
+        var content = new com.macrotel.rapidstylers.catalog.entity.SiteContentEntity();
+        content.setPublishedBody("{\"subject\":\"Received {{serviceName}}\",\"body\":\"Hello {{firstName}}: {{serviceName}} at {{appointmentTime}}\"}");
+        when(repo.findByContentKey("email:booking_received")).thenReturn(Optional.of(content));
+        org.springframework.test.util.ReflectionTestUtils.setField(consumer, "siteContentService", templates);
+        SubServiceEntity service = new SubServiceEntity();
+        service.setName("<script>alert(1)</script>");
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service));
+        consumer.handleBookingNotification(payload(), "1", "template-booking", "BOOKING_REQUESTED", null, mock(Acknowledgment.class));
+        verify(emailConfig).sendSimpleMail(eq("customer@example.com"), eq("Received <script>alert(1)</script>"), contains("&lt;script&gt;alert(1)&lt;/script&gt; at 9:30 AM (Eastern Time)"));
+        verify(emailConfig).sendSimpleMail(eq("styler@example.com"), contains("Appointment Request"), contains("New booking request"));
+    }
+
+    @Test
+    void templateLookupFailureKeepsBuiltInBookingAndKafkaAcknowledgement() {
+        stylerWith(null, null);
+        var templates = mock(com.macrotel.rapidstylers.catalog.service.SiteContentService.class);
+        when(templates.renderEmail(anyString(), any())).thenThrow(new IllegalStateException("corrupt content"));
+        org.springframework.test.util.ReflectionTestUtils.setField(consumer, "siteContentService", templates);
+        Acknowledgment ack = mock(Acknowledgment.class);
+        consumer.handleBookingNotification(payload(), "1", "bad-template", "BOOKING_REQUESTED", null, ack);
+        verify(emailConfig).sendSimpleMail(eq("customer@example.com"), contains("Appointment Request"), contains("Booking request received"));
+        verify(ack).acknowledge();
+        verify(kafkaTemplate, never()).send(any(ProducerRecord.class));
+    }
+
+    @Test
+    void stylistWelcomeEventUsesPublishedTemplateAndAcknowledges() {
+        var templates = mock(com.macrotel.rapidstylers.catalog.service.SiteContentService.class);
+        when(templates.renderEmail(eq("welcome_stylist"), eq(java.util.Map.of("firstName", "Bea"))))
+                .thenReturn(Optional.of(new com.macrotel.rapidstylers.catalog.service.SiteContentRules.RenderedEmail("Hello Bea", "<p>Welcome stylist</p>")));
+        org.springframework.test.util.ReflectionTestUtils.setField(consumer, "siteContentService", templates);
+        Acknowledgment ack = mock(Acknowledgment.class);
+        consumer.handleBookingNotification("{\"emailAddress\":\"stylist@example.test\",\"firstname\":\"Bea\"}", "1", "stylist-welcome", "STYLER_WELCOME", null, ack);
+        verify(emailConfig).sendSimpleMail("stylist@example.test", "Hello Bea", "<p>Welcome stylist</p>");
+        verify(ack).acknowledge();
+    }
+
     private String refundPayload() {
         return "{"
                 + "\"appointmentId\":\"APPT3\","
