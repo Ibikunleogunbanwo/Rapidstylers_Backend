@@ -6,16 +6,14 @@ import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.SavedStylistEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import com.macrotel.rapidstylers.engagement.pojo.NotificationPreferencesData;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import java.util.*;
 import java.util.logging.Logger;
@@ -33,13 +31,9 @@ public class NotificationService {
     @Autowired
     EmailConfig emailConfig;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
-    @Autowired
-    SubServiceRepo subServiceRepo;
-    @Autowired
-    SavedStylistRepo savedStylistRepo;
+    StylerRecords stylerRecords;
     @Autowired
     NotificationRepo notificationRepo;
     @Autowired
@@ -65,13 +59,13 @@ public class NotificationService {
             String serviceName = "Service";
             if(appointment.getSubServiceId() != null && !appointment.getSubServiceId().isEmpty()){
                 try{
-                    Optional<SubServiceEntity> sub = subServiceRepo.isServiceExistById(appointment.getStylerId(), Long.parseLong(appointment.getSubServiceId()));
+                    Optional<SubServiceEntity> sub = stylerRecords.findSubService(appointment.getStylerId(), Long.parseLong(appointment.getSubServiceId()));
                     if(sub.isPresent() && sub.get().getName() != null){
                         serviceName = sub.get().getName();
                     }
                 } catch (Exception ignored){}
             }
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
+            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(appointment.getStylerId());
             // The appointment's times live on the stylist's clock, so the email
             // names the zone rather than leaving a cross-province reader to
             // guess whose 2:00 PM this is.
@@ -86,7 +80,7 @@ public class NotificationService {
             String travelFee = appointment.getTravelFee() == null ? "0.00" : appointment.getTravelFee();
 
             String customerName = "there";
-            Optional<UserEntity> userOpt = userRepo.findByUserId(appointment.getUserId());
+            Optional<UserEntity> userOpt = customerRecords.findByUserId(appointment.getUserId());
             if(userOpt.isPresent()){
                 customerName = (userOpt.get().getFirstname() + " " + userOpt.get().getLastname()).trim();
                 if(customerName.isBlank()) customerName = "there";
@@ -188,11 +182,11 @@ public class NotificationService {
             if(cleanMessage.length() > 1000) return Responses.errorResponse(response, "Message must be 1000 characters or fewer");
             List<String> recipients;
             if(recipientEmail != null && !recipientEmail.isBlank()){
-                Optional<UserEntity> user = userRepo.findByEmailAddress(recipientEmail.trim());
+                Optional<UserEntity> user = customerRecords.findByEmailAddress(recipientEmail.trim());
                 if(user.isEmpty()) return Responses.errorResponse(response, "No customer with that email");
                 recipients = List.of(user.get().getUserId());
             } else {
-                recipients = userRepo.findActiveUserIds();
+                recipients = customerRecords.findActiveUserIds();
             }
             List<NotificationEntity> rows = new ArrayList<>();
             for(String userId : recipients){
@@ -217,7 +211,7 @@ public class NotificationService {
     public BaseResponse listNotifications(String userId){
         BaseResponse response = new BaseResponse(true);
         try {
-            if(userRepo.findByUserId(userId).isEmpty()){
+            if(customerRecords.findByUserId(userId).isEmpty()){
                 return Responses.errorResponse(response, "Invalid User Id");
             }
             List<Map<String, Object>> result = new ArrayList<>();
@@ -281,7 +275,7 @@ public class NotificationService {
     public BaseResponse getNotificationPreferences(String userId){
         BaseResponse response = new BaseResponse(true);
         try {
-            Optional<UserEntity> user = userRepo.findByUserId(userId);
+            Optional<UserEntity> user = customerRecords.findByUserId(userId);
             if(user.isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             Map<String, Boolean> data = new LinkedHashMap<>();
             data.put("availability", !Boolean.FALSE.equals(user.get().getNotifySavedAvailability()));
@@ -299,13 +293,13 @@ public class NotificationService {
     public BaseResponse updateNotificationPreferences(String userId, NotificationPreferencesData data){
         BaseResponse response = new BaseResponse(true);
         try {
-            Optional<UserEntity> user = userRepo.findByUserId(userId);
+            Optional<UserEntity> user = customerRecords.findByUserId(userId);
             if(user.isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             UserEntity entity = user.get();
             if(data.getAvailability() != null) entity.setNotifySavedAvailability(data.getAvailability());
             if(data.getPrice() != null) entity.setNotifySavedPrice(data.getPrice());
             if(data.getVerification() != null) entity.setNotifySavedVerification(data.getVerification());
-            userRepo.save(entity);
+            customerRecords.save(entity);
             return getNotificationPreferences(userId);
         } catch (Exception ex) {
             LOG.warning(ex.getMessage());
@@ -315,12 +309,12 @@ public class NotificationService {
 
     /** Creates an in-app event and sends optional email for every saved customer. */
     public void notifySavedCustomers(String stylerId, String type, String title, String message){
-        if(notificationRepo == null || savedStylistRepo == null) return;
+        if(notificationRepo == null || customerRecords == null) return;
         try {
-            List<SavedStylistEntity> allSaved = savedStylistRepo.findAll();
+            List<SavedStylistEntity> allSaved = customerRecords.allSavedStylists();
             for(SavedStylistEntity saved : allSaved){
                 if(!stylerId.equals(saved.getStylerId())) continue;
-                Optional<UserEntity> user = userRepo.findByUserId(saved.getUserId());
+                Optional<UserEntity> user = customerRecords.findByUserId(saved.getUserId());
                 if(user.isEmpty()) continue;
                 notificationRepo.save(new NotificationEntity(saved.getUserId(), stylerId, type, title, message));
                 boolean emailEnabled = ("AVAILABILITY".equals(type) && !Boolean.FALSE.equals(user.get().getNotifySavedAvailability()))

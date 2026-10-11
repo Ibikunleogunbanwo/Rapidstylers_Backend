@@ -4,7 +4,7 @@ import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.entity.LoyaltyAccountEntity;
 import com.macrotel.rapidstylers.engagement.entity.ReferralEntity;
 import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;
@@ -25,7 +25,7 @@ public class LoyaltyService {
     AppUtils appUtils = new AppUtils();
     private static final Logger LOG = Logger.getLogger(LoyaltyService.class.getName());
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
     LoyaltyAccountRepo loyaltyAccountRepo;
     @Autowired
@@ -37,7 +37,7 @@ public class LoyaltyService {
     public BaseResponse getLoyaltyAccount(String userId){
         BaseResponse response = new BaseResponse(true);
         try {
-            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
+            if(customerRecords.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             LoyaltyAccountEntity account = loyaltyAccountRepo.findByUserId(userId).orElseGet(() -> new LoyaltyAccountEntity(userId, "RS-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT)));
             if(account.getId() == null) loyaltyAccountRepo.save(account);
             response.setStatusCode(SUCCESS_STATUS_CODE);

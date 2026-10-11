@@ -4,7 +4,7 @@ import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.entity.FeedbackEntity;
 import com.macrotel.rapidstylers.engagement.pojo.UserFeedbackData;
 import com.macrotel.rapidstylers.engagement.repo.FeedBackRepo;
@@ -24,7 +24,7 @@ public class FeedbackService {
     DTOService dtoService;
     private static final Logger LOG = Logger.getLogger(FeedbackService.class.getName());
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
     FeedBackRepo feedBackRepo;
 
@@ -32,7 +32,7 @@ public class FeedbackService {
         BaseResponse response = new BaseResponse(true);
         try{
             //Check if userId exist
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(userFeedbackData.getUserId());
+            Optional<UserEntity> isUserExist = customerRecords.findByUserId(userFeedbackData.getUserId());
             if(isUserExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid User Id");

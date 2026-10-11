@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.engagement.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
@@ -9,13 +9,13 @@ import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.engagement.pojo.ReviewData;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.*;
 import java.util.Locale;
 import java.util.logging.Logger;
@@ -35,13 +35,13 @@ public class ReviewService {
     DTOService dtoService;
     private static final Logger LOG = Logger.getLogger(ReviewService.class.getName());
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
     ReviewRepo reviewRepo;
     @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
     ReadCacheService readCacheService;
     // Shared audit-log / ops-alert sink (see simplification-plan.md).
@@ -53,7 +53,7 @@ public class ReviewService {
         BaseResponse response = new BaseResponse(true);
         try{
             //Check if user account exist
-            Optional<UserEntity> isUserExist= userRepo.findByUserId(reviewData.getUserId()) ;
+            Optional<UserEntity> isUserExist= customerRecords.findByUserId(reviewData.getUserId()) ;
             if(isUserExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid User Id");
@@ -61,7 +61,7 @@ public class ReviewService {
                 return response;
             }
             //Check if styler account exist
-            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(reviewData.getStylerId()) ;
+            Optional<StylerEntity> isStylerExist= stylerRecords.findByStylerId(reviewData.getStylerId()) ;
             if(isStylerExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Styler Id");
@@ -70,7 +70,7 @@ public class ReviewService {
             }
             // Reviews are only valid for a COMPLETED booking with this stylist,
             // and the booking must belong to the authenticated customer.
-            Optional<BookAppointmentEntity> bookingOpt = bookAppointmentRepo.findByAppointmentId(reviewData.getBookingId());
+            Optional<BookAppointmentEntity> bookingOpt = appointmentRecords.findByAppointmentId(reviewData.getBookingId());
             if(bookingOpt.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid booking reference");
@@ -168,7 +168,7 @@ public class ReviewService {
         BaseResponse response = new BaseResponse(true);
         try{
             //Check if styler account exist
-            Optional<StylerEntity> isStylerExist= stylerRepo.findByStylerId(stylerId) ;
+            Optional<StylerEntity> isStylerExist= stylerRecords.findByStylerId(stylerId) ;
             if(isStylerExist.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Styler Id");
@@ -195,7 +195,7 @@ public class ReviewService {
     public BaseResponse getOwnStylerReviews(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try{
-            if(stylerRepo.findByStylerId(stylerId).isEmpty()){
+            if(stylerRecords.findByStylerId(stylerId).isEmpty()){
                 return Responses.errorResponse(response, "Invalid Styler Id");
             }
             List<Object> approved = cachedReviews(stylerId);

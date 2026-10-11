@@ -4,7 +4,7 @@ import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.entity.SupportTicketEntity;
 import com.macrotel.rapidstylers.engagement.pojo.SupportTicketActionData;
 import com.macrotel.rapidstylers.engagement.pojo.SupportTicketData;
@@ -26,7 +26,7 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class SupportService {
     private static final Logger LOG = Logger.getLogger(SupportService.class.getName());
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
     SupportTicketRepo supportTicketRepo;
     // Shared audit-log / ops-alert sink (see simplification-plan.md).
@@ -36,7 +36,7 @@ public class SupportService {
     public BaseResponse createSupportTicket(String userId, SupportTicketData data){
         BaseResponse response = new BaseResponse(true);
         try {
-            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
+            if(customerRecords.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             SupportTicketEntity ticket = supportTicketRepo.save(new SupportTicketEntity(userId,
                     AppUtils.sanitizeText(data.getSubject().trim()), AppUtils.sanitizeText(data.getMessage().trim())));
             auditService.audit(userId, "CUSTOMER", "CREATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), ticket.getSubject());
@@ -50,7 +50,7 @@ public class SupportService {
     public BaseResponse listSupportTickets(String userId){
         BaseResponse response = new BaseResponse(true);
         try {
-            if(userRepo.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
+            if(customerRecords.findByUserId(userId).isEmpty()) return Responses.errorResponse(response, "Invalid User Id");
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(supportTicketRepo.findByUserIdOrderByUpdatedAtDesc(userId));

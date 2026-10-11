@@ -26,7 +26,7 @@ class DomainWallsTest {
             Pattern.compile("import com\\.macrotel\\.rapidstylers\\.(\\w+)\\.repo\\.(\\w+);");
 
     @ParameterizedTest
-    @ValueSource(strings = {"payment", "booking", "styler"})
+    @ValueSource(strings = {"payment", "booking", "styler", "customer", "engagement"})
     void domainUsesNoOtherDomainsRepos(String domain) throws IOException {
         List<String> breaches = new ArrayList<>();
         try (Stream<Path> files = Files.walk(SOURCES.resolve(domain))) {

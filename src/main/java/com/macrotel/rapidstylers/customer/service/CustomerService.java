@@ -9,8 +9,8 @@ import com.macrotel.rapidstylers.customer.pojo.UpdateData;
 import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.StylerService;
 import com.stripe.model.Account;
 import java.util.*;
@@ -31,7 +31,7 @@ public class CustomerService {
     @Autowired
     UserRepo userRepo;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
     SavedStylistRepo savedStylistRepo;
     @Autowired
@@ -98,7 +98,7 @@ public class CustomerService {
             if(userRepo.findByUserId(userId).isEmpty()){
                 return Responses.errorResponse(response, "Invalid User Id");
             }
-            Optional<StylerEntity> styler = stylerRepo.findByStylerId(stylerId);
+            Optional<StylerEntity> styler = stylerRecords.findByStylerId(stylerId);
             if(styler.isEmpty() || !stylerEligibility.isBookableStyler(styler.get())){
                 return Responses.errorResponse(response, "This professional is not available");
             }
@@ -137,7 +137,7 @@ public class CustomerService {
             }
             List<Object> result = new ArrayList<>();
             for(SavedStylistEntity saved : savedStylistRepo.findByUserIdOrderByCreatedAtDesc(userId)){
-                stylerRepo.findByStylerId(saved.getStylerId())
+                stylerRecords.findByStylerId(saved.getStylerId())
                         .filter(stylerEligibility::isBookableStyler)
                         .ifPresent(styler -> result.add(stylerService.listRowWithHours(dtoService.stylerAccountDTO(styler), styler.getStylerId())));
             }
