@@ -3,22 +3,22 @@ package com.macrotel.rapidstylers.common.service;
 import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.customer.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.customer.dto.UserDataDTO;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.dto.FeedBackDTO;
 import com.macrotel.rapidstylers.engagement.dto.StylerReviewDTO;
 import com.macrotel.rapidstylers.engagement.entity.FeedbackEntity;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
-import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
+import com.macrotel.rapidstylers.engagement.service.EngagementRecords;
 import com.macrotel.rapidstylers.payment.dto.CardDetailsDTO;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
-import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
-import com.macrotel.rapidstylers.payment.repo.RefundRepo;
+import com.macrotel.rapidstylers.payment.service.CardRecords;
 import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
+import com.macrotel.rapidstylers.payment.service.RefundRecords;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.styler.dto.StylerPortfolioDTO;
@@ -26,8 +26,7 @@ import com.macrotel.rapidstylers.styler.dto.SubServiceDTO;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -38,19 +37,17 @@ import static com.macrotel.rapidstylers.config.AppConstants.EMPTY_DATA;
 @Service
 public class DTOService {
     @Autowired
-    ServiceRepo serviceRepo;
+    CatalogRecords catalogRecords;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
-    SubServiceRepo subServiceRepo;
+    CardRecords cardRecords;
     @Autowired
-    CardDetailsRepo cardDetailsRepo;
+    EngagementRecords engagementRecords;
     @Autowired
-    ReviewRepo reviewRepo;
-    @Autowired
-    RefundRepo refundRepo;
+    RefundRecords refundRecords;
     @Autowired
     StripeService stripeService;
     @Autowired(required = false)
@@ -71,9 +68,9 @@ public class DTOService {
     }
 
     public StylerAccountDTO stylerAccountDTO (StylerEntity stylerEntity){
-        Optional<ServiceEntity> getServiceType = serviceRepo == null || stylerEntity.getServiceTypeId() == null
+        Optional<ServiceEntity> getServiceType = catalogRecords == null || stylerEntity.getServiceTypeId() == null
                 ? Optional.empty()
-                : serviceRepo.findById(Long.parseLong(stylerEntity.getServiceTypeId()));
+                : catalogRecords.findServiceById(Long.parseLong(stylerEntity.getServiceTypeId()));
         String serviceName="";
         if(getServiceType.isPresent()){
             ServiceEntity serviceEntity = getServiceType.get();
@@ -116,9 +113,9 @@ public class DTOService {
         stylerAccountDTO.setPayoutReady(!stripeService.isConfigured()
                 || "COMPLETE".equals(stylerEntity.getConnectOnboardingStatus()));
         // Real review aggregates — cards and lists show actual ratings instead of placeholders.
-        List<ReviewEntity> reviews = reviewRepo == null
+        List<ReviewEntity> reviews = engagementRecords == null
                 ? Collections.emptyList()
-                : reviewRepo.findByStylerIdAndModerationStatus(stylerEntity.getStylerId(), "APPROVED");
+                : engagementRecords.findByStylerIdAndModerationStatus(stylerEntity.getStylerId(), "APPROVED");
         if(reviews != null && !reviews.isEmpty()){
             double sum = 0;
             for(ReviewEntity review : reviews){
@@ -172,25 +169,25 @@ public class DTOService {
         AppointmentDTO appointmentDTO = new AppointmentDTO();
         //Get Userdata
         String subServiceName ="";
-        Optional<UserEntity> userData = userRepo == null
+        Optional<UserEntity> userData = customerRecords == null
                 ? Optional.empty()
-                : userRepo.findByUserId(bookAppointmentEntity.getUserId());
+                : customerRecords.findByUserId(bookAppointmentEntity.getUserId());
         if(userData.isPresent()){
             UserEntity userEntity = userData.get();
             appointmentDTO.setUserData(this.userAccountDTO(userEntity));
         }
         //Get Styler data
-        Optional<StylerEntity> stylerData = stylerRepo == null
+        Optional<StylerEntity> stylerData = stylerRecords == null
                 ? Optional.empty()
-                : stylerRepo.findByStylerId(bookAppointmentEntity.getStylerId());
+                : stylerRecords.findByStylerId(bookAppointmentEntity.getStylerId());
         if(stylerData.isPresent()){
             StylerEntity stylerEntity = stylerData.get();
             appointmentDTO.setStylerData(this.stylerAccountDTO(stylerEntity));
         }
         //Get service data
-        Optional<SubServiceEntity> subServiceData = subServiceRepo == null
+        Optional<SubServiceEntity> subServiceData = stylerRecords == null
                 ? Optional.empty()
-                : subServiceRepo.isServiceExistById(bookAppointmentEntity.getStylerId(), Long.parseLong(bookAppointmentEntity.getSubServiceId()));
+                : stylerRecords.findSubService(bookAppointmentEntity.getStylerId(), Long.parseLong(bookAppointmentEntity.getSubServiceId()));
         if(subServiceData.isPresent()){
             SubServiceEntity subServiceEntity = subServiceData.get();
             appointmentDTO.setSubServiceData(this.subServiceDTO(subServiceEntity));
@@ -247,11 +244,11 @@ public class DTOService {
 
     /** Attaches the completed refund (if any) so customers see when a cancelled booking was refunded. */
     private void populateRefund(AppointmentDTO appointmentDTO, String appointmentId){
-        if(refundRepo == null || appointmentId == null || appointmentId.isBlank()){
+        if(refundRecords == null || appointmentId == null || appointmentId.isBlank()){
             return;
         }
         try{
-            refundRepo.findByAppointmentId(appointmentId).stream()
+            refundRecords.findByAppointmentId(appointmentId).stream()
                     .filter(refund -> "COMPLETED".equals(refund.getStatus()))
                     .max(Comparator.comparing(RefundEntity::getCompletedAt, Comparator.nullsLast(String::compareTo)))
                     .ifPresent(refund -> {
@@ -267,7 +264,7 @@ public class DTOService {
 
     public FeedBackDTO feedBackDTO(FeedbackEntity feedbackEntity){
         FeedBackDTO feedBackDTO = new FeedBackDTO();
-        Optional<UserEntity> getUserDetails = userRepo.findByUserId(feedbackEntity.getUserId());
+        Optional<UserEntity> getUserDetails = customerRecords.findByUserId(feedbackEntity.getUserId());
         if(getUserDetails.isPresent()){
             UserEntity userEntity = getUserDetails.get();
             feedBackDTO.setUserData(this.userAccountDTO(userEntity));
@@ -293,13 +290,13 @@ public class DTOService {
     public UserDataDTO userDataDTO (String userId) throws Exception {
         UserDataDTO userDataDTO = new UserDataDTO();
         //Get user details
-        Optional<UserEntity> getUserDetails = userRepo.findByUserId(userId);
+        Optional<UserEntity> getUserDetails = customerRecords.findByUserId(userId);
         if(getUserDetails.isPresent()){
             UserEntity userEntity = getUserDetails.get();
             userDataDTO.setUserData(this.userAccountDTO(userEntity));
         }
         //Get card details (plain userId — legacy encrypted rows are migrated on startup).
-        Optional<CardDetailsEntity> getUserCardDetails = cardDetailsRepo.findByUserId(userId);
+        Optional<CardDetailsEntity> getUserCardDetails = cardRecords.findByUserId(userId);
         if(getUserCardDetails.isPresent()){
             CardDetailsEntity cardDetailsEntity = getUserCardDetails.get();
             userDataDTO.setUserCardData(this.cardDetailsDTO(cardDetailsEntity));

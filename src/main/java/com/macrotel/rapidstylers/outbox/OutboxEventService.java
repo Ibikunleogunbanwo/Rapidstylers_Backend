@@ -161,4 +161,17 @@ public class OutboxEventService {
     private String nullSafe(String value) {
         return value == null ? "" : value;
     }
+
+    /** Events that ran out of retries, for the admin page. */
+    public java.util.List<OutboxEventEntity> failedEvents() {
+        return outboxEventRepo.findByStatus(OutboxStatus.FAILED);
+    }
+
+    public java.util.Optional<OutboxEventEntity> findEvent(Long id) {
+        return outboxEventRepo.findById(id);
+    }
+
+    public OutboxEventEntity saveEvent(OutboxEventEntity event) {
+        return outboxEventRepo.save(event);
+    }
 }

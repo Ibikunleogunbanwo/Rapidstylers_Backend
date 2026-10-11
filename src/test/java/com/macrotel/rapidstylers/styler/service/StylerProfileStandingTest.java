@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.styler.service;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.engagement.entity.ReviewEntity;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
+import com.macrotel.rapidstylers.engagement.service.EngagementRecords;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
@@ -47,7 +48,7 @@ class StylerProfileStandingTest {
 
         dtoService = new DTOService();
         ReflectionTestUtils.setField(dtoService, "stripeService", stripeService);
-        ReflectionTestUtils.setField(dtoService, "reviewRepo", reviewRepo);
+        ReflectionTestUtils.setField(dtoService, "engagementRecords", new EngagementRecords(null, reviewRepo, null));
     }
 
     private StylerEntity styler(String id, String insertedDt) {

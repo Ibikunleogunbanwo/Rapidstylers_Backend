@@ -7,6 +7,7 @@ import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.security.access.Roles;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +44,7 @@ class PasswordResetOtpVerificationTest {
         otpRepo = mock(OTPRepo.class);
         rateLimiterService = mock(RateLimiterService.class);
 
-        authService.userRepo = userRepo;
+        authService.customerRecords = new CustomerRecords(userRepo);
         authService.otpRepo = otpRepo;
         authService.rateLimiterService = rateLimiterService;
         refreshTokenService = mock(RefreshTokenService.class);

@@ -83,4 +83,16 @@ public class StylerRecords {
                 + stylerRepo.countByCoverImageUrlContaining(fragment)
                 + stylerPortfolioRepo.countByImageUrlContaining(fragment);
     }
+
+    public Optional<StylerEntity> findByEmailAddress(String emailAddress) {
+        return stylerRepo.findByEmailAddress(emailAddress);
+    }
+
+    public Optional<StylerEntity> findByPhoneNumber(String phoneNumber) {
+        return stylerRepo.findByPhoneNumber(phoneNumber);
+    }
+
+    public long count() {
+        return stylerRepo.count();
+    }
 }

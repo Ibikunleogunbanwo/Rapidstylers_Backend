@@ -1,19 +1,17 @@
 package com.macrotel.rapidstylers.admin.service;
 
-import com.macrotel.rapidstylers.auth.repo.OTPRepo;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.auth.service.AuthRecords;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.EmailConfig;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
-import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
-import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
+import com.macrotel.rapidstylers.engagement.service.EngagementRecords;
+import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.stripe.model.Event;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -30,23 +28,19 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class AdminService {
     private static final Logger LOG = Logger.getLogger(AdminService.class.getName());
     @Autowired
-    OTPRepo otpRepo;
+    AuthRecords authRecords;
     @Autowired
     EmailConfig emailConfig;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
-    ReviewRepo reviewRepo;
+    EngagementRecords engagementRecords;
     @Autowired
-    SupportTicketRepo supportTicketRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
-    AuditLogRepo auditLogRepo;
-    @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
-    @Autowired
-    OutboxEventRepo outboxEventRepo;
+    OutboxEventService outboxEventService;
     @Autowired
     ReadCacheService readCacheService;
     // Shared audit-log / ops-alert sink (see simplification-plan.md).
@@ -64,7 +58,7 @@ public class AdminService {
         BaseResponse response = new BaseResponse(true);
         try {
             List<Map<String, Object>> rows = new java.util.ArrayList<>();
-            for (Object[] r : otpRepo.findRecoveryCampaigns()) {
+            for (Object[] r : authRecords.findRecoveryCampaigns()) {
                 Map<String, Object> row = new LinkedHashMap<>();
                 String email = String.valueOf(r[0]);
                 int stage = r[2] == null ? 0 : ((Number) r[2]).intValue();
@@ -136,14 +130,14 @@ public class AdminService {
         BaseResponse response = new BaseResponse(true);
         try {
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("customers", userRepo.count());
-            data.put("stylists", stylerRepo.count());
-            data.put("approvedStylists", stylerRepo.findAll().stream().filter(stylerEligibility::isApprovedStyler).count());
-            data.put("appointments", bookAppointmentRepo.count());
-            data.put("pendingAppointments", bookAppointmentRepo.findAll().stream().filter(a -> "1".equals(a.getStatus())).count());
-            data.put("completedAppointments", bookAppointmentRepo.findAll().stream().filter(a -> "0".equals(a.getStatus())).count());
-            data.put("openSupportTickets", supportTicketRepo.countByStatus("OPEN"));
-            data.put("reviews", reviewRepo.count());
+            data.put("customers", customerRecords.count());
+            data.put("stylists", stylerRecords.count());
+            data.put("approvedStylists", stylerRecords.findAll().stream().filter(stylerEligibility::isApprovedStyler).count());
+            data.put("appointments", appointmentRecords.count());
+            data.put("pendingAppointments", appointmentRecords.findAll().stream().filter(a -> "1".equals(a.getStatus())).count());
+            data.put("completedAppointments", appointmentRecords.findAll().stream().filter(a -> "0".equals(a.getStatus())).count());
+            data.put("openSupportTickets", engagementRecords.countTicketsByStatus("OPEN"));
+            data.put("reviews", engagementRecords.countReviews());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(data);
@@ -156,7 +150,7 @@ public class AdminService {
         try {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(auditLogRepo.findTop100ByOrderByCreatedAtDesc());
+            response.setData(auditService.recentLogs());
         } catch(Exception ex){ LOG.warning(ex.getMessage()); }
         return response;
     }
@@ -171,7 +165,7 @@ public class AdminService {
         int pageNumber = page == null || page < 0 ? 0 : page;
         int pageSize = size == null || size < 1 ? 50 : Math.min(size, 200);
         org.springframework.data.domain.Page<com.macrotel.rapidstylers.common.entity.AuditLogEntity> found =
-                auditLogRepo.search(blankToNull(action), blankToNull(actorId), blankToNull(resourceId),
+                auditService.searchLogs(blankToNull(action), blankToNull(actorId), blankToNull(resourceId),
                         org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("items", found.getContent());
@@ -194,7 +188,7 @@ public class AdminService {
         BaseResponse response = new BaseResponse(true);
         try {
             List<com.macrotel.rapidstylers.outbox.OutboxEventEntity> failed =
-                outboxEventRepo.findByStatus(com.macrotel.rapidstylers.outbox.OutboxStatus.FAILED);
+                outboxEventService.failedEvents();
             List<Map<String, Object>> result = new ArrayList<>();
             for (var event : failed) {
                 Map<String, Object> map = new LinkedHashMap<>();
@@ -222,7 +216,7 @@ public class AdminService {
     public BaseResponse retryFailedOutboxEvent(Long eventId, String adminId) {
         BaseResponse response = new BaseResponse(true);
         try {
-            var event = outboxEventRepo.findById(eventId);
+            var event = outboxEventService.findEvent(eventId);
             if (event.isEmpty()) {
                 return Responses.errorResponse(response, "Event not found");
             }
@@ -234,7 +228,7 @@ public class AdminService {
             entity.setAttempts(0);
             entity.setLastError(null);
             entity.setNextAttemptAt(LocalDateTime.now());
-            outboxEventRepo.save(entity);
+            outboxEventService.saveEvent(entity);
             auditService.audit(adminId, "ADMIN", "RETRY_OUTBOX_EVENT", "OUTBOX_EVENT",
                     String.valueOf(eventId), "Admin retried failed outbox event");
             response.setStatusCode(SUCCESS_STATUS_CODE);

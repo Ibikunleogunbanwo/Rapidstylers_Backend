@@ -8,11 +8,11 @@ import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -47,9 +47,9 @@ public class OtpService {
     @Autowired
     OTPRepo otpRepo;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
     EmailConfig emailConfig;
     @Autowired
@@ -83,8 +83,8 @@ public class OtpService {
             // Enumeration-safe: an email already registered in EITHER table gets
             // the same generic success response as a fresh one — no OTP is issued
             // and no mail is sent, so valid and invalid addresses are indistinguishable.
-            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(email);
-            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(email);
+            Optional<UserEntity> isEmailExist = customerRecords.findByEmailAddress(email);
+            Optional<StylerEntity> isStylerEmailExist = stylerRecords.findByEmailAddress(email);
             if(isEmailExist.isPresent() || isStylerEmailExist.isPresent()){
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
@@ -226,7 +226,7 @@ public class OtpService {
             // Enumeration-safe: an unknown email gets the identical generic success
             // response as a registered one — no OTP is issued and no mail is sent,
             // so valid and invalid addresses are indistinguishable.
-            Optional<UserEntity> isEmailExist = userRepo.findByEmailAddress(emailAddress);
+            Optional<UserEntity> isEmailExist = customerRecords.findByEmailAddress(emailAddress);
             if(isEmailExist.isEmpty()){
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Password Reset Initiated, Check Mail for OTP Code");
@@ -302,8 +302,8 @@ public class OtpService {
             // Enumeration-safe: an email already registered in EITHER table gets
             // the same generic success response as a fresh one — no OTP is issued
             // and no mail is sent, so valid and invalid addresses are indistinguishable.
-            Optional<StylerEntity> isStylerEmailExist = stylerRepo.findByEmailAddress(emailAddress);
-            Optional<UserEntity> isUserEmailExist = userRepo.findByEmailAddress(emailAddress);
+            Optional<StylerEntity> isStylerEmailExist = stylerRecords.findByEmailAddress(emailAddress);
+            Optional<UserEntity> isUserEmailExist = customerRecords.findByEmailAddress(emailAddress);
             if(isStylerEmailExist.isPresent() || isUserEmailExist.isPresent()){
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");

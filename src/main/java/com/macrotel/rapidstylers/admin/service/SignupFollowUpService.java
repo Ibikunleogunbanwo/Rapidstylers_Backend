@@ -1,6 +1,6 @@
 package com.macrotel.rapidstylers.admin.service;
 
-import com.macrotel.rapidstylers.auth.repo.OTPRepo;
+import com.macrotel.rapidstylers.auth.service.AuthRecords;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -32,7 +32,7 @@ public class SignupFollowUpService {
     private static final Logger LOG = Logger.getLogger(SignupFollowUpService.class.getName());
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss");
 
-    private final OTPRepo otpRepo;
+    private final AuthRecords authRecords;
     private final OutboxEventService outboxEventService;
 
     @Value("${app.signup-followup.hours-stage-1:24}")
@@ -50,8 +50,8 @@ public class SignupFollowUpService {
     @Value("${app.signup-followup.retention-days:30}")
     private long retentionDays;
 
-    public SignupFollowUpService(OTPRepo otpRepo, OutboxEventService outboxEventService) {
-        this.otpRepo = otpRepo;
+    public SignupFollowUpService(AuthRecords authRecords, OutboxEventService outboxEventService) {
+        this.authRecords = authRecords;
         this.outboxEventService = outboxEventService;
     }
 
@@ -61,7 +61,7 @@ public class SignupFollowUpService {
     public void followUpAbandonedSignups() {
         try {
             LocalDateTime now = LocalDateTime.now();
-            for (Object[] row : otpRepo.findSignupAttemptCandidates()) {
+            for (Object[] row : authRecords.findSignupAttemptCandidates()) {
                 String email = String.valueOf(row[0]);
                 String attemptDt = String.valueOf(row[1]);
                 int currentStage = row[2] == null ? 0 : ((Number) row[2]).intValue();
@@ -74,7 +74,7 @@ public class SignupFollowUpService {
                 int due = dueStage(Math.abs(Duration.between(attemptedAt, now).toHours()), currentStage);
                 if (due > 0) {
                     outboxEventService.signupReminder(email, due);
-                    otpRepo.markLatestSignupStage(email, due, now);
+                    authRecords.markLatestSignupStage(email, due, now);
                     LOG.info("Scheduled sign-up follow-up stage " + due + " for " + email);
                 }
             }
@@ -99,7 +99,7 @@ public class SignupFollowUpService {
     public void purgeExpiredOtps() {
         try {
             String cutoff = LocalDateTime.now().minusDays(retentionDays).format(STAMP);
-            int purged = otpRepo.deleteOlderThan(cutoff);
+            int purged = authRecords.deleteOlderThan(cutoff);
             if (purged > 0) {
                 LOG.info("Purged " + purged + " stale otp_codes rows");
             }

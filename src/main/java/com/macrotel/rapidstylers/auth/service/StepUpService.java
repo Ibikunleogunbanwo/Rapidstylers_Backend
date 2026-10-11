@@ -1,7 +1,7 @@
 package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
-import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.admin.service.AdminRecords;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.config.ThrottledLog;
 import java.util.logging.Logger;
@@ -27,8 +27,7 @@ public class StepUpService {
     private static final int MAX_FAILURES = 5;
 
     @Autowired
-    private AdminAccountRepo adminAccountRepo;
-
+    private AdminRecords adminRecords;
     @Autowired
     private PasswordEncoder passwordEncoder;
 
@@ -49,7 +48,7 @@ public class StepUpService {
                 || rateLimiterService.isBlocked(key, WINDOW_SECONDS, MAX_FAILURES)) {
             return false;
         }
-        AdminAccountEntity admin = adminAccountRepo.findByEmailIgnoreCase(adminEmail).orElse(null);
+        AdminAccountEntity admin = adminRecords.findByEmailIgnoreCase(adminEmail).orElse(null);
         if (admin == null || !admin.isEnabled()) {
             recordFailure(key);
             return false;

@@ -12,12 +12,14 @@ import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
 import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.dto.StylerAccountDTO;
@@ -102,14 +104,14 @@ class StylerAddressRequirementTest {
         services.subServiceRepo = subServiceRepo;
         services.readCacheService = readCacheService;
         services.geocodingService = geocodingService;
-        services.accountIds = new AccountIds(userRepo, stylerRepo);
+        services.accountIds = new AccountIds(new CustomerRecords(userRepo), new StylerRecords(stylerRepo, null));
         // Not locked out: a mock answers false.
         services.authService = mock(AuthService.class);
         services.stripeService = stripeService;
 
         dtoService = new DTOService();
         ReflectionTestUtils.setField(dtoService, "stripeService", stripeService);
-        ReflectionTestUtils.setField(dtoService, "serviceRepo", serviceRepo);
+        ReflectionTestUtils.setField(dtoService, "catalogRecords", new CatalogRecords(serviceRepo, null));
         services.dtoService = dtoService;
 
         when(stripeService.isConfigured()).thenReturn(false);

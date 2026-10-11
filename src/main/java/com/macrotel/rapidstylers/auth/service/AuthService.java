@@ -10,17 +10,17 @@ import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.pojo.UserData;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
-import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
+import com.macrotel.rapidstylers.engagement.service.EngagementRecords;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
-import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
+import com.macrotel.rapidstylers.payment.service.CardRecords;
 import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.GoogleTokenVerifier;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.*;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,13 +41,13 @@ public class AuthService {
     @Autowired
     OTPRepo otpRepo;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
-    CardDetailsRepo cardDetailsRepo;
+    CardRecords cardRecords;
     @Autowired
-    NotificationRepo notificationRepo;
+    EngagementRecords engagementRecords;
     @Autowired
     DTOService dtoService;
     @Autowired
@@ -107,8 +107,8 @@ public class AuthService {
                 return response;
             }
             //Check if the email already exist in EITHER table
-            Optional<UserEntity> isUserExist = userRepo.findByEmailAddress(userData.getEmailAddress());
-            Optional<StylerEntity> isStylerExist = stylerRepo.findByEmailAddress(userData.getEmailAddress());
+            Optional<UserEntity> isUserExist = customerRecords.findByEmailAddress(userData.getEmailAddress());
+            Optional<StylerEntity> isStylerExist = stylerRecords.findByEmailAddress(userData.getEmailAddress());
             if(isUserExist.isPresent() || isStylerExist.isPresent()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Email Address already exists, Kindly choose another email address");
@@ -118,8 +118,8 @@ public class AuthService {
             //Phone uniqueness is only relevant when a phone was provided (nullable now).
             String signupPhone = userData.getPhoneNumber();
             if (signupPhone != null && !signupPhone.isBlank()) {
-                Optional<UserEntity> isPhoneExist = userRepo.findByPhoneNumber(signupPhone);
-                Optional<StylerEntity> isStylerPhoneExist = stylerRepo.findByPhoneNumber(signupPhone);
+                Optional<UserEntity> isPhoneExist = customerRecords.findByPhoneNumber(signupPhone);
+                Optional<StylerEntity> isStylerPhoneExist = stylerRecords.findByPhoneNumber(signupPhone);
                 if(isPhoneExist.isPresent() || isStylerPhoneExist.isPresent()){
                     response.setStatusCode(ERROR_STATUS_CODE);
                     response.setMessage("Phone number already registered");
@@ -135,15 +135,15 @@ public class AuthService {
             UserEntity userEntity = new UserEntity(userData);
             userEntity.setUserId(userId);
             userEntity.setRegistrationMethod("EMAIL");
-            userRepo.save(userEntity);
+            customerRecords.save(userEntity);
 
             //Create a space for user in the card_details table
             CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
             cardDetailsEntity.setUserId(userId);
-            cardDetailsRepo.save(cardDetailsEntity);
+            cardRecords.save(cardDetailsEntity);
 
             //Welcome notification (in-app) that a fresh account is ready to book.
-            notificationRepo.save(new NotificationEntity(userId, "", "WELCOME",
+            engagementRecords.saveNotification(new NotificationEntity(userId, "", "WELCOME",
                     "Welcome to RapidStylers",
                     "Your account is ready. Complete your profile and book your first appointment."));
             //Welcome email fired through the outbox -> Kafka -> email worker.
@@ -193,7 +193,7 @@ public class AuthService {
             // admin_accounts table (hashed passwords, disabled accounts, step-up).
 
             // 1. Styler (vendor)
-            Optional<StylerEntity> styler = stylerRepo.findByEmailAddress(emailAddress);
+            Optional<StylerEntity> styler = stylerRecords.findByEmailAddress(emailAddress);
             if(styler.isPresent() && appUtils.passwordMatches(password, styler.get().getPassword())){
                 StylerEntity stylerEntity = styler.get();
                 // Verification gate — rejected/suspended professionals cannot sign in.
@@ -215,7 +215,7 @@ public class AuthService {
                     stylerEntity.setPassword(appUtils.encryptPassword(password));
                 }
                 stylerEntity.setIsOnline("0");
-                stylerRepo.save(stylerEntity);
+                stylerRecords.save(stylerEntity);
                 Map<String, Object> stylerData = new LinkedHashMap<>();
                 stylerData.put("role", "STYLER");
                 stylerData.put("account", dtoService.stylerAccountDTO(stylerEntity));
@@ -231,7 +231,7 @@ public class AuthService {
             }
 
             // 2. Customer
-            Optional<UserEntity> user = userRepo.findByEmailAddress(emailAddress);
+            Optional<UserEntity> user = customerRecords.findByEmailAddress(emailAddress);
             if(user.isPresent() && "0".equals(user.get().getStatus())){
                 UserEntity userEntity = user.get();
                 // Provider binding: a Google-created account has no usable
@@ -245,7 +245,7 @@ public class AuthService {
                 if (appUtils.passwordMatches(password, userEntity.getPassword())){
                 if(userEntity.getPassword().matches("^[0-9a-fA-F]{32}$")){
                     userEntity.setPassword(appUtils.encryptPassword(password));
-                    userRepo.save(userEntity);
+                    customerRecords.save(userEntity);
                 }
                 Map<String, Object> userData = new LinkedHashMap<>();
                 userData.put("role", "CUSTOMER");
@@ -299,8 +299,8 @@ public class AuthService {
                 recordLoginFailure("UNKNOWN", null, email, ip, "LOCKED_OUT");
                 return response;
             }
-            Optional<StylerEntity> styler = stylerRepo.findByEmailAddress(email);
-            Optional<UserEntity> user = userRepo.findByEmailAddress(email);
+            Optional<StylerEntity> styler = stylerRecords.findByEmailAddress(email);
+            Optional<UserEntity> user = customerRecords.findByEmailAddress(email);
 
             // Google sign-in is customer-only for now. A professional email must
             // use the styler email + password sign-in surface.
@@ -390,11 +390,11 @@ public class AuthService {
         UserEntity userEntity = new UserEntity(signupData);
         userEntity.setUserId(userId);
         userEntity.setRegistrationMethod("GOOGLE");
-        userRepo.save(userEntity);
+        customerRecords.save(userEntity);
         CardDetailsEntity cardDetailsEntity = new CardDetailsEntity();
         cardDetailsEntity.setUserId(userId);
-        cardDetailsRepo.save(cardDetailsEntity);
-        notificationRepo.save(new NotificationEntity(userId, "", "WELCOME",
+        cardRecords.save(cardDetailsEntity);
+        engagementRecords.saveNotification(new NotificationEntity(userId, "", "WELCOME",
                 "Welcome to RapidStylers",
                 "Your account is ready. Complete your profile and book your first appointment."));
         outboxEventService.welcomeEmail(userEntity);
@@ -414,7 +414,7 @@ public class AuthService {
                 return response;
             }
             String encryptPassword = appUtils.encryptPassword(password);
-            Optional<UserEntity> getUserData = userRepo.findByEmailAddress(emailAddress);
+            Optional<UserEntity> getUserData = customerRecords.findByEmailAddress(emailAddress);
             if(getUserData.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Email Address, Kindly create account");
@@ -434,7 +434,7 @@ public class AuthService {
 
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(encryptPassword);
-            userRepo.save(userPrevData);
+            customerRecords.save(userPrevData);
             // A reset is how someone takes their account back: sign out every
             // device, so a stolen session cannot keep renewing itself.
             refreshTokenService.revokeAllForAccount(userPrevData.getUserId(), Roles.CUSTOMER);
@@ -475,7 +475,7 @@ public class AuthService {
                 return response;
             }
             // Ownership: the password being changed belongs to the authenticated token subject.
-            Optional<UserEntity> getUserData = userRepo.findByUserId(accountId);
+            Optional<UserEntity> getUserData = customerRecords.findByUserId(accountId);
             if(getUserData.isEmpty() || !appUtils.passwordMatches(oldPassword, getUserData.get().getPassword())){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Old Password");
@@ -485,7 +485,7 @@ public class AuthService {
             newPassword = appUtils.encryptPassword(newPassword);
             UserEntity userPrevData = getUserData.get();
             userPrevData.setPassword(newPassword);
-            userRepo.save(userPrevData);
+            customerRecords.save(userPrevData);
             // Sign out every other device, and hand this one a fresh session.
             refreshTokenService.revokeAllForAccount(accountId, Roles.CUSTOMER);
             response.setToken(jwtUtil.generateToken(accountId, Roles.CUSTOMER));
@@ -504,7 +504,7 @@ public class AuthService {
     public BaseResponse stylerLogOut(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<StylerEntity> getStylerData = stylerRepo.findByStylerId(stylerId);
+            Optional<StylerEntity> getStylerData = stylerRecords.findByStylerId(stylerId);
             if(getStylerData.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Invalid Styler Id");
@@ -513,7 +513,7 @@ public class AuthService {
             }
             StylerEntity stylerEntity = getStylerData.get();
             stylerEntity.setIsOnline("1");
-            stylerRepo.save(stylerEntity);
+            stylerRecords.save(stylerEntity);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Styler is currently offline");

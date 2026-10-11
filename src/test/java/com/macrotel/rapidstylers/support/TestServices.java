@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.macrotel.rapidstylers.admin.service.AdminRecords;
 import com.macrotel.rapidstylers.admin.service.AdminService;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
@@ -36,6 +37,7 @@ import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReferralRepo;
 import com.macrotel.rapidstylers.engagement.repo.ReviewRepo;
 import com.macrotel.rapidstylers.engagement.repo.SupportTicketRepo;
+import com.macrotel.rapidstylers.engagement.service.EngagementRecords;
 import com.macrotel.rapidstylers.engagement.service.FeedbackService;
 import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
@@ -47,11 +49,12 @@ import com.macrotel.rapidstylers.media.service.UploadOwnership;
 import com.macrotel.rapidstylers.outbox.OutboxEventRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
-import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.CardRecords;
+import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
+import com.macrotel.rapidstylers.payment.service.RefundRecords;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.styler.repo.AvailabilityExceptionRepo;
@@ -71,7 +74,6 @@ import com.macrotel.rapidstylers.styler.service.StylerProfileService;
 import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.StylerService;
 import com.macrotel.rapidstylers.styler.service.StylerSignupRetries;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.LinkedHashMap;
@@ -174,7 +176,10 @@ public class TestServices {
             CustomerRecords.class,
             CardRecords.class,
             CatalogRecords.class,
-            AuthRecords.class);
+            AuthRecords.class,
+            EngagementRecords.class,
+            AdminRecords.class,
+            RefundRecords.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 

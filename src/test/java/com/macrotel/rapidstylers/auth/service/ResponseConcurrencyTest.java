@@ -8,9 +8,11 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.dto.UserAccountDTO;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -105,11 +107,11 @@ class ResponseConcurrencyTest {
                 .thenAnswer(invocation -> "RT_" + THREAD_MARKER.get());
 
         // Package-private fields — the test lives in the same package.
-        authService.userRepo = userRepo;
+        authService.customerRecords = new CustomerRecords(userRepo);
         StylerRepo stylerRepo = mock(StylerRepo.class);
         when(stylerRepo.findByEmailAddress(anyString())).thenReturn(Optional.empty());
         when(stylerRepo.findByStylerId(anyString())).thenReturn(Optional.of(new StylerEntity()));
-        authService.stylerRepo = stylerRepo;
+        authService.stylerRecords = new StylerRecords(stylerRepo, null);
         authService.rateLimiterService = rateLimiterService;
         authService.loginAttemptService = loginAttemptService;
         authService.jwtUtil = jwtUtil;

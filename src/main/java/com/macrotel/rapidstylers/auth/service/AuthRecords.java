@@ -27,4 +27,22 @@ public class AuthRecords {
     public Optional<OTPEntity> verifiedOtpFor(String emailAddress, String purpose) {
         return otpRepo.verifyOtpSuccessForPurpose(emailAddress, purpose);
     }
+
+    /** One row per sign-up email: email, last stage date, stage, converted (admin funnel). */
+    public java.util.List<Object[]> findRecoveryCampaigns() {
+        return otpRepo.findRecoveryCampaigns();
+    }
+
+    /** Sign-ups that started but never finished, for the follow-up emails. */
+    public java.util.List<Object[]> findSignupAttemptCandidates() {
+        return otpRepo.findSignupAttemptCandidates();
+    }
+
+    public void markLatestSignupStage(String email, Integer stage, java.time.LocalDateTime now) {
+        otpRepo.markLatestSignupStage(email, stage, now);
+    }
+
+    public int deleteOlderThan(String cutoff) {
+        return otpRepo.deleteOlderThan(cutoff);
+    }
 }

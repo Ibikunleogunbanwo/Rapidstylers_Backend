@@ -54,4 +54,15 @@ public class AuditService {
             LOG.warning("Admin alert failed: " + ex.getMessage());
         }
     }
+
+    /** The newest 100 audit rows (empty when the repo is unavailable). */
+    public java.util.List<AuditLogEntity> recentLogs() {
+        return auditLogRepo == null ? java.util.List.of() : auditLogRepo.findTop100ByOrderByCreatedAtDesc();
+    }
+
+    /** One page of audit rows, newest first, narrowed by whichever filters are given. */
+    public org.springframework.data.domain.Page<AuditLogEntity> searchLogs(String action, String actorId, String resourceId,
+                                                                          org.springframework.data.domain.Pageable pageable) {
+        return auditLogRepo.search(action, actorId, resourceId, pageable);
+    }
 }

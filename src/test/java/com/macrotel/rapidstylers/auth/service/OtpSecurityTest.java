@@ -9,9 +9,11 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -72,16 +74,16 @@ class OtpSecurityTest {
         rateLimiterService = mock(RateLimiterService.class);
 
         otpService = new OtpService();
-        otpService.userRepo = userRepo;
-        otpService.stylerRepo = stylerRepo;
+        otpService.customerRecords = new CustomerRecords(userRepo);
+        otpService.stylerRecords = new StylerRecords(stylerRepo, null);
         otpService.otpRepo = otpRepo;
         otpService.emailConfig = emailConfig;
         otpService.rateLimiterService = rateLimiterService;
         otpService.appUtils = new AppUtils();
         otpService.jwtUtil = mock(JwtUtil.class);
 
-        authService.userRepo = userRepo;
-        authService.stylerRepo = stylerRepo;
+        authService.customerRecords = new CustomerRecords(userRepo);
+        authService.stylerRecords = new StylerRecords(stylerRepo, null);
         authService.otpRepo = otpRepo;
         authService.rateLimiterService = rateLimiterService;
         authService.appUtils = new AppUtils();

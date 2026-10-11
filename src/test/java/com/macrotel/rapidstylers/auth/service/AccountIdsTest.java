@@ -2,8 +2,10 @@ package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
@@ -26,7 +28,7 @@ class AccountIdsTest {
     void setUp() {
         userRepo = mock(UserRepo.class);
         stylerRepo = mock(StylerRepo.class);
-        accountIds = new AccountIds(userRepo, stylerRepo);
+        accountIds = new AccountIds(new CustomerRecords(userRepo), new StylerRecords(stylerRepo, null));
     }
 
     @Test

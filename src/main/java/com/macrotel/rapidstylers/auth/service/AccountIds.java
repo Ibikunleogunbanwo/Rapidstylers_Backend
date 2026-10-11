@@ -1,8 +1,8 @@
 package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.config.AppUtils;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import org.springframework.stereotype.Component;
 
 /**
@@ -12,12 +12,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class AccountIds {
     private final AppUtils appUtils = new AppUtils();
-    private final UserRepo userRepo;
-    private final StylerRepo stylerRepo;
+    private final CustomerRecords customerRecords;
+    private final StylerRecords stylerRecords;
 
-    public AccountIds(UserRepo userRepo, StylerRepo stylerRepo) {
-        this.userRepo = userRepo;
-        this.stylerRepo = stylerRepo;
+    public AccountIds(CustomerRecords customerRecords, StylerRecords stylerRecords) {
+        this.customerRecords = customerRecords;
+        this.stylerRecords = stylerRecords;
     }
 
     /**
@@ -40,7 +40,7 @@ public class AccountIds {
     public String freeAccountId(String first, java.util.function.Supplier<String> next) {
         String id = first;
         for (int attempt = 0; attempt < 100; attempt++) {
-            if (userRepo.findByUserId(id).isEmpty() && stylerRepo.findByStylerId(id).isEmpty()) {
+            if (customerRecords.findByUserId(id).isEmpty() && stylerRecords.findByStylerId(id).isEmpty()) {
                 return id;
             }
             id = next.get();

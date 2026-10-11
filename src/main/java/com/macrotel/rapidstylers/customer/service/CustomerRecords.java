@@ -58,4 +58,8 @@ public class CustomerRecords {
     public List<SavedStylistEntity> allSavedStylists() {
         return savedStylistRepo.findAll();
     }
+
+    public long count() {
+        return userRepo.count();
+    }
 }

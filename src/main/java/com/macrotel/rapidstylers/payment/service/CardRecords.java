@@ -27,4 +27,8 @@ public class CardRecords {
     public Optional<CardDetailsEntity> findByUserId(String userId) {
         return cardDetailsRepo.findByUserId(userId);
     }
+
+    public CardDetailsEntity save(CardDetailsEntity card) {
+        return cardDetailsRepo.save(card);
+    }
 }

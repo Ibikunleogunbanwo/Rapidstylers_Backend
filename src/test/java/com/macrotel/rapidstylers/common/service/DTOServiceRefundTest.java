@@ -4,6 +4,7 @@ import com.macrotel.rapidstylers.booking.dto.AppointmentDTO;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;
+import com.macrotel.rapidstylers.payment.service.RefundRecords;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -32,7 +33,7 @@ class DTOServiceRefundTest {
     void completedRefundIsAttachedToAppointmentDto() {
         DTOService dtoService = dtoService();
         RefundRepo refundRepo = mock(RefundRepo.class);
-        ReflectionTestUtils.setField(dtoService, "refundRepo", refundRepo);
+        ReflectionTestUtils.setField(dtoService, "refundRecords", new RefundRecords(refundRepo));
         RefundEntity refund = new RefundEntity();
         refund.setRefundId("RFND-1");
         refund.setStatus("COMPLETED");
@@ -52,7 +53,7 @@ class DTOServiceRefundTest {
     void noRefundLeavesRefundFieldsNull() {
         DTOService dtoService = dtoService();
         RefundRepo refundRepo = mock(RefundRepo.class);
-        ReflectionTestUtils.setField(dtoService, "refundRepo", refundRepo);
+        ReflectionTestUtils.setField(dtoService, "refundRecords", new RefundRecords(refundRepo));
         when(refundRepo.findByAppointmentId("APPT1")).thenReturn(List.of());
 
         AppointmentDTO dto = dtoService.appointmentDTO(appointment("APPT1", "3"));
@@ -65,7 +66,7 @@ class DTOServiceRefundTest {
     void failedRefundAttemptIsNotExposedAsRefunded() {
         DTOService dtoService = dtoService();
         RefundRepo refundRepo = mock(RefundRepo.class);
-        ReflectionTestUtils.setField(dtoService, "refundRepo", refundRepo);
+        ReflectionTestUtils.setField(dtoService, "refundRecords", new RefundRecords(refundRepo));
         RefundEntity refund = new RefundEntity();
         refund.setRefundId("RFND-2");
         refund.setStatus("FAILED");

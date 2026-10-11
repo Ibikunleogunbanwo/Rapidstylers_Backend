@@ -85,4 +85,8 @@ public class AppointmentRecords {
     public List<BookAppointmentEntity> paidWithNoPayoutScheduled() {
         return bookAppointmentRepo.findByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtIsNull("0", "CAPTURED");
     }
+
+    public long count() {
+        return bookAppointmentRepo.count();
+    }
 }

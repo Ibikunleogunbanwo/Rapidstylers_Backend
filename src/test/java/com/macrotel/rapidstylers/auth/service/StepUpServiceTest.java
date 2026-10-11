@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
+import com.macrotel.rapidstylers.admin.service.AdminRecords;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +37,7 @@ class StepUpServiceTest {
         encoder = mock(PasswordEncoder.class);
         rateLimiter = mock(RateLimiterService.class);
         service = new StepUpService();
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "adminAccountRepo", repo);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "adminRecords", new AdminRecords(repo));
         org.springframework.test.util.ReflectionTestUtils.setField(service, "passwordEncoder", encoder);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "rateLimiterService", rateLimiter);
         when(rateLimiter.isBlocked(anyString(), eq(900), eq(5))).thenReturn(false);
