@@ -230,6 +230,8 @@ public class DTOService {
         appointmentDTO.setCommissionPercent(bookAppointmentEntity.getCommissionPercent());
         appointmentDTO.setPlatformFeeCents(bookAppointmentEntity.getPlatformFeeCents());
         appointmentDTO.setStylistShareCents(bookAppointmentEntity.getStylistShareCents());
+        appointmentDTO.setPromoCode(bookAppointmentEntity.getPromoCode());
+        appointmentDTO.setPromoDiscountCents(bookAppointmentEntity.getPromoDiscountCents());
         appointmentDTO.setStylerNote(bookAppointmentEntity.getStylerNote());
         appointmentDTO.setCompletedAt(bookAppointmentEntity.getCompletedAt());
         appointmentDTO.setDisputeWindowEndsAt(PayoutReleaseService.disputeWindowEndsAt(bookAppointmentEntity));

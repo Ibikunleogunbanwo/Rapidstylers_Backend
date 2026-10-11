@@ -153,6 +153,11 @@ public final class Routes {
             "/rapid_stylers/admin/save_service_area",
             "/rapid_stylers/admin/delete_service_area",
 
+            // Promotions
+            "/rapid_stylers/admin/promo_codes",
+            "/rapid_stylers/admin/save_promo_code",
+            "/rapid_stylers/admin/promo_redemptions",
+
             // Admin accounts
             "/rapid_stylers/admin/accounts",
             "/rapid_stylers/admin/accounts/{id}/password",
@@ -213,6 +218,7 @@ public final class Routes {
             "/rapid_stylers/confirm_service",
             "/rapid_stylers/dispute_service",
             "/rapid_stylers/retry_appointment_payment",
+            "/rapid_stylers/check_promo_code",
             "/rapid_stylers/user_appointments",
             "/rapid_stylers/user_pending_appointments",
 

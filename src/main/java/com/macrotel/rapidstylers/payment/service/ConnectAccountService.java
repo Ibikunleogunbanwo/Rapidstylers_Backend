@@ -164,6 +164,10 @@ public class ConnectAccountService {
                 grossRevenue = grossRevenue.add(MoneyUtils.amount(
                         captured && appointment.getPaymentAmount() != null
                                 ? appointment.getPaymentAmount() : appointment.getPrice()));
+                if(captured && appointment.getPaymentAmount() != null && appointment.getPromoDiscountCents() != null){
+                    // The platform pays for promo discounts; the stylist's takings are the full price.
+                    grossRevenue = grossRevenue.add(java.math.BigDecimal.valueOf(appointment.getPromoDiscountCents(), 2));
+                }
             }
             if(appointment.getSubServiceId() != null){
                 serviceCounts.merge(appointment.getSubServiceId(), 1, Integer::sum);

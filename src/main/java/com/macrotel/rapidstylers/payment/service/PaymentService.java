@@ -200,6 +200,8 @@ public class PaymentService {
                     ? (appointment.getPrice() == null ? "—" : appointment.getPrice()) : appointment.getPaymentAmount();
             String details = "<p>Service: " + serviceName + "<br>"
                     + "Date: " + when + "<br>"
+                    + (appointment.getPromoDiscountCents() == null ? ""
+                            : "Promo " + appointment.getPromoCode() + ": -$" + MoneyUtils.moneyCents(appointment.getPromoDiscountCents()) + "<br>")
                     + "Total paid: $" + paid + "<br>"
                     + "Appointment ref: " + appointment.getAppointmentId() + "</p>"
                     + "<p>Thank you,<br>The RapidStylers Team</p>";

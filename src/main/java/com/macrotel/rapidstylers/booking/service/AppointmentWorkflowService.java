@@ -12,6 +12,7 @@ import com.macrotel.rapidstylers.engagement.service.LoyaltyService;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
+import com.macrotel.rapidstylers.payment.service.PromotionService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.AvailabilityService;
@@ -62,6 +63,8 @@ public class AppointmentWorkflowService {
     PaymentAuthorizationService paymentAuthorizationService;
     @Autowired
     PayoutReleaseService payoutReleaseService;
+    @Autowired(required = false)
+    PromotionService promotionService;
     @Value("${app.time-zone:America/Edmonton}")
     private String appTimeZone;
     @Value("${app.booking.completion-grace-minutes:0}")
@@ -296,6 +299,10 @@ public class AppointmentWorkflowService {
             if("2".equals(newStatus) || "4".equals(newStatus)){
                 // Rejected and customer-cancelled bookings release their held slots.
                 bookingSlotLockRepo.deleteByAppointmentId(appointment.getAppointmentId());
+                // A promo code used on this booking can be used again.
+                if(promotionService != null && appointment.getPromoCode() != null){
+                    promotionService.release(appointment.getAppointmentId());
+                }
                 // A captured payment is refunded automatically; otherwise the
                 // authorized hold is released so the card is never charged.
                 if(appointment.getPaymentIntentId() != null && stripeService.isConfigured()){

@@ -119,8 +119,12 @@ public class PayoutReleaseService {
             String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
             long keptCents = paymentService.refundableCents(appointment);
             double percent = paymentService.effectiveCommissionPercentForBooking(appointment);
-            long commission = paymentService.commissionCents(keptCents, percent);
-            long stylistShareCents = keptCents - commission;
+            // The platform pays for any promo discount: the stylist's share comes
+            // from the full price, and the platform's fee is what is left of what it kept.
+            long baseCents = PromotionService.stylistBaseCents(appointment.getPromoDiscountCents(),
+                    keptCents, paymentService.capturedCents(appointment));
+            long stylistShareCents = baseCents - paymentService.commissionCents(baseCents, percent);
+            long commission = keptCents - stylistShareCents;
             if (appointment.getCommissionPercent() == null) {
                 appointment.setCommissionPercent(percent);
             }

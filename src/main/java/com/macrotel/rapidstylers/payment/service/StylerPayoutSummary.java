@@ -63,6 +63,10 @@ public class StylerPayoutSummary {
                 }
                 BigDecimal total = MoneyUtils.amount(appointment.getPaymentAmount() == null
                         ? appointment.getPrice() : appointment.getPaymentAmount());
+                if (appointment.getPromoDiscountCents() != null) {
+                    // The platform pays for promo discounts; the stylist earns on the full price.
+                    total = total.add(BigDecimal.valueOf(appointment.getPromoDiscountCents(), 2));
+                }
                 BigDecimal commission = total.multiply(BigDecimal.valueOf(paymentService.effectiveCommissionPercent()))
                         .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
                 BigDecimal share = total.subtract(commission);

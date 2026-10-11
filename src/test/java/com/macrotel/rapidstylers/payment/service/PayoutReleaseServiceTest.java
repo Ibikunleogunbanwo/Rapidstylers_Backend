@@ -135,6 +135,35 @@ class PayoutReleaseServiceTest {
     }
 
     @Test
+    void thePlatformPaysForAPromoDiscount() throws Exception {
+        BookAppointmentEntity appointment = completed();
+        appointment.setPromoCode("SPRING20");
+        appointment.setPromoDiscountCents(2500L); // $150 service, customer paid $125
+
+        payouts.release(appointment);
+
+        // The stylist gets $150 less 12% ($18) = $132; the platform kept $125, so its fee is -$7.
+        verify(stripeService).transferStylistShare("acct_1", 13200L, "APPT1", "payout_APPT1_13200");
+        assertEquals(-700L, appointment.getPlatformFeeCents());
+        assertEquals(13200L, appointment.getStylistShareCents());
+    }
+
+    @Test
+    void aPartRefundTakesTheSameShareOfTheDiscount() throws Exception {
+        BookAppointmentEntity appointment = completed();
+        appointment.setPromoDiscountCents(2500L);
+        RefundEntity refund = new RefundEntity();
+        refund.setAmount("25.00");
+        refund.setStatus("COMPLETED");
+        when(refundRepo.findByPaymentIntentIdAndStatus("pi_1", "COMPLETED")).thenReturn(List.of(refund));
+
+        payouts.release(appointment);
+
+        // $100 kept is 80% of the charge, so 80% of the $25 discount: $120, less 12% ($14.40) = $105.60.
+        verify(stripeService).transferStylistShare("acct_1", 10560L, "APPT1", "payout_APPT1_10560");
+    }
+
+    @Test
     void confirmingTheAppointmentHappenedPaysTheStylistNow() throws Exception {
         BookAppointmentEntity appointment = completed();
 

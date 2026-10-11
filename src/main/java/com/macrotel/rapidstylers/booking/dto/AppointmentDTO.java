@@ -35,6 +35,8 @@ public class AppointmentDTO {
     private Double commissionPercent;
     private Long platformFeeCents;
     private Long stylistShareCents;
+    private String promoCode;
+    private Long promoDiscountCents;
     private String stylerNote;
     /** When the appointment was marked completed — lets the UI gate the styler cancel action. */
     private LocalDateTime completedAt;

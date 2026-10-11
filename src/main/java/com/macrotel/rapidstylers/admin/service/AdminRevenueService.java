@@ -172,8 +172,11 @@ public class AdminRevenueService {
             l.platform = BigDecimal.valueOf(b.getPlatformFeeCents(), 2);
         } else if (b.getCommissionPercent() != null) {
             // Fee not settled yet (it is fixed at completion): use the rate snapped at booking.
-            l.platform = l.amount.multiply(BigDecimal.valueOf(b.getCommissionPercent()))
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            // The platform pays for promo discounts, so the fee is on the full price, less the discount.
+            BigDecimal discount = b.getPromoDiscountCents() == null ? BigDecimal.ZERO
+                    : BigDecimal.valueOf(b.getPromoDiscountCents(), 2);
+            l.platform = l.amount.add(discount).multiply(BigDecimal.valueOf(b.getCommissionPercent()))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP).subtract(discount);
         }
         l.stylist = b.getStylistShareCents() != null ? BigDecimal.valueOf(b.getStylistShareCents(), 2)
                 : l.amount.subtract(l.platform);
@@ -287,7 +290,8 @@ public class AdminRevenueService {
         d.put("refunds", "Completed refunds, counted on the day the refund went through.");
         d.put("netValue", "capturedValue minus refunds.");
         d.put("platformRevenue", "The platform's commission on those charges. Before a booking is completed this is "
-                + "estimated from the commission rate saved at booking; refunds are not taken off it.");
+                + "estimated from the commission rate saved at booking; refunds are not taken off it. "
+                + "Promo code discounts come out of it, since the platform pays for them.");
         d.put("stylistEarnings", "The stylists' share of those charges (charge minus commission).");
         d.put("previousPeriod", "The same number of days immediately before 'from'.");
         return d;

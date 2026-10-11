@@ -101,6 +101,12 @@ public class BookAppointmentEntity implements Serializable {
     /** When the card was charged (Stripe capture), in UTC. Revenue reports count the money on this moment. */
     @Column(name = "payment_captured_at")
     private LocalDateTime paymentCapturedAt;
+    /** The promo code this booking used, if any. */
+    @Column(name = "promo_code", length = 40)
+    private String promoCode;
+    /** What the promo code took off the customer's charge, in cents. The platform pays it; the stylist is paid on the full price. */
+    @Column(name = "promo_discount_cents")
+    private Long promoDiscountCents;
 
     public BookAppointmentEntity() {
     }

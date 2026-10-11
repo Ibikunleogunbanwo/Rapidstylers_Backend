@@ -18,6 +18,7 @@ import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.service.CardRecords;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.MoneyUtils;
+import com.macrotel.rapidstylers.payment.service.PromotionService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
@@ -43,6 +44,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
@@ -60,6 +62,8 @@ public class BookingService {
     /** Sign-up funnel tally; null in unit tests that build this service by hand. */
     @Autowired(required = false)
     FunnelService funnelService;
+    @Autowired(required = false)
+    PromotionService promotionService;
     private static final Logger LOG = Logger.getLogger(BookingService.class.getName());
     @Autowired
     CustomerRecords customerRecords;
@@ -268,6 +272,24 @@ public class BookingService {
             // Snapshot the commission at booking time so the payout is deterministic
             // even if the admin later changes the platform rate.
             appointment.setCommissionPercent(paymentService.effectiveCommissionPercent());
+            // A promo code lowers what the card is charged; the booking's price
+            // stays the full price, which is what the stylist is paid on.
+            String chargeTotal = pricing.totalPrice;
+            String promoCode = bookAppointmentData.getPromoCode();
+            if(promoCode != null && !promoCode.isBlank()){
+                if(promotionService == null){
+                    return Responses.errorResponse(response, "That promo code isn't valid");
+                }
+                PromotionService.Quote promo = promotionService.quote(promoCode,
+                        bookAppointmentData.getUserId(), MoneyUtils.centsFromPrice(pricing.totalPrice));
+                if(!promo.ok){
+                    return Responses.errorResponse(response, promo.message);
+                }
+                appointment.setPromoCode(promo.promo.getCode());
+                appointment.setPromoDiscountCents(promo.discountCents);
+                chargeTotal = MoneyUtils.moneyCents(MoneyUtils.centsFromPrice(pricing.totalPrice) - promo.discountCents);
+                appointment.setPaymentAmount(chargeTotal);
+            }
             appointment.setIdempotencyKey(idempotencyKey);
             appointment.setIdempotencyFingerprint(idempotencyKey == null ? null : fingerprint);
 
@@ -286,7 +308,7 @@ public class BookingService {
                 }
                 String connectAccountId = isStylerExist.get().getStripeConnectAccountId();
                 String destination = connectAccountId == null || connectAccountId.isBlank() ? null : connectAccountId;
-                long amountCents = MoneyUtils.centsFromPrice(pricing.totalPrice);
+                long amountCents = MoneyUtils.centsFromPrice(chargeTotal);
 
                 if(paymentAuthorizationService.shouldAuthorizeNow(appointmentDate, appointmentStart)){
                     // Near-term: authorize immediately with the one-time payment method.
@@ -315,7 +337,7 @@ public class BookingService {
                                 destination, paymentService.commissionCents(amountCents));
                         appointment.setPaymentIntentId(intent.getId());
                         appointment.setPaymentStatus("AUTHORIZED");
-                        appointment.setPaymentAmount(pricing.totalPrice);
+                        appointment.setPaymentAmount(chargeTotal);
                         appointment.setPaymentAuthorizationDueAt(null);
                     } catch(com.stripe.exception.CardException ex){
                         if("expired_card".equals(ex.getCode())){
@@ -345,7 +367,7 @@ public class BookingService {
                                 (buyer.getFirstname() + " " + buyer.getLastname()).trim());
                         cardService.upsertPaymentReference(bookAppointmentData.getUserId(), customer.getId(), pm);
                         appointment.setPaymentStatus("PAYMENT_SCHEDULED");
-                        appointment.setPaymentAmount(pricing.totalPrice);
+                        appointment.setPaymentAmount(chargeTotal);
                         appointment.setPaymentAuthorizationDueAt(paymentAuthorizationService.paymentAuthorizationDueAt(appointmentDate, appointmentStart));
                     } catch(com.stripe.exception.StripeException ex){
                         LOG.warning("Payment reference save failed: " + ex.getMessage());
@@ -355,6 +377,18 @@ public class BookingService {
                 }
             }
             bookAppointmentRepo.saveAndFlush(appointment);
+            if(appointment.getPromoCode() != null){
+                // Re-checked under a lock on the code, so its last use goes to one booking only.
+                PromotionService.Quote used = promotionService.redeem(appointment.getPromoCode(),
+                        appointment.getUserId(), appointment.getAppointmentId(),
+                        MoneyUtils.centsFromPrice(pricing.totalPrice));
+                if(!used.ok || used.discountCents != appointment.getPromoDiscountCents()){
+                    releaseHold(appointment);
+                    TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+                    return Responses.errorResponse(response, used.ok
+                            ? "That promo code changed while you were booking. Please try again." : used.message);
+                }
+            }
             if(bookAppointmentRepo.countByUserId(appointment.getUserId()) == 1){
                 // Counted once this booking commits; a slot collision rolls it back uncounted.
                 funnel(FunnelService.FIRST_BOOKING, "CUSTOMER", appointment.getUserId());
@@ -616,6 +650,16 @@ public class BookingService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    /** Lets go of a card hold made for a booking that is being undone. */
+    private void releaseHold(BookAppointmentEntity appointment){
+        if(appointment.getPaymentIntentId() == null || !stripeService.isConfigured()) return;
+        try {
+            stripeService.releaseBookingPayment(appointment.getPaymentIntentId());
+        } catch(Exception ex){
+            LOG.warning("Payment hold release failed: " + ex.getMessage());
+        }
     }
 
     private void funnel(String step, String role, String subject){

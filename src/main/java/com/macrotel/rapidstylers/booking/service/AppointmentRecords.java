@@ -88,6 +88,11 @@ public class AppointmentRecords {
         return bookAppointmentRepo.findByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtIsNull("0", "CAPTURED");
     }
 
+    /** How many bookings this customer has ever made. */
+    public long countByUserId(String userId) {
+        return bookAppointmentRepo.countByUserId(userId);
+    }
+
     public long count() {
         return bookAppointmentRepo.count();
     }

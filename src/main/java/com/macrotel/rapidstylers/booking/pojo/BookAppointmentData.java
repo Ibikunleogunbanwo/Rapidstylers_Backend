@@ -47,5 +47,8 @@ public class BookAppointmentData {
      * legacy/preview calls.
      */
     private String paymentMethodId;
+    /** Optional promo code. The server alone works out whether it applies and what it takes off. */
+    @Size(max = 40, message = "Promo code is too long")
+    private String promoCode;
 
 }

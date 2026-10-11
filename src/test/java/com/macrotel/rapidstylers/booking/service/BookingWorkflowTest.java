@@ -18,6 +18,7 @@ import com.macrotel.rapidstylers.payment.pojo.CardDetailsData;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
 import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.PromotionService;
 import com.macrotel.rapidstylers.payment.service.StripeService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
@@ -736,6 +737,84 @@ class BookingWorkflowTest {
         when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
         when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(styler));
         when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(90)));
+        when(appointmentRepo.findByUserIdAndStylerIdAndAppointmentDateValueAndAppointmentStartTimeAndStatusIn(
+                anyString(), anyString(), any(), any(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findDuplicateBooking(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDateValue(anyString(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDate(anyString(), anyString())).thenReturn(Collections.emptyList());
+        when(availabilityRepo.findByStylerId(anyString())).thenReturn(Collections.emptyList());
+        when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
+        when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    @Test
+    void aPromoCodeLowersTheChargeButNotTheBookingPrice() {
+        PromotionService promotions = promoted(2000L);
+        BookAppointmentData data = bookingData();
+        data.setPromoCode("spring20");
+        stubPlainBooking();
+
+        BaseResponse response = services.bookingService().bookAppointment(data);
+
+        assertEquals("200", response.getStatusCode());
+        verify(appointmentRepo).saveAndFlush(argThat(a -> "100.00".equals(a.getPrice())
+                && "80.00".equals(a.getPaymentAmount())
+                && "SPRING20".equals(a.getPromoCode())
+                && Long.valueOf(2000L).equals(a.getPromoDiscountCents())));
+        verify(promotions).redeem(eq("SPRING20"), eq("CUSTOMER1"), anyString(), eq(10000L));
+    }
+
+    @Test
+    void aPromoCodeThatDoesNotApplyStopsTheBooking() {
+        PromotionService promotions = mock(PromotionService.class);
+        when(promotions.quote(anyString(), anyString(), anyLong()))
+                .thenReturn(new PromotionService.Quote(false, "That promo code has expired", null, 0));
+        ReflectionTestUtils.setField(services.bookingService(), "promotionService", promotions);
+        BookAppointmentData data = bookingData();
+        data.setPromoCode("OLD10");
+        stubPlainBooking();
+
+        BaseResponse response = services.bookingService().bookAppointment(data);
+
+        assertEquals("That promo code has expired", response.getMessage());
+        verify(appointmentRepo, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void decliningOrCancellingGivesThePromoCodeUseBack() {
+        PromotionService promotions = mock(PromotionService.class);
+        ReflectionTestUtils.setField(services.appointmentWorkflowService(), "promotionService", promotions);
+        BookAppointmentEntity pending = appointment("1");
+        pending.setPromoCode("SPRING20");
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT-1")).thenReturn(Optional.of(pending));
+
+        assertEquals("200", services.appointmentWorkflowService().declineAppointment("STYLER1", "APPT-1").getStatusCode());
+        verify(promotions).release("APPT-1");
+
+        BookAppointmentEntity plain = appointment("APPT-2", "3");
+        when(appointmentRepo.findByAppointmentIdForUpdate("APPT-2")).thenReturn(Optional.of(plain));
+        services.appointmentWorkflowService().cancelAppointment("CUSTOMER1", "APPT-2");
+        verify(promotions, never()).release("APPT-2");
+    }
+
+    private PromotionService promoted(long discountCents) {
+        PromotionService promotions = mock(PromotionService.class);
+        com.macrotel.rapidstylers.payment.entity.PromoCodeEntity code = new com.macrotel.rapidstylers.payment.entity.PromoCodeEntity();
+        code.setCode("SPRING20");
+        PromotionService.Quote ok = new PromotionService.Quote(true, null, code, discountCents);
+        when(promotions.quote(anyString(), anyString(), anyLong())).thenReturn(ok);
+        when(promotions.redeem(anyString(), anyString(), anyString(), anyLong())).thenReturn(ok);
+        ReflectionTestUtils.setField(services.bookingService(), "promotionService", promotions);
+        return promotions;
+    }
+
+    private void stubPlainBooking() {
+        UserEntity customer = new UserEntity();
+        customer.setUserId("CUSTOMER1");
+        when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
+        when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(approvedStyler()));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(60)));
         when(appointmentRepo.findByUserIdAndStylerIdAndAppointmentDateValueAndAppointmentStartTimeAndStatusIn(
                 anyString(), anyString(), any(), any(), any())).thenReturn(Collections.emptyList());
         when(appointmentRepo.findDuplicateBooking(anyString(), anyString(), anyString(), anyString()))
