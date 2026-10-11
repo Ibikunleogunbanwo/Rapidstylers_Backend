@@ -51,26 +51,33 @@ class CloudinaryControllerTest {
     }
 
     /**
-     * The point of audit check 16: the type and size limits have to be inside the
+     * The point of audit check 16: the type limit has to be inside the
      * signature, because Cloudinary only enforces what was signed. This recomputes
      * the hash over the exact expected parameter string, so dropping a constraint
-     * from the signature — the failure that would silently return enforcement to
-     * the Cloudinary console — cannot pass review.
+     * from the signature cannot pass review.
+     *
+     * It also pins the signed set to parameters Cloudinary's upload API
+     * accepts. Cloudinary leaves unknown parameters out of the string it
+     * checks, so signing max_file_size (not an upload parameter) failed every
+     * live upload with "Invalid Signature" (Cloudinary reported signing
+     * allowed_formats, folder and timestamp only).
      */
     @Test
-    void uploadSignatureCoversTheUploadConstraints() throws Exception {
+    void uploadSignatureCoversOnlyParametersCloudinarySigns() throws Exception {
         ResponseEntity<BaseResponse> response = controller.getUploadSignature("profile");
         Map<?, ?> params = params(response);
 
         assertEquals("jpg,jpeg,png,webp,gif", params.get("allowed_formats"));
-        assertEquals("5242880", params.get("max_file_size"));
+        assertEquals(java.util.Set.of("api_key", "timestamp", "folder", "allowed_formats", "signature"),
+                params.keySet());
 
         String expected = sha1("allowed_formats=jpg,jpeg,png,webp,gif"
                 + "&folder=rapid_stylers/profile"
-                + "&max_file_size=5242880"
                 + "&timestamp=" + params.get("timestamp")
                 + "secret");
         assertEquals(expected, params.get("signature"));
+        // The size ceiling still reaches the client, outside the signed fields.
+        assertEquals("5242880", ((Map<?, ?>) response.getBody().getData()).get("maxFileSize"));
     }
 
     /**

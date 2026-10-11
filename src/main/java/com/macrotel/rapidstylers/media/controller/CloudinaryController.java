@@ -39,9 +39,11 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
  * file — to https://api.cloudinary.com/v1_1/{cloudName}/image/upload and
  * receives the secure CDN URL, which it saves on the entity.
  *
- * `params` is the signed parameter set: it carries the folder, the allowed
- * formats and the size ceiling, so the client cannot widen any of them without
- * breaking the signature.
+ * `params` is the signed parameter set: it carries the folder and the allowed
+ * formats, so the client cannot widen either without breaking the signature.
+ * The size ceiling is returned separately (`maxFileSize`) for the client to
+ * check before uploading: Cloudinary's upload API has no max_file_size
+ * parameter, so signing one made every upload fail with "Invalid Signature".
  *
  * Accepts an optional folderPrefix to partition uploads:
  *   ?folderPrefix=profile   → rapid_stylers/profile
@@ -117,10 +119,11 @@ public class CloudinaryController {
                 folder = folder + "/" + ownerFolder;
             }
 
-            // The upload constraints are part of the SIGNED parameter set, so
-            // Cloudinary enforces them itself: a client that drops them,
-            // loosens them, or sends a disallowed type/size fails signature
-            // verification or is rejected outright. Until this change the only
+            // The format and folder constraints are part of the SIGNED
+            // parameter set, so Cloudinary enforces them itself: a client that
+            // drops or loosens them fails signature verification. Only
+            // parameters the upload API accepts may be signed; Cloudinary drops
+            // unknown ones before checking, so signing one breaks every upload. Until this change the only
             // enforcement lived in a Cloudinary console upload preset, which is
             // invisible from this repository — a check that silently "passes"
             // review because nothing here can see it (audit check 16).
@@ -130,7 +133,6 @@ public class CloudinaryController {
             // alphabetically, with the API secret appended, then SHA-1 hashed.
             String toSign = "allowed_formats=" + formats
                     + "&folder=" + folder
-                    + "&max_file_size=" + maxFileSizeBytes
                     + "&timestamp=" + timestamp + apiSecret;
             String signature = sha1(toSign);
 
@@ -142,13 +144,13 @@ public class CloudinaryController {
             params.put("timestamp", String.valueOf(timestamp));
             params.put("folder", folder);
             params.put("allowed_formats", formats);
-            params.put("max_file_size", String.valueOf(maxFileSizeBytes));
             params.put("signature", signature);
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("cloudName", cloudName);
             data.put("params", params);
             data.put("allowedFormats", formats);
+            // Not signed (see above): the client checks it before uploading.
             data.put("maxFileSize", String.valueOf(maxFileSizeBytes));
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
