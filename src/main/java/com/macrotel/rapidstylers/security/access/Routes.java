@@ -120,6 +120,11 @@ public final class Routes {
             "/rapid_stylers/admin/resolve_service_dispute",
             "/rapid_stylers/admin/payment_reconciliation",
 
+            // Bookings
+            "/rapid_stylers/admin/bookings",
+            "/rapid_stylers/admin/booking_detail",
+            "/rapid_stylers/admin/bookings_export",
+
             // Admin accounts
             "/rapid_stylers/admin/accounts",
             "/rapid_stylers/admin/accounts/{id}/password",

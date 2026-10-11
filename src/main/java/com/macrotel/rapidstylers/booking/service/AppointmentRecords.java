@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -88,5 +90,15 @@ public class AppointmentRecords {
 
     public long count() {
         return bookAppointmentRepo.count();
+    }
+
+    /** One page of appointments matching the admin filters, newest appointment date first. */
+    public Page<BookAppointmentEntity> search(BookingSearch criteria, Pageable pageable) {
+        return bookAppointmentRepo.findAll(criteria.toSpecification(), pageable);
+    }
+
+    /** Every appointment matching the admin filters (for totals and exports), newest first. */
+    public List<BookAppointmentEntity> searchAll(BookingSearch criteria) {
+        return bookAppointmentRepo.findAll(criteria.toSpecification(), BookingSearch.NEWEST_FIRST);
     }
 }

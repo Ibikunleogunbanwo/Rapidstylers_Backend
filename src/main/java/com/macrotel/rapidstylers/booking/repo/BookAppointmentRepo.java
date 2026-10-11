@@ -6,11 +6,13 @@ import java.util.List;
 import java.util.Optional;
 import javax.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity, Long> {
+public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity, Long>,
+        JpaSpecificationExecutor<BookAppointmentEntity> {
     List<BookAppointmentEntity> findByUserId(String userId);
 
     @Query(value = "SELECT b FROM BookAppointmentEntity b WHERE b.userId =:userId AND b.status ='1'")
