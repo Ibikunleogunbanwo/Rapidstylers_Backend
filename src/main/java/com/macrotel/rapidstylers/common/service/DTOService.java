@@ -150,6 +150,7 @@ public class DTOService {
         stylerPortfolioDTO.setCategory(stylerPortfolioEntity.getCategory());
         stylerPortfolioDTO.setStatus(stylerPortfolioEntity.getStatus().equals("0") ? "Active" : "Inactive");
         stylerPortfolioDTO.setCreatedAt(stylerPortfolioEntity.getCreatedAt());
+        stylerPortfolioDTO.setModerationStatus(stylerPortfolioEntity.getModerationStatus());
         return stylerPortfolioDTO;
     }
 

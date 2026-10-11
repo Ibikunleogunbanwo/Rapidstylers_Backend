@@ -10,4 +10,8 @@ public class StylerPortfolioDTO {
     private String category;
     private String status;
     private String createdAt;
+    /** PENDING, APPROVED or REJECTED. */
+    private String moderationStatus;
+    /** The admin's note; only filled in on the stylist's own portfolio. */
+    private String moderationNote;
 }

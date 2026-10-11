@@ -13,8 +13,8 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 /**
  * Serves the public gallery exclusively from work that APPROVED professionals
- * have uploaded to their portfolios — newest first, no stock imagery. Results
- * are read fresh on every call so new uploads appear immediately.
+ * have uploaded to their portfolios and an admin has approved — newest first, no stock imagery. Results
+ * are read fresh on every call so an approval appears immediately.
  */
 @Service
 public class GalleryService {
@@ -64,6 +64,8 @@ public class GalleryService {
         int eligible = 0;
         for(StylerPortfolioEntity item : items){
             if(result.size() >= limit) break;
+            // Only photos an admin approved are shown publicly.
+            if(!StylerPortfolioEntity.APPROVED.equals(item.getModerationStatus())) continue;
             Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(item.getStylerId());
             if(stylerOpt.isEmpty()) continue;
             StylerEntity styler = stylerOpt.get();

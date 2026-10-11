@@ -7,6 +7,7 @@ import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
+import com.macrotel.rapidstylers.styler.dto.StylerPortfolioDTO;
 import com.macrotel.rapidstylers.styler.pojo.StylerPortfolioData;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
@@ -121,7 +122,10 @@ public class PortfolioService {
             Collections.reverse(portfolio);
             List<Object> result = new ArrayList<>();
             for(StylerPortfolioEntity entity : portfolio){
-                result.add(dtoService.stylerPortfolioDTO(entity));
+                // The stylist sees every photo, with the moderation decision and note.
+                StylerPortfolioDTO dto = dtoService.stylerPortfolioDTO(entity);
+                dto.setModerationNote(entity.getModerationNote());
+                result.add(dto);
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
@@ -171,6 +175,7 @@ public class PortfolioService {
                 entry.put("name", item.getName());
                 entry.put("category", item.getCategory());
                 entry.put("createdAt", item.getCreatedAt());
+                entry.put("moderationStatus", item.getModerationStatus());
                 Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(item.getStylerId());
                 if(stylerOpt.isPresent()){
                     StylerEntity styler = stylerOpt.get();
@@ -294,6 +299,8 @@ public class PortfolioService {
                     List<StylerPortfolioEntity> rows = stylerPortfolioRepo.findByStylerId(stylerId);
                     List<Object> built = new ArrayList<>();
                     for(StylerPortfolioEntity entity : rows){
+                        // Rejected photos stay off the stylist's public profile.
+                        if(StylerPortfolioEntity.REJECTED.equals(entity.getModerationStatus())) continue;
                         built.add(dtoService.stylerPortfolioDTO(entity));
                     }
                     Collections.reverse(built);

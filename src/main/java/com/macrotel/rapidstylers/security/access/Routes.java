@@ -135,6 +135,12 @@ public final class Routes {
             "/rapid_stylers/admin/revenue",
             "/rapid_stylers/admin/revenue_export",
 
+            // Gallery moderation
+            "/rapid_stylers/admin/gallery_moderation",
+            "/rapid_stylers/admin/gallery_image_history",
+            "/rapid_stylers/admin/approve_gallery_image",
+            "/rapid_stylers/admin/reject_gallery_image",
+
             // Admin accounts
             "/rapid_stylers/admin/accounts",
             "/rapid_stylers/admin/accounts/{id}/password",

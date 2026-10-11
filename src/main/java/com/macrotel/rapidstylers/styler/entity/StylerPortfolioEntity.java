@@ -21,6 +21,20 @@ public class StylerPortfolioEntity implements Serializable {
     private String createdAt;
     // Gallery category this work belongs to (e.g. braids, nail tech, makeup).
     private String category;
+    /** PENDING until an admin decides; only APPROVED photos appear in the public gallery. */
+    @Column(name = "moderation_status", length = 20)
+    private String moderationStatus = PENDING;
+    /** The admin's note on the decision (required when rejecting; shown to the stylist). */
+    @Column(name = "moderation_note", length = 500)
+    private String moderationNote;
+    @Column(name = "moderated_by", length = 100)
+    private String moderatedBy;
+    @Column(name = "moderated_at")
+    private LocalDateTime moderatedAt;
+
+    public static final String PENDING = "PENDING";
+    public static final String APPROVED = "APPROVED";
+    public static final String REJECTED = "REJECTED";
 
     public StylerPortfolioEntity() {
     }

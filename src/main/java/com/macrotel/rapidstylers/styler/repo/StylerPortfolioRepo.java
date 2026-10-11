@@ -15,6 +15,12 @@ public interface StylerPortfolioRepo extends JpaRepository<StylerPortfolioEntity
 
     List<StylerPortfolioEntity> findByCategory(String category);
 
+    /** One page of photos in a moderation state, for the admin queue. */
+    org.springframework.data.domain.Page<StylerPortfolioEntity> findByModerationStatus(
+            String moderationStatus, org.springframework.data.domain.Pageable pageable);
+
+    long countByModerationStatus(String moderationStatus);
+
     /** How many portfolio rows hold this exact image URL (used before destroying an asset). */
     long countByImageUrlContaining(String fragment);
 }
