@@ -3,8 +3,7 @@ package com.macrotel.rapidstylers.media.service;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.*;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,10 +22,7 @@ public class GalleryService {
     private static final Logger LOG = Logger.getLogger(GalleryService.class.getName());
 
     @Autowired
-    private StylerPortfolioRepo stylerPortfolioRepo;
-
-    @Autowired
-    private StylerRepo stylerRepo;
+    private StylerRecords stylerRecords;
 
     public BaseResponse searchGallery(String category, int perPage, int page, String query) {
         // Fresh response per call — the shared field previously let one
@@ -62,13 +58,13 @@ public class GalleryService {
      */
     private List<Map<String, Object>> stylerUploads(String category, String query, int offset, int limit){
         List<Map<String, Object>> result = new ArrayList<>();
-        List<StylerPortfolioEntity> items = stylerPortfolioRepo.findByCategory(category);
+        List<StylerPortfolioEntity> items = stylerRecords.portfolioByCategory(category);
         // Newest first
         Collections.reverse(items);
         int eligible = 0;
         for(StylerPortfolioEntity item : items){
             if(result.size() >= limit) break;
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(item.getStylerId());
+            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(item.getStylerId());
             if(stylerOpt.isEmpty()) continue;
             StylerEntity styler = stylerOpt.get();
             // Only approved professionals' work is shown publicly.

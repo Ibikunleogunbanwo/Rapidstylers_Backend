@@ -3,10 +3,12 @@ package com.macrotel.rapidstylers.outbox;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.Optional;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +48,8 @@ class NotificationEventConsumerTest {
         dedupService = mock(NotificationDedupService.class);
         when(dedupService.tryClaim(any())).thenReturn(true);
         kafkaTemplate = mock(KafkaTemplate.class);
-        consumer = new NotificationEventConsumer(emailConfig, userRepo, stylerRepo, subServiceRepo, kafkaTemplate, dedupService);
+        consumer = new NotificationEventConsumer(emailConfig, new CustomerRecords(userRepo),
+                new StylerRecords(stylerRepo, subServiceRepo), kafkaTemplate, dedupService);
         org.springframework.test.util.ReflectionTestUtils.setField(consumer, "retryTopic", "rapidstylers.domain-events.retry");
         org.springframework.test.util.ReflectionTestUtils.setField(consumer, "dlqTopic", "rapidstylers.domain-events.dlq");
         org.springframework.test.util.ReflectionTestUtils.setField(consumer, "maxRetries", 3);

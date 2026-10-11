@@ -1,7 +1,9 @@
 package com.macrotel.rapidstylers.styler.service;
 
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
 import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
 import java.util.List;
@@ -10,8 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * The styler domain's front door for other domains (payment and booking): stylist
- * records and the services each stylist offers. Only styler code reaches
+ * The styler domain's front door for other domains: stylist records, the
+ * services each stylist offers and their portfolio photos. Only styler code reaches
  * {@link StylerRepo} and {@link SubServiceRepo} directly.
  */
 @Service
@@ -21,6 +23,8 @@ public class StylerRecords {
     StylerRepo stylerRepo;
     @Autowired
     SubServiceRepo subServiceRepo;
+    @Autowired
+    StylerPortfolioRepo stylerPortfolioRepo;
 
     public StylerRecords() {
     }
@@ -62,5 +66,21 @@ public class StylerRecords {
 
     public List<SubServiceEntity> subServicesOf(String stylerId) {
         return subServiceRepo.findByStylerId(stylerId);
+    }
+
+    /** Public portfolio photos in one gallery category. */
+    public List<StylerPortfolioEntity> portfolioByCategory(String category) {
+        return stylerPortfolioRepo.findByCategory(category);
+    }
+
+    /**
+     * How many stylist images point at this Cloudinary asset: profile, ID,
+     * cover and portfolio photos. Used before an asset is destroyed.
+     */
+    public long imageReferences(String fragment) {
+        return stylerRepo.countByProfileImageUrlContaining(fragment)
+                + stylerRepo.countByIdentificationImageUrlContaining(fragment)
+                + stylerRepo.countByCoverImageUrlContaining(fragment)
+                + stylerPortfolioRepo.countByImageUrlContaining(fragment);
     }
 }

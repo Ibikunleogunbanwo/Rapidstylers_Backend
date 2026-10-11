@@ -2,10 +2,13 @@ package com.macrotel.rapidstylers.media.service;
 
 import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
 import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -47,10 +50,14 @@ class ImageReclaimServiceTest {
         serviceRepo = mock(ServiceRepo.class);
 
         reclaimService.cloudinaryService = cloudinaryService;
-        reclaimService.stylerRepo = stylerRepo;
-        reclaimService.stylerPortfolioRepo = stylerPortfolioRepo;
-        reclaimService.blogPostRepo = blogPostRepo;
-        reclaimService.serviceRepo = serviceRepo;
+        // The counts now come through each domain's front door; the doors are
+        // real, only the repos behind them are mocks.
+        StylerRecords stylerRecords = new StylerRecords(stylerRepo, null);
+        ReflectionTestUtils.setField(stylerRecords, "stylerPortfolioRepo", stylerPortfolioRepo);
+        CatalogRecords catalogRecords = new CatalogRecords(serviceRepo, null);
+        ReflectionTestUtils.setField(catalogRecords, "blogPostRepo", blogPostRepo);
+        reclaimService.stylerRecords = stylerRecords;
+        reclaimService.catalogRecords = catalogRecords;
 
         when(cloudinaryService.destroy(anyString())).thenReturn(true);
         when(cloudinaryService.extractPublicId(ORPHAN_URL)).thenReturn(PUBLIC_ID);
@@ -111,6 +118,10 @@ class ImageReclaimServiceTest {
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 
         when(stylerRepo.countByIdentificationImageUrlContaining(FRAGMENT)).thenReturn(0L);
+        when(stylerRepo.countByCoverImageUrlContaining(FRAGMENT)).thenReturn(1L);
+        assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL), "a stylist's cover photo is in use too");
+
+        when(stylerRepo.countByCoverImageUrlContaining(FRAGMENT)).thenReturn(0L);
         when(stylerPortfolioRepo.countByImageUrlContaining(FRAGMENT)).thenReturn(2L);
         assertFalse(reclaimService.reclaimIfUnreferenced(ORPHAN_URL));
 

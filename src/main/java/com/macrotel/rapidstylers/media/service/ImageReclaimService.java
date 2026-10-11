@@ -1,10 +1,8 @@
 package com.macrotel.rapidstylers.media.service;
 
-import com.macrotel.rapidstylers.catalog.repo.BlogPostRepo;
-import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerPortfolioRepo;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.security.access.Roles;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.logging.Logger;
@@ -49,16 +47,10 @@ public class ImageReclaimService {
     CloudinaryService cloudinaryService;
 
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
 
     @Autowired
-    StylerPortfolioRepo stylerPortfolioRepo;
-
-    @Autowired
-    BlogPostRepo blogPostRepo;
-
-    @Autowired
-    ServiceRepo serviceRepo;
+    CatalogRecords catalogRecords;
 
     @Autowired
     UploadOwnership uploadOwnership = new UploadOwnership();
@@ -87,11 +79,7 @@ public class ImageReclaimService {
      */
     public long referenceCount(String publicId) {
         String fragment = "/" + publicId;
-        return stylerRepo.countByProfileImageUrlContaining(fragment)
-                + stylerRepo.countByIdentificationImageUrlContaining(fragment)
-                + stylerPortfolioRepo.countByImageUrlContaining(fragment)
-                + blogPostRepo.countByImageUrlContaining(fragment)
-                + serviceRepo.countByServiceImageUrlContaining(fragment);
+        return stylerRecords.imageReferences(fragment) + catalogRecords.imageReferences(fragment);
     }
 
     /**

@@ -4,11 +4,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -27,9 +26,8 @@ public class NotificationEventConsumer {
     private static final Logger LOG = Logger.getLogger(NotificationEventConsumer.class.getName());
 
     private final EmailConfig emailConfig;
-    private final UserRepo userRepo;
-    private final StylerRepo stylerRepo;
-    private final SubServiceRepo subServiceRepo;
+    private final CustomerRecords customerRecords;
+    private final StylerRecords stylerRecords;
     private final NotificationDedupService dedupService;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -43,13 +41,12 @@ public class NotificationEventConsumer {
     @Value("${app.kafka.consumers.notifications.max-retries:3}")
     private int maxRetries;
 
-    public NotificationEventConsumer(EmailConfig emailConfig, UserRepo userRepo, StylerRepo stylerRepo,
-                                     SubServiceRepo subServiceRepo, KafkaTemplate<String, String> kafkaTemplate,
+    public NotificationEventConsumer(EmailConfig emailConfig, CustomerRecords customerRecords,
+                                     StylerRecords stylerRecords, KafkaTemplate<String, String> kafkaTemplate,
                                      NotificationDedupService dedupService) {
         this.emailConfig = emailConfig;
-        this.userRepo = userRepo;
-        this.stylerRepo = stylerRepo;
-        this.subServiceRepo = subServiceRepo;
+        this.customerRecords = customerRecords;
+        this.stylerRecords = stylerRecords;
         this.kafkaTemplate = kafkaTemplate;
         this.dedupService = dedupService;
         this.objectMapper = new ObjectMapper();
@@ -260,7 +257,7 @@ public class NotificationEventConsumer {
             if (serviceId == null || serviceId.isBlank()) {
                 return Optional.empty();
             }
-            return subServiceRepo.isServiceExistById(event.getOrDefault("stylerId", ""), Long.parseLong(serviceId));
+            return stylerRecords.findSubService(event.getOrDefault("stylerId", ""), Long.parseLong(serviceId));
         } catch (NumberFormatException ex) {
             return Optional.empty();
         }
@@ -268,8 +265,8 @@ public class NotificationEventConsumer {
 
     private void sendToBoth(Map<String, String> event, Optional<SubServiceEntity> service, String subject,
                             BodyBuilder bodyBuilder) {
-        Optional<UserEntity> user = userRepo.findByUserId(event.getOrDefault("customerId", ""));
-        Optional<StylerEntity> styler = stylerRepo.findByStylerId(event.getOrDefault("stylerId", ""));
+        Optional<UserEntity> user = customerRecords.findByUserId(event.getOrDefault("customerId", ""));
+        Optional<StylerEntity> styler = stylerRecords.findByStylerId(event.getOrDefault("stylerId", ""));
 
         // An appointment's times are written on the stylist's clock, so a
         // customer in another province needs to be told which clock that is.

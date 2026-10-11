@@ -33,6 +33,8 @@ public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
 
     long countByIdentificationImageUrlContaining(String fragment);
 
+    long countByCoverImageUrlContaining(String fragment);
+
     Optional<StylerEntity> findByPhoneNumber(String phoneNumber);
 
     @Query(value ="SELECT * FROM stylers WHERE business_name LIKE %:businessName%", nativeQuery = true)
