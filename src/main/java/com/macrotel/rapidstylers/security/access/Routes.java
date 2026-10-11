@@ -51,6 +51,8 @@ public final class Routes {
             "/rapid_stylers/detect-location",
             "/rapid_stylers/reverse-geocode",
             "/rapid_stylers/service_areas",
+            "/rapid_stylers/site_content",
+            "/rapid_stylers/site_seo",
     };
 
     /** Anyone may call these: sign-up, sign-in, browsing ({@link #BROWSE}), the Stripe webhook. */
@@ -157,6 +159,16 @@ public final class Routes {
             "/rapid_stylers/admin/promo_codes",
             "/rapid_stylers/admin/save_promo_code",
             "/rapid_stylers/admin/promo_redemptions",
+
+            // Website content
+            "/rapid_stylers/admin/site_content",
+            "/rapid_stylers/admin/site_content_item",
+            "/rapid_stylers/admin/save_site_content",
+            "/rapid_stylers/admin/publish_site_content",
+            "/rapid_stylers/admin/unpublish_site_content",
+            "/rapid_stylers/admin/site_content_history",
+            "/rapid_stylers/admin/restore_site_content",
+            "/rapid_stylers/admin/preview_email_template",
 
             // Admin accounts
             "/rapid_stylers/admin/accounts",
