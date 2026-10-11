@@ -317,9 +317,16 @@ public class SearchService {
                 }
                 for(StylerEntity styler : cityStylers){
                     if(!stylerEligibility.isBookableStyler(styler)) continue;
+                    // Without coordinates there is no distance to check, and a
+                    // null here used to throw and empty the whole search.
+                    if(styler.getLatitude() == null || styler.getLongitude() == null) continue;
                     if(!seenIds.contains(styler.getStylerId())){
                         // Compute Haversine distance for DB results
                         double dist = haversine(latitude, longitude, styler.getLatitude(), styler.getLongitude());
+                        // This step only covers stylists the geo index has not
+                        // caught up with yet, so it keeps the chosen radius too:
+                        // "within 10 km" must not show the far side of the city.
+                        if(dist > radius) continue;
                         allStylerDistances.put(styler.getStylerId(), dist);
                         seenIds.add(styler.getStylerId());
                     }
