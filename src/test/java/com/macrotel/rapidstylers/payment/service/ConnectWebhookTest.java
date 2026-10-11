@@ -29,9 +29,9 @@ class ConnectWebhookTest {
         paymentOps = new PaymentService();
         stylerRepo = mock(StylerRepo.class);
         emailConfig = mock(EmailConfig.class);
-        paymentOps.stylerRepo = stylerRepo;
+        paymentOps.stylerRecords = new com.macrotel.rapidstylers.styler.service.StylerRecords(stylerRepo, mock(com.macrotel.rapidstylers.styler.repo.SubServiceRepo.class));
         paymentOps.emailConfig = emailConfig;
-        paymentOps.bookAppointmentRepo = mock(com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo.class);
+        paymentOps.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(mock(com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo.class));
         // audit() is a no-op on a bare AuditService (null repo guard).
         paymentOps.auditService = new AuditService();
     }

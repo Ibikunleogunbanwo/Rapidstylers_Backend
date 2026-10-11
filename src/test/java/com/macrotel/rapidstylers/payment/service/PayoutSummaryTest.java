@@ -38,8 +38,8 @@ class PayoutSummaryTest {
         services.stripeService = stripeService;
         // Payout summary logic lives in PaymentService — share the same mocks.
         PaymentService paymentOps = new PaymentService();
-        paymentOps.stylerRepo = stylerRepo;
-        paymentOps.bookAppointmentRepo = appointmentRepo;
+        paymentOps.stylerRecords = new com.macrotel.rapidstylers.styler.service.StylerRecords(stylerRepo, mock(com.macrotel.rapidstylers.styler.repo.SubServiceRepo.class));
+        paymentOps.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(appointmentRepo);
         paymentOps.stripeService = stripeService;
         paymentOps.auditService = services.auditService;
         ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);

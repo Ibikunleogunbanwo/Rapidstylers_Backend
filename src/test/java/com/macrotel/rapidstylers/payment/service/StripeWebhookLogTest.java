@@ -82,9 +82,9 @@ class StripeWebhookLogTest {
 
         paymentOps = new PaymentService();
         paymentOps.stripeService = stripeService;
-        paymentOps.bookAppointmentRepo = bookAppointmentRepo;
-        paymentOps.stylerRepo = stylerRepo;
-        paymentOps.userRepo = mock(UserRepo.class);
+        paymentOps.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(bookAppointmentRepo);
+        paymentOps.stylerRecords = new com.macrotel.rapidstylers.styler.service.StylerRecords(stylerRepo, mock(com.macrotel.rapidstylers.styler.repo.SubServiceRepo.class));
+        paymentOps.customerRecords = new com.macrotel.rapidstylers.customer.service.CustomerRecords(mock(UserRepo.class));
         paymentOps.emailConfig = mock(EmailConfig.class);
         paymentOps.auditService = audit;
     }

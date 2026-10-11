@@ -27,8 +27,13 @@ class RefundReviewServiceTest {
     private RefundRepo refundRepo;
     private BookAppointmentRepo bookAppointmentRepo;
 
+    private UserRepo userRepo;
+    private StylerRepo stylerRepo;
+
     @BeforeEach
     void setUp() {
+        userRepo = mock(UserRepo.class);
+        stylerRepo = mock(StylerRepo.class);
         refundRepo = mock(RefundRepo.class);
         bookAppointmentRepo = mock(BookAppointmentRepo.class);
         PaymentService paymentService = new PaymentService();
@@ -37,22 +42,21 @@ class RefundReviewServiceTest {
         review = new RefundReviewService();
         review.paymentService = paymentService;
         review.refundRepo = refundRepo;
-        review.bookAppointmentRepo = bookAppointmentRepo;
-        review.userRepo = mock(UserRepo.class);
-        review.stylerRepo = mock(StylerRepo.class);
-        review.subServiceRepo = mock(SubServiceRepo.class);
+        review.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(bookAppointmentRepo);
+        review.customerRecords = new com.macrotel.rapidstylers.customer.service.CustomerRecords(userRepo);
+        review.stylerRecords = new com.macrotel.rapidstylers.styler.service.StylerRecords(stylerRepo, mock(SubServiceRepo.class));
         review.payoutReversalRepo = mock(com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo.class);
 
         UserEntity customer = new UserEntity();
         customer.setFirstname("Ada");
         customer.setLastname("Obi");
         customer.setEmailAddress("ada@example.com");
-        when(review.userRepo.findByUserId("USER1")).thenReturn(Optional.of(customer));
+        when(userRepo.findByUserId("USER1")).thenReturn(Optional.of(customer));
         StylerEntity stylist = new StylerEntity();
         stylist.setFirstname("Chloé");
         stylist.setLastname("Martin");
         stylist.setBusinessName("Chloé Hair");
-        when(review.stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
     }
 
     private BookAppointmentEntity completedAndPaidOut() {

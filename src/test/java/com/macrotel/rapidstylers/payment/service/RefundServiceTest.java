@@ -70,7 +70,7 @@ class RefundServiceTest {
         ReflectionTestUtils.setField(sharedAudit, "auditLogRepo", mock(AuditLogRepo.class));
         ReflectionTestUtils.setField(sharedAudit, "emailConfig", mock(EmailConfig.class));
         PaymentService paymentOps = new PaymentService();
-        paymentOps.bookAppointmentRepo = bookAppointmentRepo;
+        paymentOps.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(bookAppointmentRepo);
         paymentOps.refundRepo = refundRepo;
         paymentOps.stripeService = stripeService;
         paymentOps.outboxEventService = outboxEventService;

@@ -1,9 +1,8 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.common.entity.AuditLogEntity;
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.config.ThrottledLog;
@@ -43,9 +42,9 @@ public class PaymentReconciliationService {
     private static final Logger LOG = Logger.getLogger(PaymentReconciliationService.class.getName());
 
     @Autowired
-    private BookAppointmentRepo bookAppointmentRepo;
+    private AppointmentRecords appointmentRecords;
     @Autowired
-    private AuditLogRepo auditLogRepo;
+    private AuditService auditService;
     @Autowired
     private EmailConfig emailConfig;
 
@@ -127,7 +126,7 @@ public class PaymentReconciliationService {
         Map<String, Object> report = new LinkedHashMap<>();
 
         Map<String, BookAppointmentEntity> localByIntent = new HashMap<>();
-        for (BookAppointmentEntity appointment : bookAppointmentRepo.findAll()) {
+        for (BookAppointmentEntity appointment : appointmentRecords.findAll()) {
             if (appointment.getPaymentIntentId() != null && !appointment.getPaymentIntentId().isBlank()) {
                 localByIntent.put(appointment.getPaymentIntentId(), appointment);
             }
@@ -188,12 +187,8 @@ public class PaymentReconciliationService {
 
     private void audit(String actorId, String actorRole, String action, String resourceType,
                        String resourceId, String details) {
-        try {
-            if (auditLogRepo != null) {
-                auditLogRepo.save(new AuditLogEntity(actorId, actorRole, action, resourceType, resourceId, details));
-            }
-        } catch (Exception ex) {
-            LOG.warning("Audit log write failed: " + ex.getMessage());
+        if (auditService != null) {
+            auditService.audit(actorId, actorRole, action, resourceType, resourceId, details);
         }
     }
 

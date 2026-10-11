@@ -47,7 +47,7 @@ class DisputeWebhookTest {
         ReflectionTestUtils.setField(sharedAudit, "emailConfig", emailConfig);
         org.springframework.test.util.ReflectionTestUtils.setField(sharedAudit, "adminAlertEmail", "ops@example.com");
         PaymentService paymentOps = new PaymentService();
-        paymentOps.bookAppointmentRepo = bookAppointmentRepo;
+        paymentOps.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(bookAppointmentRepo);
         paymentOps.stripeService = stripeService;
         paymentOps.auditService = sharedAudit;
         services.auditService = sharedAudit;

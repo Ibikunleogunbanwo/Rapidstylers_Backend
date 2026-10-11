@@ -1,7 +1,6 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.common.entity.AuditLogEntity;
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
 import com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo;
@@ -37,7 +36,7 @@ public class PayoutReversalService {
     @Autowired
     private StripeService stripeService;
     @Autowired
-    private AuditLogRepo auditLogRepo;
+    private AuditService auditService;
     @Autowired
     private EmailConfig emailConfig;
 
@@ -187,12 +186,8 @@ public class PayoutReversalService {
 
     private void audit(String actorId, String actorRole, String action, String resourceType,
                        String resourceId, String details) {
-        try {
-            if (auditLogRepo != null) {
-                auditLogRepo.save(new AuditLogEntity(actorId, actorRole, action, resourceType, resourceId, details));
-            }
-        } catch (Exception ex) {
-            LOG.warning("Audit log write failed: " + ex.getMessage());
+        if (auditService != null) {
+            auditService.audit(actorId, actorRole, action, resourceType, resourceId, details);
         }
     }
 

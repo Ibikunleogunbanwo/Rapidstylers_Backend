@@ -1,6 +1,5 @@
 package com.macrotel.rapidstylers.payment.service;
 
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
 import com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo;
@@ -41,7 +40,7 @@ class PayoutReversalServiceTest {
         service = new PayoutReversalService();
         ReflectionTestUtils.setField(service, "payoutReversalRepo", payoutReversalRepo);
         ReflectionTestUtils.setField(service, "stripeService", stripeService);
-        ReflectionTestUtils.setField(service, "auditLogRepo", mock(AuditLogRepo.class));
+        ReflectionTestUtils.setField(service, "auditService", new com.macrotel.rapidstylers.common.service.AuditService());
         ReflectionTestUtils.setField(service, "emailConfig", emailConfig);
         ReflectionTestUtils.setField(service, "maxAttempts", 5);
         ReflectionTestUtils.setField(service, "retryIntervalMs", 1800000L);

@@ -2,7 +2,6 @@ package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
-import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.stripe.model.PaymentIntent;
 import java.util.List;
@@ -25,8 +24,8 @@ class PaymentReconciliationServiceTest {
     void setUp() {
         service = new PaymentReconciliationService();
         bookAppointmentRepo = mock(BookAppointmentRepo.class);
-        ReflectionTestUtils.setField(service, "bookAppointmentRepo", bookAppointmentRepo);
-        ReflectionTestUtils.setField(service, "auditLogRepo", mock(AuditLogRepo.class));
+        ReflectionTestUtils.setField(service, "appointmentRecords", new com.macrotel.rapidstylers.booking.service.AppointmentRecords(bookAppointmentRepo));
+        ReflectionTestUtils.setField(service, "auditService", new com.macrotel.rapidstylers.common.service.AuditService());
         ReflectionTestUtils.setField(service, "emailConfig", mock(EmailConfig.class));
         ReflectionTestUtils.setField(service, "windowHours", 72L);
         ReflectionTestUtils.setField(service, "reconcileIntervalMs", 86400000L);

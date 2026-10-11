@@ -104,8 +104,8 @@ class BookingWorkflowTest {
         // Payment ops (commission, receipts, refunds) live in PaymentService —
         // share the same mocks and rate default (see docs/simplification-plan.md).
         PaymentService paymentOps = new PaymentService();
-        ReflectionTestUtils.setField(paymentOps, "bookAppointmentRepo", appointmentRepo);
-        ReflectionTestUtils.setField(paymentOps, "stylerRepo", stylerRepo);
+        ReflectionTestUtils.setField(paymentOps, "appointmentRecords", new AppointmentRecords(appointmentRepo));
+        ReflectionTestUtils.setField(paymentOps, "stylerRecords", new com.macrotel.rapidstylers.styler.service.StylerRecords(stylerRepo, subServiceRepo));
         ReflectionTestUtils.setField(paymentOps, "stripeService", stripeService);
         ReflectionTestUtils.setField(paymentOps, "auditService", services.auditService);
         ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);

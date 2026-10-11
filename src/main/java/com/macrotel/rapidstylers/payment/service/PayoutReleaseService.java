@@ -1,14 +1,14 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -48,9 +48,9 @@ public class PayoutReleaseService {
     public static final String HOLD_NO_PAYOUT_ACCOUNT = "NO_PAYOUT_ACCOUNT";
 
     @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
     StripeService stripeService;
     @Autowired
@@ -81,9 +81,8 @@ public class PayoutReleaseService {
             return;
         }
         try {
-            for (BookAppointmentEntity appointment : bookAppointmentRepo
-                    .findTop50ByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtLessThanEqual(
-                            "0", "CAPTURED", now())) {
+            for (BookAppointmentEntity appointment : appointmentRecords
+                    .payoutsDueBy(now())) {
                 release(appointment);
             }
         } catch (Exception ex) {
@@ -116,7 +115,7 @@ public class PayoutReleaseService {
             return false;
         }
         try {
-            Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
+            Optional<StylerEntity> styler = stylerRecords.findByStylerId(appointment.getStylerId());
             String destination = styler.map(StylerEntity::getStripeConnectAccountId).orElse(null);
             long keptCents = paymentService.refundableCents(appointment);
             double percent = paymentService.effectiveCommissionPercentForBooking(appointment);
@@ -141,7 +140,7 @@ public class PayoutReleaseService {
             }
             appointment.setPayoutDueAt(null);
             appointment.setPayoutHoldReason(null);
-            bookAppointmentRepo.save(appointment);
+            appointmentRecords.save(appointment);
             return true;
         } catch (Exception ex) {
             // Left due, so the next run tries again with the same idempotency key.
@@ -174,7 +173,7 @@ public class PayoutReleaseService {
                 release(appointment);
             }
         }
-        bookAppointmentRepo.save(appointment);
+        appointmentRecords.save(appointment);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage("Thanks for confirming");
         response.setData(java.util.Collections.emptyList());
@@ -209,7 +208,7 @@ public class PayoutReleaseService {
         appointment.setServiceDisputeReason(why.length() > 1000 ? why.substring(0, 1000) : why);
         appointment.setServiceDisputedAt(now());
         appointment.setPayoutDueAt(null); // held: only resolving the dispute pays the stylist
-        bookAppointmentRepo.save(appointment);
+        appointmentRecords.save(appointment);
         auditService.audit(userId, "CUSTOMER", "SERVICE_DISPUTED", "APPOINTMENT", appointmentId,
                 "Customer disputed the appointment: " + appointment.getServiceDisputeReason());
         alertAdmin("Appointment " + appointmentId + " was disputed by the customer: "
@@ -224,7 +223,7 @@ public class PayoutReleaseService {
     public BaseResponse openDisputes() {
         BaseResponse response = new BaseResponse(true);
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (BookAppointmentEntity appointment : bookAppointmentRepo.findByServiceDisputeStatus(DISPUTE_OPEN)) {
+        for (BookAppointmentEntity appointment : appointmentRecords.findByServiceDisputeStatus(DISPUTE_OPEN)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("appointmentId", appointment.getAppointmentId());
             row.put("userId", appointment.getUserId());
@@ -253,7 +252,7 @@ public class PayoutReleaseService {
     public BaseResponse resolveDispute(String adminId, String appointmentId, String note) {
         BaseResponse response = new BaseResponse(true);
         Optional<BookAppointmentEntity> found = appointmentId == null ? Optional.empty()
-                : bookAppointmentRepo.findByAppointmentIdForUpdate(appointmentId.trim());
+                : appointmentRecords.findByAppointmentIdForUpdate(appointmentId.trim());
         if (found.isEmpty()) {
             return Responses.errorResponse(response, "Invalid Appointment Id");
         }
@@ -271,7 +270,7 @@ public class PayoutReleaseService {
             if (!"CAPTURED".equals(appointment.getPaymentStatus())) {
                 appointment.setPayoutDueAt(null); // fully refunded: nothing left to pay
             }
-            bookAppointmentRepo.save(appointment);
+            appointmentRecords.save(appointment);
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("appointmentId", appointment.getAppointmentId());
@@ -290,11 +289,11 @@ public class PayoutReleaseService {
      * held payout again once Stripe says payouts are enabled.
      */
     private void holdForPayoutAccount(BookAppointmentEntity appointment, StylerEntity styler) {
-        boolean firstHeld = !bookAppointmentRepo.existsByStylerIdAndPayoutHoldReason(
+        boolean firstHeld = !appointmentRecords.existsByStylerIdAndPayoutHoldReason(
                 appointment.getStylerId(), HOLD_NO_PAYOUT_ACCOUNT);
         appointment.setPayoutHoldReason(HOLD_NO_PAYOUT_ACCOUNT);
         appointment.setPayoutDueAt(null);
-        bookAppointmentRepo.save(appointment);
+        appointmentRecords.save(appointment);
         auditService.audit("system", "SYSTEM", "PAYOUT_HELD", "APPOINTMENT", appointment.getAppointmentId(),
                 "Stylist has no payout account that can receive payouts yet");
         if (firstHeld && styler != null) {
@@ -324,12 +323,12 @@ public class PayoutReleaseService {
     public BaseResponse unpaidPayouts() {
         BaseResponse response = new BaseResponse(true);
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (BookAppointmentEntity appointment : bookAppointmentRepo
-                .findByStatusAndPaymentStatusAndStripeTransferIdIsNullAndPayoutDueAtIsNull("0", "CAPTURED")) {
+        for (BookAppointmentEntity appointment : appointmentRecords
+                .paidWithNoPayoutScheduled()) {
             if (DISPUTE_OPEN.equals(appointment.getServiceDisputeStatus())) {
                 continue;
             }
-            Optional<StylerEntity> styler = stylerRepo.findByStylerId(appointment.getStylerId());
+            Optional<StylerEntity> styler = stylerRecords.findByStylerId(appointment.getStylerId());
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("appointmentId", appointment.getAppointmentId());
             row.put("stylerId", appointment.getStylerId());
@@ -357,7 +356,7 @@ public class PayoutReleaseService {
     public BaseResponse payNow(String adminId, String appointmentId) {
         BaseResponse response = new BaseResponse(true);
         Optional<BookAppointmentEntity> found = appointmentId == null ? Optional.empty()
-                : bookAppointmentRepo.findByAppointmentIdForUpdate(appointmentId.trim());
+                : appointmentRecords.findByAppointmentIdForUpdate(appointmentId.trim());
         if (found.isEmpty()) {
             return Responses.errorResponse(response, "Invalid Appointment Id");
         }
@@ -376,7 +375,7 @@ public class PayoutReleaseService {
         appointment.setPayoutDueAt(now());
         boolean paid = release(appointment);
         if (!paid && appointment.getPayoutDueAt() != null) {
-            bookAppointmentRepo.save(appointment); // failed: left due for the next run
+            appointmentRecords.save(appointment); // failed: left due for the next run
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("appointmentId", appointment.getAppointmentId());
@@ -403,7 +402,7 @@ public class PayoutReleaseService {
         if (userId == null || appointmentId == null || appointmentId.isBlank()) {
             return Optional.empty();
         }
-        return bookAppointmentRepo.findByAppointmentIdForUpdate(appointmentId.trim())
+        return appointmentRecords.findByAppointmentIdForUpdate(appointmentId.trim())
                 .filter(a -> userId.equals(a.getUserId()) && "0".equals(a.getStatus()));
     }
 

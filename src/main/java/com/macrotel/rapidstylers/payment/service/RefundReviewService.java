@@ -1,17 +1,16 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.payment.entity.PayoutReversalEntity;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
 import com.macrotel.rapidstylers.payment.repo.PayoutReversalRepo;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -44,13 +43,11 @@ public class RefundReviewService {
     @Autowired
     RefundRepo refundRepo;
     @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
-    @Autowired
-    SubServiceRepo subServiceRepo;
+    StylerRecords stylerRecords;
     @Autowired
     PayoutReversalRepo payoutReversalRepo;
 
@@ -60,7 +57,7 @@ public class RefundReviewService {
         if (appointmentId == null || appointmentId.isBlank()) {
             return Responses.errorResponse(response, "appointmentId is required");
         }
-        Optional<BookAppointmentEntity> appointment = bookAppointmentRepo.findByAppointmentId(appointmentId.trim());
+        Optional<BookAppointmentEntity> appointment = appointmentRecords.findByAppointmentId(appointmentId.trim());
         if (appointment.isEmpty()) {
             return Responses.errorResponse(response, "Invalid Appointment Id");
         }
@@ -87,7 +84,7 @@ public class RefundReviewService {
             for (RefundEntity refund : refunds) {
                 Map<String, Object> row = refundFields(refund);
                 row.put("payment", payments.computeIfAbsent(refund.getAppointmentId(),
-                        id -> bookAppointmentRepo.findByAppointmentId(id).map(this::payment).orElse(null)));
+                        id -> appointmentRecords.findByAppointmentId(id).map(this::payment).orElse(null)));
                 rows.add(row);
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -116,12 +113,12 @@ public class RefundReviewService {
         data.put("stylistNote", appointment.getStylerNote());
 
         data.put("customerId", appointment.getUserId());
-        userRepo.findByUserId(appointment.getUserId()).ifPresent(user -> {
+        customerRecords.findByUserId(appointment.getUserId()).ifPresent(user -> {
             data.put("customerName", fullName(user.getFirstname(), user.getLastname()));
             data.put("customerEmail", user.getEmailAddress());
         });
         data.put("stylistId", appointment.getStylerId());
-        stylerRepo.findByStylerId(appointment.getStylerId()).ifPresent(styler -> {
+        stylerRecords.findByStylerId(appointment.getStylerId()).ifPresent(styler -> {
             data.put("stylistName", fullName(styler.getFirstname(), styler.getLastname()));
             data.put("businessName", styler.getBusinessName());
         });
@@ -181,7 +178,7 @@ public class RefundReviewService {
     private String serviceName(String subServiceId) {
         try {
             return subServiceId == null ? null
-                    : subServiceRepo.findById(Long.valueOf(subServiceId)).map(SubServiceEntity::getName).orElse(null);
+                    : stylerRecords.findSubServiceById(Long.valueOf(subServiceId)).map(SubServiceEntity::getName).orElse(null);
         } catch (NumberFormatException ex) {
             return null;
         }

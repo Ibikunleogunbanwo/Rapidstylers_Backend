@@ -1,13 +1,12 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.stripe.model.Account;
 import com.stripe.model.AccountLink;
@@ -27,11 +26,9 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class ConnectAccountService {
     private static final Logger LOG = Logger.getLogger(ConnectAccountService.class.getName());
     @Autowired
-    StylerRepo stylerRepo;
+    StylerRecords stylerRecords;
     @Autowired
-    SubServiceRepo subServiceRepo;
-    @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
     StripeService stripeService;
     // Payment domain ops (carved out of this class; see simplification-plan.md).
@@ -54,7 +51,7 @@ public class ConnectAccountService {
             if(!stripeService.isConfigured()){
                 return Responses.errorResponse(response, "Payments are not configured yet");
             }
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(stylerId);
             if(stylerOpt.isEmpty()){
                 return Responses.errorResponse(response, "Invalid Styler Id");
             }
@@ -66,7 +63,7 @@ public class ConnectAccountService {
                 accountId = account.getId();
                 styler.setStripeConnectAccountId(accountId);
                 styler.setConnectOnboardingStatus("PENDING");
-                stylerRepo.save(styler);
+                stylerRecords.save(styler);
             }
             AccountLink link = stripeService.createAccountLink(accountId, refreshUrl, returnUrl);
             Map<String, Object> data = new LinkedHashMap<>();
@@ -91,7 +88,7 @@ public class ConnectAccountService {
     public BaseResponse getStylerBusinessSummary(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(stylerId);
             if(stylerOpt.isEmpty()){
                 return Responses.errorResponse(response, "Invalid Styler Id");
             }
@@ -113,7 +110,7 @@ public class ConnectAccountService {
         BaseResponse response = new BaseResponse(true);
         try{
             List<Map<String, Object>> rows = new ArrayList<>();
-            for(StylerEntity styler : stylerRepo.findAll()){
+            for(StylerEntity styler : stylerRecords.findAll()){
                 Map<String, Object> row = new LinkedHashMap<>(businessSummaryData(styler));
                 row.put("stylerId", styler.getStylerId());
                 row.put("businessName", styler.getBusinessName());
@@ -142,7 +139,7 @@ public class ConnectAccountService {
      */
     private Map<String, Object> businessSummaryData(StylerEntity styler){
         String stylerId = styler.getStylerId();
-        List<BookAppointmentEntity> appointments = bookAppointmentRepo.findByStylerId(stylerId);
+        List<BookAppointmentEntity> appointments = appointmentRecords.findByStylerId(stylerId);
         if(appointments == null) appointments = new ArrayList<>();
 
         long total = appointments.size();
@@ -151,7 +148,7 @@ public class ConnectAccountService {
         BigDecimal grossRevenue = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         Map<String, Integer> serviceCounts = new LinkedHashMap<>();
         Map<String, String> serviceNames = new HashMap<>();
-        for(SubServiceEntity service : subServiceRepo.findByStylerId(stylerId)){
+        for(SubServiceEntity service : stylerRecords.subServicesOf(stylerId)){
             serviceNames.put(String.valueOf(service.getId()), service.getName());
         }
 
@@ -210,7 +207,7 @@ public class ConnectAccountService {
     public BaseResponse getStylerConnectStatus(String stylerId){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(stylerId);
             if(stylerOpt.isEmpty()){
                 return Responses.errorResponse(response, "Invalid Styler Id");
             }
@@ -223,7 +220,7 @@ public class ConnectAccountService {
             // Earnings kept back until payout setup is done, for a "finish setup" banner.
             long waitingCents = 0;
             int waiting = 0;
-            for (BookAppointmentEntity held : bookAppointmentRepo
+            for (BookAppointmentEntity held : appointmentRecords
                     .findByStylerIdAndPayoutHoldReason(stylerId, PayoutReleaseService.HOLD_NO_PAYOUT_ACCOUNT)) {
                 waiting++;
                 waitingCents += held.getStylistShareCents() == null ? 0 : held.getStylistShareCents();
@@ -250,7 +247,7 @@ public class ConnectAccountService {
         BaseResponse response = new BaseResponse(true);
         try {
             List<Map<String, Object>> rows = new ArrayList<>();
-            for(StylerEntity styler : stylerRepo.findAll()){
+            for(StylerEntity styler : stylerRecords.findAll()){
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("stylerId", styler.getStylerId());
                 row.put("name", (styler.getFirstname() + " " + styler.getLastname()).trim());

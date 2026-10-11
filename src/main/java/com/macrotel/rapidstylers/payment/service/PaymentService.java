@@ -1,13 +1,13 @@
 package com.macrotel.rapidstylers.payment.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
-import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.payment.entity.RefundEntity;
 import com.macrotel.rapidstylers.payment.pojo.RefundRequestData;
@@ -16,8 +16,7 @@ import com.macrotel.rapidstylers.payment.repo.PlatformSettingRepo;
 import com.macrotel.rapidstylers.payment.repo.RefundRepo;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
-import com.macrotel.rapidstylers.styler.repo.StylerRepo;
-import com.macrotel.rapidstylers.styler.repo.SubServiceRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import com.stripe.model.Account;
 import com.stripe.model.Balance;
@@ -61,13 +60,11 @@ public class PaymentService {
     private final AppUtils appUtils = new AppUtils();
 
     @Autowired
-    BookAppointmentRepo bookAppointmentRepo;
+    AppointmentRecords appointmentRecords;
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
-    StylerRepo stylerRepo;
-    @Autowired
-    SubServiceRepo subServiceRepo;
+    StylerRecords stylerRecords;
     @Autowired
     CardDetailsRepo cardDetailsRepo;
     @Autowired
@@ -187,14 +184,14 @@ public class PaymentService {
             String serviceName = "Service";
             if (appointment.getSubServiceId() != null && !appointment.getSubServiceId().isEmpty()) {
                 try {
-                    Optional<SubServiceEntity> sub = subServiceRepo.isServiceExistById(appointment.getStylerId(), Long.parseLong(appointment.getSubServiceId()));
+                    Optional<SubServiceEntity> sub = stylerRecords.findSubService(appointment.getStylerId(), Long.parseLong(appointment.getSubServiceId()));
                     if (sub.isPresent() && sub.get().getName() != null) {
                         serviceName = sub.get().getName();
                     }
                 } catch (Exception ignored) {
                 }
             }
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(appointment.getStylerId());
+            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(appointment.getStylerId());
             // The receipt repeats the appointment's time, which is written on
             // the stylist's clock, so it names that zone too.
             String zoneSuffix = VendorZoneResolver.timeSuffixForStyler(
@@ -212,7 +209,7 @@ public class PaymentService {
                     + "<p>Thank you,<br>The RapidStylers Team</p>";
             String subject = "RapidStylers — Payment receipt";
 
-            Optional<UserEntity> userOpt = userRepo.findByUserId(appointment.getUserId());
+            Optional<UserEntity> userOpt = customerRecords.findByUserId(appointment.getUserId());
             String customerEmail = userOpt.map(UserEntity::getEmailAddress).orElse(null);
             if (customerEmail != null && !customerEmail.isBlank()) {
                 String name = userOpt.map(u -> (u.getFirstname() + " " + u.getLastname()).trim()).orElse("there");
@@ -276,7 +273,7 @@ public class PaymentService {
         String type = event.getType();
         if ("payment_intent.succeeded".equals(type)) {
             PaymentIntent intent = (PaymentIntent) event.getData().getObject();
-            Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(intent.getId());
+            Optional<BookAppointmentEntity> booking = appointmentRecords.findByPaymentIntentId(intent.getId());
             if (booking.isEmpty()) return unmatchedIntent(intent.getId());
             BookAppointmentEntity a = booking.get();
             // Capture is normally persisted synchronously; this webhook keeps
@@ -284,7 +281,7 @@ public class PaymentService {
             boolean alreadyCaptured = "CAPTURED".equals(a.getPaymentStatus());
             a.setPaymentStatus("CAPTURED");
             a.setPaymentFailureCode(null);
-            bookAppointmentRepo.save(a);
+            appointmentRecords.save(a);
             if (!alreadyCaptured) {
                 sendPaymentReceipt(a);
             }
@@ -294,22 +291,22 @@ public class PaymentService {
         }
         if ("payment_intent.payment_failed".equals(type)) {
             PaymentIntent intent = (PaymentIntent) event.getData().getObject();
-            Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(intent.getId());
+            Optional<BookAppointmentEntity> booking = appointmentRecords.findByPaymentIntentId(intent.getId());
             if (booking.isEmpty()) return unmatchedIntent(intent.getId());
             BookAppointmentEntity a = booking.get();
             a.setPaymentStatus("PAYMENT_FAILED");
             a.setPaymentFailureCode("PAYMENT_FAILED");
-            bookAppointmentRepo.save(a);
+            appointmentRecords.save(a);
             auditService.audit("system", "SYSTEM", "PAYMENT_FAILED", "APPOINTMENT", a.getAppointmentId(), "Payment failed");
             return new Delivery("processed", "appointment=" + a.getAppointmentId() + " paymentStatus=PAYMENT_FAILED");
         }
         if ("payment_intent.canceled".equals(type)) {
             PaymentIntent intent = (PaymentIntent) event.getData().getObject();
-            Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(intent.getId());
+            Optional<BookAppointmentEntity> booking = appointmentRecords.findByPaymentIntentId(intent.getId());
             if (booking.isEmpty()) return unmatchedIntent(intent.getId());
             BookAppointmentEntity a = booking.get();
             a.setPaymentStatus("RELEASED");
-            bookAppointmentRepo.save(a);
+            appointmentRecords.save(a);
             auditService.audit("system", "SYSTEM", "PAYMENT_RELEASED", "APPOINTMENT", a.getAppointmentId(), "Payment hold released");
             return new Delivery("processed", "appointment=" + a.getAppointmentId() + " paymentStatus=RELEASED");
         }
@@ -368,14 +365,14 @@ public class PaymentService {
         if (paymentIntentId == null || paymentIntentId.isBlank()) {
             return "dispute " + (dispute == null ? "unknown" : dispute.getId()) + " carries no payment intent";
         }
-        Optional<BookAppointmentEntity> booking = bookAppointmentRepo.findByPaymentIntentId(paymentIntentId);
+        Optional<BookAppointmentEntity> booking = appointmentRecords.findByPaymentIntentId(paymentIntentId);
         if (booking.isEmpty()) {
             return "no booking for payment intent " + paymentIntentId;
         }
         BookAppointmentEntity a = booking.get();
         if (opened) {
             a.setPaymentStatus("DISPUTED");
-            bookAppointmentRepo.save(a);
+            appointmentRecords.save(a);
             auditService.audit("system", "SYSTEM", "PAYMENT_DISPUTE_OPENED", "APPOINTMENT", a.getAppointmentId(),
                     "Chargeback opened (dispute " + dispute.getId() + ")");
             auditService.alertAdmin("Payment dispute opened for appointment " + a.getAppointmentId()
@@ -384,7 +381,7 @@ public class PaymentService {
         }
         boolean lost = "lost".equalsIgnoreCase(dispute.getStatus());
         a.setPaymentStatus(lost ? "DISPUTE_LOST" : "CAPTURED");
-        bookAppointmentRepo.save(a);
+        appointmentRecords.save(a);
         auditService.audit("system", "SYSTEM", "PAYMENT_DISPUTE_CLOSED", "APPOINTMENT", a.getAppointmentId(),
                 "Dispute closed (" + dispute.getStatus() + ") for dispute " + dispute.getId());
         return "appointment=" + a.getAppointmentId() + " dispute=" + dispute.getId()
@@ -411,7 +408,7 @@ public class PaymentService {
         } else {
             status = "PENDING";
         }
-        Optional<StylerEntity> styler = stylerRepo.findByStripeConnectAccountId(account.getId());
+        Optional<StylerEntity> styler = stylerRecords.findByStripeConnectAccountId(account.getId());
         if (styler.isEmpty()) {
             return "no styler is linked to Connect account " + account.getId();
         }
@@ -421,7 +418,7 @@ public class PaymentService {
         // Persist the rejection reason so the Payouts page can show it; clear it
         // once the account is verified or still in progress.
         s.setConnectDisabledReason("REJECTED".equals(status) ? disabledReason : null);
-        stylerRepo.save(s);
+        stylerRecords.save(s);
         auditService.audit("system", "SYSTEM", "CONNECT_ACCOUNT_UPDATED", "STYLER", s.getStylerId(), status);
         int queued = 0;
         if (PayoutReleaseService.canReceivePayouts(s)) {
@@ -450,14 +447,14 @@ public class PaymentService {
      * longer marked held.
      */
     int queueHeldPayouts(String stylerId) {
-        List<BookAppointmentEntity> held = bookAppointmentRepo.findByStylerIdAndPayoutHoldReason(
+        List<BookAppointmentEntity> held = appointmentRecords.findByStylerIdAndPayoutHoldReason(
                 stylerId, PayoutReleaseService.HOLD_NO_PAYOUT_ACCOUNT);
         // A day back, so it is already due whatever the app's time zone.
         LocalDateTime alreadyDue = LocalDateTime.now(java.time.ZoneOffset.UTC).minusDays(1);
         for (BookAppointmentEntity appointment : held) {
             appointment.setPayoutHoldReason(null);
             appointment.setPayoutDueAt(alreadyDue);
-            bookAppointmentRepo.save(appointment);
+            appointmentRecords.save(appointment);
         }
         return held.size();
     }
@@ -505,7 +502,7 @@ public class PaymentService {
             refund.setStatus("COMPLETED");
             refund.setCompletedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             appointment.setPaymentStatus("REFUNDED");
-            bookAppointmentRepo.save(appointment);
+            appointmentRecords.save(appointment);
             refundRepo.save(refund);
             auditService.audit(actorId, "SYSTEM", "PAYMENT_REFUND_AUTO", "APPOINTMENT", appointment.getAppointmentId(),
                     "Automatic refund of $" + refund.getAmount() + " — " + reason);
@@ -556,7 +553,7 @@ public class PaymentService {
             }
             // Lock the appointment row so an admin refund racing a cancellation
             // serializes instead of refunding the same payment twice.
-            Optional<BookAppointmentEntity> appointmentOpt = bookAppointmentRepo.findByAppointmentIdForUpdate(data.getAppointmentId().trim());
+            Optional<BookAppointmentEntity> appointmentOpt = appointmentRecords.findByAppointmentIdForUpdate(data.getAppointmentId().trim());
             if (appointmentOpt.isEmpty()) {
                 return errorResponse(response, "Invalid Appointment Id");
             }
@@ -611,7 +608,7 @@ public class PaymentService {
                 boolean fullyRefunded = refundedNowCents >= capturedCents;
                 if (fullyRefunded) {
                     appointment.setPaymentStatus("REFUNDED");
-                    bookAppointmentRepo.save(appointment);
+                    appointmentRecords.save(appointment);
                 }
                 refundRepo.save(refund);
                 auditService.audit(adminId, "ADMIN", "PAYMENT_REFUND", "APPOINTMENT", appointment.getAppointmentId(),
@@ -652,7 +649,7 @@ public class PaymentService {
     public BaseResponse getStylerPayouts(String stylerId) {
         BaseResponse response = new BaseResponse(true);
         try {
-            Optional<StylerEntity> stylerOpt = stylerRepo.findByStylerId(stylerId);
+            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(stylerId);
             if (stylerOpt.isEmpty()) {
                 return errorResponse(response, "Invalid Styler Id");
             }
@@ -663,7 +660,7 @@ public class PaymentService {
             BigDecimal totalEarned = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
             BigDecimal totalCommission = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
             List<Map<String, Object>> appointments = new ArrayList<>();
-            for (BookAppointmentEntity appointment : bookAppointmentRepo.findByStylerId(stylerId)) {
+            for (BookAppointmentEntity appointment : appointmentRecords.findByStylerId(stylerId)) {
                 if (!"0".equals(appointment.getStatus())
                         || appointment.getPaymentIntentId() == null
                         || !"CAPTURED".equals(appointment.getPaymentStatus())) {

@@ -8,6 +8,7 @@ import com.macrotel.rapidstylers.auth.service.AuthService;
 import com.macrotel.rapidstylers.auth.service.OtpService;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
+import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
 import com.macrotel.rapidstylers.booking.service.BookingRetries;
 import com.macrotel.rapidstylers.booking.service.BookingService;
@@ -25,6 +26,7 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.customer.service.CustomerService;
 import com.macrotel.rapidstylers.engagement.repo.FeedBackRepo;
 import com.macrotel.rapidstylers.engagement.repo.LoyaltyAccountRepo;
@@ -63,6 +65,7 @@ import com.macrotel.rapidstylers.styler.service.PortfolioService;
 import com.macrotel.rapidstylers.styler.service.SearchService;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerProfileService;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.StylerService;
 import com.macrotel.rapidstylers.styler.service.StylerSignupRetries;
 
@@ -162,7 +165,10 @@ public class TestServices {
             PayoutReleaseService.class,
             StylerSignupRetries.class,
             UploadOwnership.class,
-            StylerProfileService.class);
+            StylerProfileService.class,
+            AppointmentRecords.class,
+            StylerRecords.class,
+            CustomerRecords.class);
 
     private final Map<Class<?>, Object> built = new LinkedHashMap<>();
 

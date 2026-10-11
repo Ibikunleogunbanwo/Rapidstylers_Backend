@@ -3,7 +3,7 @@ package com.macrotel.rapidstylers.payment.service;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
-import com.macrotel.rapidstylers.customer.repo.UserRepo;
+import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.payment.entity.CardDetailsEntity;
 import com.macrotel.rapidstylers.payment.pojo.CardDetailsData;
 import com.macrotel.rapidstylers.payment.repo.CardDetailsRepo;
@@ -22,7 +22,7 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class CardService {
     private static final Logger LOG = Logger.getLogger(CardService.class.getName());
     @Autowired
-    UserRepo userRepo;
+    CustomerRecords customerRecords;
     @Autowired
     CardDetailsRepo cardDetailsRepo;
     @Autowired
@@ -34,7 +34,7 @@ public class CardService {
             if(!stripeService.isConfigured()){
                 return Responses.errorResponse(response, "Payments are not configured yet");
             }
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(userId);
+            Optional<UserEntity> isUserExist = customerRecords.findByUserId(userId);
             if(isUserExist.isEmpty()){
                 return Responses.errorResponse(response, "Invalid User Id");
             }
@@ -80,7 +80,7 @@ public class CardService {
     public BaseResponse updateUserCardDetails(CardDetailsData cardDetailsData){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<UserEntity> isUserExist = userRepo.findByUserId(cardDetailsData.getUserId());
+            Optional<UserEntity> isUserExist = customerRecords.findByUserId(cardDetailsData.getUserId());
             if(isUserExist.isEmpty()){
                 return Responses.errorResponse(response, "Invalid User Id");
             }

@@ -39,10 +39,12 @@ class PayoutReleaseServiceTest {
     private StripeService stripeService;
     private RefundRepo refundRepo;
     private EmailConfig emailConfig;
+    private StylerRepo stylerRepo;
 
     @BeforeEach
     void setUp() throws Exception {
         bookAppointmentRepo = mock(BookAppointmentRepo.class);
+        stylerRepo = mock(StylerRepo.class);
         stripeService = mock(StripeService.class);
         refundRepo = mock(RefundRepo.class);
         emailConfig = mock(EmailConfig.class);
@@ -58,8 +60,8 @@ class PayoutReleaseServiceTest {
         ReflectionTestUtils.setField(auditService, "emailConfig", emailConfig);
 
         payouts = new PayoutReleaseService();
-        payouts.bookAppointmentRepo = bookAppointmentRepo;
-        payouts.stylerRepo = mock(StylerRepo.class);
+        payouts.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(bookAppointmentRepo);
+        payouts.stylerRecords = new com.macrotel.rapidstylers.styler.service.StylerRecords(stylerRepo, mock(com.macrotel.rapidstylers.styler.repo.SubServiceRepo.class));
         payouts.stripeService = stripeService;
         payouts.paymentService = paymentService;
         payouts.auditService = auditService;
@@ -68,7 +70,7 @@ class PayoutReleaseServiceTest {
 
         StylerEntity stylist = new StylerEntity();
         stylist.setStripeConnectAccountId("acct_1");
-        when(payouts.stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
     }
 
     /** A $125 booking at 12% commission, completed, its payout waiting. */
@@ -221,7 +223,7 @@ class PayoutReleaseServiceTest {
         StylerEntity stylist = new StylerEntity();
         stylist.setStylerId("STYLER1");
         stylist.setEmailAddress("chloe@example.com");
-        when(payouts.stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(stylist));
         return stylist;
     }
 
@@ -269,7 +271,7 @@ class PayoutReleaseServiceTest {
         held.setPayoutDueAt(null);
         held.setPayoutHoldReason("NO_PAYOUT_ACCOUNT");
         PaymentService paymentService = payouts.paymentService;
-        paymentService.bookAppointmentRepo = bookAppointmentRepo;
+        paymentService.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(bookAppointmentRepo);
         when(bookAppointmentRepo.findByStylerIdAndPayoutHoldReason("STYLER1", "NO_PAYOUT_ACCOUNT")).thenReturn(List.of(held));
 
         int queued = paymentService.queueHeldPayouts("STYLER1");
