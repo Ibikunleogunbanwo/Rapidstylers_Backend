@@ -73,4 +73,9 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
                                                     @Param("stylerId") String stylerId,
                                                     @Param("appointmentDate") String appointmentDate,
                                                     @Param("arrivalTime") String arrivalTime);
+
+    /** Per customer: [userId, number of bookings, latest appointment date]. */
+    @Query("SELECT b.userId, COUNT(b), MAX(b.appointmentDateValue) FROM BookAppointmentEntity b "
+            + "WHERE b.userId IN :userIds GROUP BY b.userId")
+    List<Object[]> bookingStatsForUsers(@Param("userIds") java.util.Collection<String> userIds);
 }

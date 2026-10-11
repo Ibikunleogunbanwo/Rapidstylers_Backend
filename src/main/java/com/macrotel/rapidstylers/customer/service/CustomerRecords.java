@@ -6,7 +6,13 @@ import com.macrotel.rapidstylers.customer.repo.SavedStylistRepo;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import java.util.List;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.Locale;
+import javax.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 /**
@@ -61,5 +67,29 @@ public class CustomerRecords {
 
     public long count() {
         return userRepo.count();
+    }
+
+    /**
+     * One page of customer accounts for the admin. {@code text} matches part of
+     * the email, first or last name, phone number or customer id (any case);
+     * {@code status} is the stored status ("0" active, "SUSPENDED").
+     */
+    public Page<UserEntity> search(String text, String status, Pageable pageable) {
+        Specification<UserEntity> spec = (root, query, cb) -> {
+            List<Predicate> where = new ArrayList<>();
+            if (text != null && !text.isBlank()) {
+                String like = "%" + text.trim().toLowerCase(Locale.ROOT)
+                        .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+                where.add(cb.or(
+                        cb.like(cb.lower(root.get("emailAddress")), like),
+                        cb.like(cb.lower(root.get("firstname")), like),
+                        cb.like(cb.lower(root.get("lastname")), like),
+                        cb.like(cb.lower(root.get("phoneNumber")), like),
+                        cb.like(cb.lower(root.get("userId")), like)));
+            }
+            if (status != null && !status.isBlank()) where.add(cb.equal(root.get("status"), status));
+            return cb.and(where.toArray(new Predicate[0]));
+        };
+        return userRepo.findAll(spec, pageable);
     }
 }

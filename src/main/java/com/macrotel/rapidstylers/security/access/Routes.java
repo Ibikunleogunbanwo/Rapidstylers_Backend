@@ -125,6 +125,12 @@ public final class Routes {
             "/rapid_stylers/admin/booking_detail",
             "/rapid_stylers/admin/bookings_export",
 
+            // Customers
+            "/rapid_stylers/admin/customers",
+            "/rapid_stylers/admin/customer_detail",
+            "/rapid_stylers/admin/suspend_customer",
+            "/rapid_stylers/admin/reinstate_customer",
+
             // Admin accounts
             "/rapid_stylers/admin/accounts",
             "/rapid_stylers/admin/accounts/{id}/password",

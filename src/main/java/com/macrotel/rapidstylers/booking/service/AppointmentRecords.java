@@ -101,4 +101,14 @@ public class AppointmentRecords {
     public List<BookAppointmentEntity> searchAll(BookingSearch criteria) {
         return bookAppointmentRepo.findAll(criteria.toSpecification(), BookingSearch.NEWEST_FIRST);
     }
+
+    /** For each customer id given: how many bookings they made and their latest appointment date. */
+    public java.util.Map<String, Object[]> bookingStatsForUsers(java.util.Collection<String> userIds) {
+        java.util.Map<String, Object[]> stats = new java.util.HashMap<>();
+        if (userIds == null || userIds.isEmpty()) return stats;
+        for (Object[] row : bookAppointmentRepo.bookingStatsForUsers(userIds)) {
+            stats.put((String) row[0], new Object[]{row[1], row[2]});
+        }
+        return stats;
+    }
 }

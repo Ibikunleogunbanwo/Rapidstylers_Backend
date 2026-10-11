@@ -3,10 +3,11 @@ package com.macrotel.rapidstylers.customer.repo;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface UserRepo extends JpaRepository<UserEntity, Long> {
+public interface UserRepo extends JpaRepository<UserEntity, Long>, JpaSpecificationExecutor<UserEntity> {
     Optional<UserEntity> findByEmailAddress(String emailAddress);
 
     Optional<UserEntity> findByPhoneNumber(String phoneNumber);
