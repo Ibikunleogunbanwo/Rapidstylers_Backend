@@ -494,6 +494,7 @@ public class StylerService {
             return dto;
         }
         StylerAccountDTO row = objectMapper.convertValue(dto, StylerAccountDTO.class);
+        row.hidePrivateContact();
         attachHours(row, stylerId);
         if(stylerPresence != null) stylerPresence.stamp(row);
         return row;
@@ -683,11 +684,13 @@ public class StylerService {
                 }
             }
             ratingPercentage = ratingCount == 0 ? 0 : (int) ((totalRating/(ratingCount * 5)) *100);
-            // A copy, so the live badge never lands on the shared cached DTO.
+            // A copy, so the live badge and the hidden contact details never
+            // land on the shared cached DTO.
             StylerAccountDTO stylerAccount = cachedStylerAccountDTO(stylerEntity);
-            if(stylerPresence != null && stylerAccount != null){
+            if(stylerAccount != null){
                 stylerAccount = objectMapper.convertValue(stylerAccount, StylerAccountDTO.class);
-                stylerPresence.stamp(stylerAccount);
+                stylerAccount.hidePrivateContact();
+                if(stylerPresence != null) stylerPresence.stamp(stylerAccount);
             }
             HashMap<String, Object> stylerInformationMap = new HashMap<>();
             stylerInformationMap.put("stylerInformation", stylerAccount);

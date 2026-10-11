@@ -87,6 +87,24 @@ class ReadCacheServiceTest {
     }
 
     @Test
+    void missLoadsOnTheCachesOwnThreadsNotJavasSharedPool() {
+        when(ops.get(anyString())).thenReturn(null);
+
+        String outer = cache.getOrLoad("outer", Duration.ofMinutes(1), null, () -> {
+            // A nested read (a search list building a stylist card) runs inline
+            // on the same loader thread instead of waiting for a free one.
+            String inner = cache.getOrLoad("inner", Duration.ofMinutes(1), null,
+                    () -> Thread.currentThread().getName());
+            return Thread.currentThread().getName() + "|" + inner;
+        });
+
+        String[] threads = outer.split("\\|");
+        assertTrue(threads[0].startsWith("read-cache-load-"), threads[0]);
+        assertEquals(threads[0], threads[1]);
+        verify(ops).set(eq("inner"), eq(threads[1]), any(Duration.class));
+    }
+
+    @Test
     void concurrentMissesShareSingleLoad() throws Exception {
         when(ops.get("k")).thenReturn(null);
         AtomicInteger loads = new AtomicInteger();

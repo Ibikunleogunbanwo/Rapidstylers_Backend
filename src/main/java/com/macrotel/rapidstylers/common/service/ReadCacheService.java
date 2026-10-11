@@ -9,12 +9,17 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
+import javax.annotation.PreDestroy;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -70,6 +75,16 @@ public class ReadCacheService {
     public static final Duration APPOINTMENTS_TTL = Duration.ofMinutes(2);
     public static final Duration APPOINTMENTS_JITTER = Duration.ofSeconds(30);
 
+    /**
+     * Cache misses load on their own small pool. They used to run on Java's
+     * shared pool, which gets one thread per spare CPU core: on a two-core VPS
+     * that is a single thread, so after a deploy every stylist's first load
+     * queued behind the one before it.
+     */
+    static final int LOADER_THREADS = 8;
+    private static final String LOADER_THREAD_PREFIX = "read-cache-load-";
+    private final ExecutorService loaders = newLoaderPool();
+
     private final RedisTemplate<String, Object> redisTemplate;
     private final Map<String, CompletableFuture<Object>> inFlight = new ConcurrentHashMap<>();
     private final AtomicLong totalDegradations = new AtomicLong();
@@ -88,6 +103,23 @@ public class ReadCacheService {
         this.redisTemplate = redisTemplate;
     }
 
+    private static ExecutorService newLoaderPool() {
+        AtomicInteger counter = new AtomicInteger();
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(LOADER_THREADS, LOADER_THREADS, 60, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(), runnable -> {
+                    Thread thread = new Thread(runnable, LOADER_THREAD_PREFIX + counter.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                });
+        pool.allowCoreThreadTimeOut(true);
+        return pool;
+    }
+
+    @PreDestroy
+    void shutdown() {
+        loaders.shutdownNow();
+    }
+
     /**
      * Cache-aside read with single-flight on the miss path.
      * Returns null only when the loader returns null (never cached).
@@ -104,6 +136,17 @@ public class ReadCacheService {
             logDegradation(cacheName(key), ex, "read");
         }
         record(key, false);
+        if (Thread.currentThread().getName().startsWith(LOADER_THREAD_PREFIX)) {
+            // A load that needs another cached part (a search list building its
+            // stylist cards) runs that part right here. Handing it to the pool
+            // and waiting could leave every loader thread waiting on work that
+            // has no free thread to run on.
+            T value = countLoad(loader).get();
+            if (value != null) {
+                store(key, ttl, jitter, value);
+            }
+            return value;
+        }
         try {
             CompletableFuture<Object> future = inFlight.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> {
                 try {
@@ -115,7 +158,7 @@ public class ReadCacheService {
                 } finally {
                     inFlight.remove(k);
                 }
-            }));
+            }, loaders));
             try {
                 return (T) future.get(singleFlightTimeoutSeconds, TimeUnit.SECONDS);
             } catch (TimeoutException te) {

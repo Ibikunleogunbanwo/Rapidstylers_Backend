@@ -65,4 +65,15 @@ public class StylerAccountDTO {
      */
     private java.util.List<Object> availability;
     private java.util.List<Object> exceptions;
+
+    /**
+     * Blanks the stylist's personal email and phone on a copy that goes to
+     * customers or anonymous visitors. The website never shows them, and a
+     * public search must not hand them to anyone who asks. Only ever call this
+     * on a copy: the cached instance is shared.
+     */
+    public void hidePrivateContact() {
+        this.emailAddress = null;
+        this.phoneNumber = null;
+    }
 }

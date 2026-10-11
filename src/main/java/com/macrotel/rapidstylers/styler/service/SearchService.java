@@ -360,6 +360,7 @@ public class SearchService {
                 // Copy the shared cached DTO before stamping this result's
                 // distance so concurrent searches never corrupt each other.
                 StylerAccountDTO dto = objectMapper.convertValue(stylerService.cachedStylerAccountDTO(styler), StylerAccountDTO.class);
+                dto.hidePrivateContact();
                 dto.setDistanceKm(Math.round(distKm * 10.0) / 10.0);
                 if(stylerPresence != null) stylerPresence.stamp(dto);
                 // Same copy carries the trading hours, so a nearby result states

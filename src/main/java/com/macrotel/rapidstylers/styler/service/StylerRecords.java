@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.StylerPortfolioEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
@@ -25,6 +26,9 @@ public class StylerRecords {
     SubServiceRepo subServiceRepo;
     @Autowired
     StylerPortfolioRepo stylerPortfolioRepo;
+    /** Optional so tests that build this by hand need no cache. */
+    @Autowired(required = false)
+    ReadCacheService readCacheService;
 
     public StylerRecords() {
     }
@@ -51,8 +55,17 @@ public class StylerRecords {
         return stylerRepo.findAll();
     }
 
+    /**
+     * Saves the stylist and drops their cached profile card, so a change made
+     * from another domain (a Stripe payout update, a sign-in) shows on the next
+     * read instead of after the cache entry expires.
+     */
     public StylerEntity save(StylerEntity styler) {
-        return stylerRepo.save(styler);
+        StylerEntity saved = stylerRepo.save(styler);
+        if (readCacheService != null && styler.getStylerId() != null) {
+            readCacheService.evict(ReadCacheService.KEY_STYLER_DTO + styler.getStylerId());
+        }
+        return saved;
     }
 
     /** One of this stylist's services, if it exists. */

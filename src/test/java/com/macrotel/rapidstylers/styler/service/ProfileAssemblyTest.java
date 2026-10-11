@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -81,6 +82,8 @@ class ProfileAssemblyTest {
         services.availabilityExceptionRepo = availabilityExceptionRepo;
         services.dtoService = dtoService;
         services.readCacheService = readCacheService;
+        // Public responses are copies of the cached card, made with Jackson.
+        services.objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
     }
 
     @Test
@@ -245,6 +248,48 @@ class ProfileAssemblyTest {
     private List<?> badgesOf(String stylerId){
         Map<?, ?> data = (Map<?, ?>) services.stylerService().getStylerDetails(stylerId).getData();
         return (List<?>) data.get("badges");
+    }
+
+    @Test
+    void publicProfileHidesTheStylistsEmailAndPhoneButLeavesTheCachedCardWhole() {
+        StylerEntity styler = approvedStyler("S1");
+        when(stylerRepo.findByStylerId("S1")).thenReturn(Optional.of(styler));
+        StylerAccountDTO cached = new StylerAccountDTO();
+        cached.setStylerId("S1");
+        cached.setBusinessName("Studio");
+        cached.setEmailAddress("owner@example.com");
+        cached.setPhoneNumber("5875550100");
+        when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any())).thenAnswer(inv -> {
+            String key = inv.getArgument(0);
+            if (key.startsWith(ReadCacheService.KEY_STYLER_DTO)) return cached;
+            if (key.startsWith(ReadCacheService.KEY_STYLER_APPOINTMENTS)) return new HashMap<String, Object>();
+            return new ArrayList<>();
+        });
+
+        BaseResponse response = services.stylerService().getStylerDetails("S1");
+
+        StylerAccountDTO shown = (StylerAccountDTO) ((Map<?, ?>) response.getData()).get("stylerInformation");
+        assertEquals("Studio", shown.getBusinessName());
+        assertNull(shown.getEmailAddress());
+        assertNull(shown.getPhoneNumber());
+        // The shared cached instance keeps its fields for the stylist's own views.
+        assertEquals("owner@example.com", cached.getEmailAddress());
+        assertEquals("5875550100", cached.getPhoneNumber());
+    }
+
+    @Test
+    void listRowsHideTheStylistsEmailAndPhone() {
+        StylerAccountDTO cached = new StylerAccountDTO();
+        cached.setStylerId("S1");
+        cached.setEmailAddress("owner@example.com");
+        cached.setPhoneNumber("5875550100");
+        when(readCacheService.getOrLoad(anyString(), any(Duration.class), any(), any())).thenReturn(new ArrayList<>());
+
+        StylerAccountDTO row = services.stylerService().listRowWithHours(cached, "S1");
+
+        assertNull(row.getEmailAddress());
+        assertNull(row.getPhoneNumber());
+        assertEquals("owner@example.com", cached.getEmailAddress());
     }
 
     private StylerEntity approvedStyler(String id) {
