@@ -199,6 +199,9 @@ class PayoutReleaseServiceTest {
 
         assertEquals("200", response.getStatusCode());
         assertEquals("RESOLVED", appointment.getServiceDisputeStatus());
+        // The decision is kept on the booking, so the customer can read it.
+        assertEquals("Arrived late, half refunded", appointment.getServiceDisputeResolutionNote());
+        assertNotNull(appointment.getServiceDisputeResolvedAt());
         // $75 kept, less 12% ($9), is $66.
         verify(stripeService).transferStylistShare("acct_1", 6600L, "APPT1", "payout_APPT1_6600");
     }

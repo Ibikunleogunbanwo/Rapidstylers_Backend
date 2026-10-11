@@ -90,6 +90,11 @@ public class BookAppointmentEntity implements Serializable {
     private String serviceDisputeReason;
     @Column(name = "service_disputed_at")
     private LocalDateTime serviceDisputedAt;
+    /** The admin's note when closing the dispute, shown to the customer. */
+    @Column(name = "service_dispute_resolution_note", length = 1000)
+    private String serviceDisputeResolutionNote;
+    @Column(name = "service_dispute_resolved_at")
+    private LocalDateTime serviceDisputeResolvedAt;
     /** Why the stylist payout is waiting: NO_PAYOUT_ACCOUNT until their Stripe payout setup is done. */
     @Column(name = "payout_hold_reason", length = 30)
     private String payoutHoldReason;

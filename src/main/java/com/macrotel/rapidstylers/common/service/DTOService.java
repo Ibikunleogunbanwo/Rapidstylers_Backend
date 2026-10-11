@@ -236,6 +236,10 @@ public class DTOService {
         appointmentDTO.setCompletedAt(bookAppointmentEntity.getCompletedAt());
         appointmentDTO.setDisputeWindowEndsAt(PayoutReleaseService.disputeWindowEndsAt(bookAppointmentEntity));
         appointmentDTO.setServiceDisputeStatus(bookAppointmentEntity.getServiceDisputeStatus());
+        appointmentDTO.setServiceDisputeReason(bookAppointmentEntity.getServiceDisputeReason());
+        appointmentDTO.setServiceDisputedAt(bookAppointmentEntity.getServiceDisputedAt());
+        appointmentDTO.setServiceDisputeResolutionNote(bookAppointmentEntity.getServiceDisputeResolutionNote());
+        appointmentDTO.setServiceDisputeResolvedAt(bookAppointmentEntity.getServiceDisputeResolvedAt());
         appointmentDTO.setServiceConfirmedAt(bookAppointmentEntity.getServiceConfirmedAt());
         populateRefund(appointmentDTO, bookAppointmentEntity.getAppointmentId());
         return appointmentDTO;

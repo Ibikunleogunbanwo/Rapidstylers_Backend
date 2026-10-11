@@ -42,6 +42,11 @@ public class AppointmentDTO {
     private LocalDateTime disputeWindowEndsAt;
     /** OPEN while the customer's dispute waits for an admin, then RESOLVED; null when never disputed. */
     private String serviceDisputeStatus;
+    /** The customer's reason, when and how an admin settled it; null when never disputed. */
+    private String serviceDisputeReason;
+    private LocalDateTime serviceDisputedAt;
+    private String serviceDisputeResolutionNote;
+    private LocalDateTime serviceDisputeResolvedAt;
     /** When the customer confirmed the appointment happened. */
     private LocalDateTime serviceConfirmedAt;
     /** Completed refund for this appointment, when one exists — shown to customers. */

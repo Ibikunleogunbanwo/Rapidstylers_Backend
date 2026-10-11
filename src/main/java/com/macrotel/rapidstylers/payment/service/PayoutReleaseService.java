@@ -260,10 +260,14 @@ public class PayoutReleaseService {
         if (!DISPUTE_OPEN.equals(appointment.getServiceDisputeStatus())) {
             return Responses.errorResponse(response, "This appointment has no open dispute");
         }
+        String cleanNote = note == null || note.isBlank() ? null : AppUtils.sanitizeText(note.trim());
+        if (cleanNote != null && cleanNote.length() > 1000) cleanNote = cleanNote.substring(0, 1000);
         appointment.setServiceDisputeStatus(DISPUTE_RESOLVED);
+        appointment.setServiceDisputeResolutionNote(cleanNote);
+        appointment.setServiceDisputeResolvedAt(now());
         appointment.setPayoutDueAt(now());
         auditService.audit(adminId, "ADMIN", "SERVICE_DISPUTE_RESOLVED", "APPOINTMENT", appointmentId,
-                "Dispute resolved" + (note == null || note.isBlank() ? "" : ": " + AppUtils.sanitizeText(note.trim())));
+                "Dispute resolved" + (cleanNote == null ? "" : ": " + cleanNote));
         boolean paid = "CAPTURED".equals(appointment.getPaymentStatus()) && appointment.getStripeTransferId() == null
                 && stripeService.isConfigured() && release(appointment);
         if (!paid) {
@@ -277,6 +281,8 @@ public class PayoutReleaseService {
         data.put("stylistShare", appointment.getStylistShareCents() == null ? null
                 : MoneyUtils.moneyCents(appointment.getStylistShareCents()));
         data.put("stripeTransferId", appointment.getStripeTransferId());
+        data.put("resolutionNote", appointment.getServiceDisputeResolutionNote());
+        data.put("resolvedAt", appointment.getServiceDisputeResolvedAt());
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage("Dispute resolved");
         response.setData(data);
