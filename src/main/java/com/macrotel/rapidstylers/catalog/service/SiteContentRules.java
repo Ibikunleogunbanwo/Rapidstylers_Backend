@@ -141,7 +141,7 @@ public final class SiteContentRules {
         public final String subject;
         public final String html;
 
-        RenderedEmail(String subject, String html) {
+        public RenderedEmail(String subject, String html) {
             this.subject = subject;
             this.html = html;
         }

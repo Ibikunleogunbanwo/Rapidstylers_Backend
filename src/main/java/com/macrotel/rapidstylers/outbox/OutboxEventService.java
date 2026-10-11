@@ -121,6 +121,21 @@ public class OutboxEventService {
         outboxEventRepo.save(event);
     }
 
+    /**
+     * Emits a newsletter email (a confirm-your-subscription message, one
+     * campaign delivery, or an admin's test copy). The payload carries ids and
+     * the address only; the email is built when it is sent.
+     */
+    public void newsletterEmail(OutboxEventType type, String aggregateId, Map<String, Object> payload) {
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(type);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("NEWSLETTER");
+        event.setAggregateId(nullSafe(aggregateId));
+        event.setPayload(toJson(payload));
+        outboxEventRepo.save(event);
+    }
+
     private Map<String, Object> appointmentPayload(BookAppointmentEntity appointment, String eventLabel,
                                                    String customerHeadline, String customerDetail,
                                                    String stylerHeadline, String stylerDetail) {

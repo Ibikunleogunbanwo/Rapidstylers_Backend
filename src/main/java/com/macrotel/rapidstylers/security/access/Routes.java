@@ -74,6 +74,12 @@ public final class Routes {
             // Sign-up funnel visit beacon
             "/rapid_stylers/funnel_visit",
 
+            // Newsletter form and the links in its emails
+            "/rapid_stylers/newsletter_subscribe",
+            "/rapid_stylers/newsletter_confirm",
+            "/rapid_stylers/newsletter_unsubscribe",
+            "/rapid_stylers/newsletter_preferences",
+
             // Signed by Stripe instead of a token
             "/rapid_stylers/stripe/webhook",
     }, BROWSE);
@@ -169,6 +175,19 @@ public final class Routes {
             "/rapid_stylers/admin/site_content_history",
             "/rapid_stylers/admin/restore_site_content",
             "/rapid_stylers/admin/preview_email_template",
+
+            // Newsletter
+            "/rapid_stylers/admin/newsletter_subscribers",
+            "/rapid_stylers/admin/email_suppressions",
+            "/rapid_stylers/admin/add_email_suppression",
+            "/rapid_stylers/admin/remove_email_suppression",
+            "/rapid_stylers/admin/newsletter_campaigns",
+            "/rapid_stylers/admin/newsletter_campaign",
+            "/rapid_stylers/admin/save_newsletter_campaign",
+            "/rapid_stylers/admin/newsletter_audience",
+            "/rapid_stylers/admin/schedule_newsletter_campaign",
+            "/rapid_stylers/admin/cancel_newsletter_campaign",
+            "/rapid_stylers/admin/send_newsletter_test",
 
             // Admin accounts
             "/rapid_stylers/admin/accounts",

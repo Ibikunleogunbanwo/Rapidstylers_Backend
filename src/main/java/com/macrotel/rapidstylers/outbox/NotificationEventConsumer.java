@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.service.CustomerRecords;
+import com.macrotel.rapidstylers.engagement.service.NewsletterMailer;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.service.StylerRecords;
@@ -13,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -31,6 +33,9 @@ public class NotificationEventConsumer {
     private final NotificationDedupService dedupService;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, String> kafkaTemplate;
+
+    @Autowired(required = false)
+    private NewsletterMailer newsletterMailer;
 
     @Value("${app.kafka.topics.domain-events-retry:rapidstylers.domain-events.retry}")
     private String retryTopic;
@@ -111,6 +116,11 @@ public class NotificationEventConsumer {
                 if (!email.isBlank()) {
                     emailConfig.sendSimpleMail(email, signupSubject(stage), signupBody(stage));
                 }
+                acknowledge(acknowledgment);
+                return;
+            }
+            if (eventType != null && eventType.startsWith("NEWSLETTER_")) {
+                if (newsletterMailer != null) newsletterMailer.deliver(eventType, readPayload(payload));
                 acknowledge(acknowledgment);
                 return;
             }
