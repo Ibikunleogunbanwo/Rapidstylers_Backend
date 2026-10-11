@@ -275,7 +275,7 @@ public class PaymentService {
             // Capture is normally persisted synchronously; this webhook keeps
             // state correct when Stripe completes it asynchronously.
             boolean alreadyCaptured = "CAPTURED".equals(a.getPaymentStatus());
-            a.setPaymentStatus("CAPTURED");
+            a.markCaptured();
             a.setPaymentFailureCode(null);
             appointmentRecords.save(a);
             if (!alreadyCaptured) {

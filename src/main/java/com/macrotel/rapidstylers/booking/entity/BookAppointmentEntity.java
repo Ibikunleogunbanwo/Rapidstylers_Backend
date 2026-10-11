@@ -98,8 +98,19 @@ public class BookAppointmentEntity implements Serializable {
     /** Why the stylist payout is waiting: NO_PAYOUT_ACCOUNT until their Stripe payout setup is done. */
     @Column(name = "payout_hold_reason", length = 30)
     private String payoutHoldReason;
+    /** When the card was charged (Stripe capture), in UTC. Revenue reports count the money on this moment. */
+    @Column(name = "payment_captured_at")
+    private LocalDateTime paymentCapturedAt;
 
     public BookAppointmentEntity() {
+    }
+
+    /** Records that the card was charged. The first capture time is kept, so a won dispute or a repeated webhook does not move it. */
+    public void markCaptured() {
+        this.paymentStatus = "CAPTURED";
+        if (this.paymentCapturedAt == null) {
+            this.paymentCapturedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        }
     }
 
     public BookAppointmentEntity(BookAppointmentData bookAppointmentData) {

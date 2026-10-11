@@ -114,7 +114,7 @@ public class PaymentAuthorizationService {
             appointment.setPaymentAuthorizationDueAt(null);
             if(captureAfterAuthorization){
                 stripeService.captureBookingPayment(intent.getId());
-                appointment.setPaymentStatus("CAPTURED");
+                appointment.markCaptured();
                 paymentService.sendPaymentReceipt(appointment);
             }
             bookAppointmentRepo.save(appointment);

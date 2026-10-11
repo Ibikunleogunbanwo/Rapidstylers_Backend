@@ -30,6 +30,10 @@ public class BookingSearch {
     public String appointmentId;
     public String paymentStatus;
     public Collection<String> stylerIds;
+    /** Card charged at or after this moment (UTC). */
+    public java.time.LocalDateTime capturedFrom;
+    /** Card charged before this moment (UTC). */
+    public java.time.LocalDateTime capturedBefore;
 
     Specification<BookAppointmentEntity> toSpecification() {
         return (root, query, cb) -> {
@@ -42,6 +46,8 @@ public class BookingSearch {
             if (userId != null) where.add(cb.equal(root.get("userId"), userId));
             if (appointmentId != null) where.add(cb.equal(root.get("appointmentId"), appointmentId));
             if (paymentStatus != null) where.add(cb.equal(root.get("paymentStatus"), paymentStatus));
+            if (capturedFrom != null) where.add(cb.greaterThanOrEqualTo(root.get("paymentCapturedAt"), capturedFrom));
+            if (capturedBefore != null) where.add(cb.lessThan(root.get("paymentCapturedAt"), capturedBefore));
             if (stylerIds != null) {
                 where.add(stylerIds.isEmpty() ? cb.disjunction() : root.get("stylerId").in(stylerIds));
             }

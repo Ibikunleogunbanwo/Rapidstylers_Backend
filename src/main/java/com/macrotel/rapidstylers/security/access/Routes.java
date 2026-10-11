@@ -131,6 +131,10 @@ public final class Routes {
             "/rapid_stylers/admin/suspend_customer",
             "/rapid_stylers/admin/reinstate_customer",
 
+            // Revenue
+            "/rapid_stylers/admin/revenue",
+            "/rapid_stylers/admin/revenue_export",
+
             // Admin accounts
             "/rapid_stylers/admin/accounts",
             "/rapid_stylers/admin/accounts/{id}/password",

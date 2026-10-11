@@ -26,4 +26,9 @@ public class RefundRecords {
     public List<RefundEntity> findByAppointmentId(String appointmentId) {
         return refundRepo.findByAppointmentId(appointmentId);
     }
+
+    /** Every refund that went through (status COMPLETED), for revenue reports. */
+    public List<RefundEntity> findCompleted() {
+        return refundRepo.findByStatus("COMPLETED");
+    }
 }

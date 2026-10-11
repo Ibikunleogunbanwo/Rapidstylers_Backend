@@ -275,7 +275,7 @@ public class AppointmentWorkflowService {
                     && "AUTHORIZED".equals(appointment.getPaymentStatus())){
                 try {
                     stripeService.captureBookingPayment(appointment.getPaymentIntentId());
-                    appointment.setPaymentStatus("CAPTURED");
+                    appointment.markCaptured();
                     paymentService.sendPaymentReceipt(appointment);
                 } catch(Exception ex){
                     LOG.warning("Payment capture failed: " + ex.getMessage());
