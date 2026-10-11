@@ -294,10 +294,43 @@ public class StripeService {
         if (reason != null && !reason.isBlank()) {
             builder.putMetadata("reason", reason);
         }
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            // Lets findRefund locate this refund later, even after Stripe has
+            // forgotten the idempotency key (24 hours).
+            builder.putMetadata("refundKey", idempotencyKey);
+        }
         RequestOptions options = idempotencyKey != null && !idempotencyKey.isBlank()
                 ? RequestOptions.builder().setIdempotencyKey(idempotencyKey).build()
                 : RequestOptions.builder().build();
         return com.stripe.model.Refund.create(builder.build(), options);
+    }
+
+    /** The refund on this payment created under {@code refundKey}, if Stripe has one. */
+    public java.util.Optional<com.stripe.model.Refund> findRefund(String paymentIntentId, String refundKey)
+            throws StripeException {
+        for (com.stripe.model.Refund refund : refundsOf(paymentIntentId)) {
+            if (refund.getMetadata() != null && refundKey.equals(refund.getMetadata().get("refundKey"))) {
+                return java.util.Optional.of(refund);
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    /** What Stripe has refunded, or is still refunding, on this payment, in cents. */
+    public long refundedCents(String paymentIntentId) throws StripeException {
+        long cents = 0L;
+        for (com.stripe.model.Refund refund : refundsOf(paymentIntentId)) {
+            if (!"failed".equals(refund.getStatus()) && !"canceled".equals(refund.getStatus())
+                    && refund.getAmount() != null) {
+                cents += refund.getAmount();
+            }
+        }
+        return cents;
+    }
+
+    private Iterable<com.stripe.model.Refund> refundsOf(String paymentIntentId) throws StripeException {
+        return com.stripe.model.Refund.list(com.stripe.param.RefundListParams.builder()
+                .setPaymentIntent(paymentIntentId).setLimit(100L).build()).autoPagingIterable();
     }
 
     /**

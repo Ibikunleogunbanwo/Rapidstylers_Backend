@@ -19,12 +19,8 @@ import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import com.macrotel.rapidstylers.styler.service.VendorZoneResolver;
 import com.stripe.model.Account;
-import com.stripe.model.Balance;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
-import com.stripe.net.RequestOptions;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -479,13 +475,14 @@ public class PaymentService {
      * customer there is nothing left, so nothing is refunded again.
      */
     public void autoRefundCapturedPayment(BookAppointmentEntity appointment, String reason, String actorId) {
+        RefundEntity refund = null;
         try {
             long totalCents = refundableCents(appointment);
             if (totalCents <= 0) {
                 return;
             }
             String refundId = "RFND-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT);
-            RefundEntity refund = new RefundEntity();
+            refund = new RefundEntity();
             refund.setRefundId(refundId);
             refund.setAppointmentId(appointment.getAppointmentId());
             refund.setPaymentIntentId(appointment.getPaymentIntentId());
@@ -496,8 +493,7 @@ public class PaymentService {
             refund.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             refundRepo.save(refund);
             com.stripe.model.Refund stripeRefund = stripeService.refundBookingPayment(
-                    appointment.getPaymentIntentId(), totalCents, reason,
-                    "refund_" + appointment.getPaymentIntentId() + "_" + refundId);
+                    appointment.getPaymentIntentId(), totalCents, reason, RefundSafety.idempotencyKey(refund));
             refund.setStripeRefundId(stripeRefund.getId());
             refund.setStatus("COMPLETED");
             refund.setCompletedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
@@ -528,6 +524,12 @@ public class PaymentService {
             }
         } catch (Exception ex) {
             LOG.warning("Automatic refund failed: " + ex.getMessage());
+            if (refund != null && "REQUESTED".equals(refund.getStatus())) {
+                // An admin pressing Refund on this booking finishes an unconfirmed one.
+                refund.setStatus(RefundSafety.definitelyNotRefunded(ex) ? "FAILED" : RefundSafety.UNCONFIRMED);
+                refund.setFailureCode(String.valueOf(ex.getMessage()));
+                refundRepo.save(refund);
+            }
         }
     }
 
@@ -561,6 +563,11 @@ public class PaymentService {
             if (!stripeService.isConfigured() || appointment.getPaymentIntentId() == null || appointment.getPaymentIntentId().isBlank()) {
                 return errorResponse(response, "This appointment has no payment to refund");
             }
+            Optional<RefundEntity> unconfirmed = refundRepo.findByAppointmentId(appointment.getAppointmentId()).stream()
+                    .filter(r -> RefundSafety.UNCONFIRMED.equals(r.getStatus())).findFirst();
+            if (unconfirmed.isPresent()) {
+                return finishUnconfirmedRefund(adminId, appointment, unconfirmed.get(), data, response);
+            }
             if (!"CAPTURED".equals(appointment.getPaymentStatus())) {
                 return errorResponse(response, "Payment is not captured — nothing to refund");
             }
@@ -586,6 +593,19 @@ public class PaymentService {
             if (refundCents <= 0) {
                 return errorResponse(response, "Invalid refund amount");
             }
+            // Stripe is the source of truth: if it has refunded more than our
+            // records show (a refund whose reply never reached us), stop.
+            long stripeRefundedCents;
+            try {
+                stripeRefundedCents = stripeService.refundedCents(appointment.getPaymentIntentId());
+            } catch (Exception ex) {
+                return errorResponse(response, "Could not check this payment with Stripe, so nothing was refunded. Try again in a moment.");
+            }
+            if (stripeRefundedCents > alreadyRefundedCents) {
+                return errorResponse(response, "Stripe shows $" + MoneyUtils.moneyCents(stripeRefundedCents)
+                        + " refunded on this payment but our records show $" + MoneyUtils.moneyCents(alreadyRefundedCents)
+                        + ". Nothing was refunded; check the payment in the Stripe dashboard first.");
+            }
             String refundId = "RFND-" + appUtils.randomAlphanumeric(8).toUpperCase(Locale.ROOT);
             RefundEntity refund = new RefundEntity();
             refund.setRefundId(refundId);
@@ -599,40 +619,20 @@ public class PaymentService {
             refundRepo.save(refund);
             try {
                 com.stripe.model.Refund stripeRefund = stripeService.refundBookingPayment(
-                        appointment.getPaymentIntentId(), refundCents, data.getReason(),
-                        "refund_" + appointment.getPaymentIntentId() + "_" + refundId);
-                refund.setStripeRefundId(stripeRefund.getId());
-                refund.setStatus("COMPLETED");
-                refund.setCompletedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-                long refundedNowCents = alreadyRefundedCents + refundCents;
-                boolean fullyRefunded = refundedNowCents >= capturedCents;
-                if (fullyRefunded) {
-                    appointment.setPaymentStatus("REFUNDED");
-                    appointmentRecords.save(appointment);
-                }
-                refundRepo.save(refund);
-                auditService.audit(adminId, "ADMIN", "PAYMENT_REFUND", "APPOINTMENT", appointment.getAppointmentId(),
-                        "Refunded $" + refund.getAmount()
-                                + (data.getReason() == null || data.getReason().isBlank() ? "" : " — " + data.getReason()));
-                if (outboxEventService != null) {
-                    outboxEventService.refundEvent(appointment, refund.getAmount(), data.getReason(), true);
-                }
-                String recovered = recoverStylistShare(adminId, appointment, refund, refundCents, data);
-                response.setStatusCode(SUCCESS_STATUS_CODE);
+                        appointment.getPaymentIntentId(), refundCents, data.getReason(), RefundSafety.idempotencyKey(refund));
+                completeAdminRefund(adminId, appointment, refund, stripeRefund, data, response);
                 response.setMessage("Refund processed");
-                Map<String, Object> result = new LinkedHashMap<>();
-                result.put("refundId", refundId);
-                result.put("amount", refund.getAmount());
-                result.put("status", "COMPLETED");
-                result.put("stripeRefundId", stripeRefund.getId());
-                result.put("capturedAmount", MoneyUtils.moneyCents(capturedCents));
-                result.put("refundedTotal", MoneyUtils.moneyCents(refundedNowCents));
-                result.put("refundableRemaining", MoneyUtils.moneyCents(Math.max(0, capturedCents - refundedNowCents)));
-                result.put("fullyRefunded", fullyRefunded);
-                result.put("stylistShareRecovered", recovered);
-                response.setData(result);
             } catch (Exception ex) {
                 LOG.warning("Refund failed: " + ex.getMessage());
+                if (!RefundSafety.definitelyNotRefunded(ex)) {
+                    refund.setStatus(RefundSafety.UNCONFIRMED);
+                    refund.setFailureCode(String.valueOf(ex.getMessage()));
+                    refundRepo.save(refund);
+                    auditService.audit(adminId, "ADMIN", "PAYMENT_REFUND_UNCONFIRMED", "APPOINTMENT", appointment.getAppointmentId(),
+                            "Stripe did not confirm refund " + refundId + ": " + ex.getMessage());
+                    return errorResponse(response, "Stripe did not confirm this refund of $" + refund.getAmount()
+                            + ", so it may or may not have gone through. Press Refund again: it finishes this same refund and never refunds twice.");
+                }
                 refund.setStatus("FAILED");
                 refund.setFailureCode(String.valueOf(ex.getMessage()));
                 refundRepo.save(refund);
@@ -646,93 +646,72 @@ public class PaymentService {
         return response;
     }
 
-    public BaseResponse getStylerPayouts(String stylerId) {
-        BaseResponse response = new BaseResponse(true);
+    /**
+     * Finishes a refund whose Stripe reply was lost: finds it at Stripe by its
+     * key, or sends it again under the same idempotency key, so it can never
+     * become two refunds. Nothing new is refunded in this call.
+     */
+    private BaseResponse finishUnconfirmedRefund(String adminId, BookAppointmentEntity appointment, RefundEntity refund,
+                                                 RefundRequestData data, BaseResponse response) {
+        String key = RefundSafety.idempotencyKey(refund);
+        com.stripe.model.Refund stripeRefund;
         try {
-            Optional<StylerEntity> stylerOpt = stylerRecords.findByStylerId(stylerId);
-            if (stylerOpt.isEmpty()) {
-                return errorResponse(response, "Invalid Styler Id");
+            stripeRefund = stripeService.findRefund(appointment.getPaymentIntentId(), key).orElse(null);
+            if (stripeRefund == null) {
+                stripeRefund = stripeService.refundBookingPayment(appointment.getPaymentIntentId(),
+                        MoneyUtils.centsFromPrice(refund.getAmount()), refund.getReason(), key);
             }
-            StylerEntity styler = stylerOpt.get();
-            String accountId = styler.getStripeConnectAccountId();
-            boolean connected = accountId != null && !accountId.isBlank();
-
-            BigDecimal totalEarned = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-            BigDecimal totalCommission = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-            List<Map<String, Object>> appointments = new ArrayList<>();
-            for (BookAppointmentEntity appointment : appointmentRecords.findByStylerId(stylerId)) {
-                if (!"0".equals(appointment.getStatus())
-                        || appointment.getPaymentIntentId() == null
-                        || !"CAPTURED".equals(appointment.getPaymentStatus())) {
-                    continue;
-                }
-                BigDecimal total = MoneyUtils.amount(appointment.getPaymentAmount() == null
-                        ? appointment.getPrice() : appointment.getPaymentAmount());
-                BigDecimal commission = total.multiply(BigDecimal.valueOf(effectiveCommissionPercent()))
-                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-                BigDecimal share = total.subtract(commission);
-                totalEarned = totalEarned.add(share);
-                totalCommission = totalCommission.add(commission);
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("appointmentId", appointment.getAppointmentId());
-                row.put("date", appointment.getAppointmentDate());
-                row.put("arrivalTime", appointment.getArrivalTime());
-                // The zone the appointment's times are written in (the
-                // stylist's), so the payouts table can label them.
-                row.put("timeZone", styler.getTimeZone());
-                row.put("total", MoneyUtils.money(total));
-                row.put("commission", MoneyUtils.money(commission));
-                row.put("stylerShare", MoneyUtils.money(share));
-                appointments.add(row);
-            }
-
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("connected", connected);
-            data.put("status", connected && styler.getConnectOnboardingStatus() != null
-                    ? styler.getConnectOnboardingStatus() : "NOT_STARTED");
-            data.put("disabledReason", connected ? styler.getConnectDisabledReason() : null);
-            data.put("totalEarned", MoneyUtils.money(totalEarned));
-            data.put("totalCommission", MoneyUtils.money(totalCommission));
-            data.put("stripeAvailable", "0.00");
-            data.put("stripePending", "0.00");
-            if (connected && stripeService.isConfigured()) {
-                try {
-                    Balance balance = Balance.retrieve(RequestOptions.builder().setStripeAccount(accountId).build());
-                    data.put("stripeAvailable", MoneyUtils.moneyCents(sumBalanceAmounts(balance.getAvailable(), stripeService.currency())));
-                    data.put("stripePending", MoneyUtils.moneyCents(sumPendingAmounts(balance.getPending(), stripeService.currency())));
-                } catch (Exception ex) {
-                    LOG.warning("Connected balance lookup failed: " + ex.getMessage());
-                }
-            }
-            data.put("appointments", appointments);
-            response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(SUCCESS_MESSAGE);
-            response.setData(data);
         } catch (Exception ex) {
-            LOG.warning("Payout summary failed: " + ex.getMessage());
-            return errorResponse(response, "Could not load payout summary");
+            if (RefundSafety.definitelyNotRefunded(ex)) {
+                refund.setStatus("FAILED");
+                refund.setFailureCode(String.valueOf(ex.getMessage()));
+                refundRepo.save(refund);
+                return errorResponse(response, "The earlier refund of $" + refund.getAmount() + " did not go through: "
+                        + ex.getMessage() + ". You can refund again now.");
+            }
+            return errorResponse(response, "Stripe still has not confirmed the earlier refund of $" + refund.getAmount()
+                    + ". Try again in a moment: it finishes that same refund and never refunds twice.");
         }
+        completeAdminRefund(adminId, appointment, refund, stripeRefund, data, response);
+        response.setMessage("Finished the earlier refund of $" + refund.getAmount()
+                + " that Stripe had not confirmed. Nothing new was refunded; refund again if more is owed.");
         return response;
     }
 
-    private long sumBalanceAmounts(java.util.List<Balance.Available> entries, String currency) {
-        long total = 0L;
-        for (Balance.Available entry : entries) {
-            if (entry.getAmount() != null && (currency == null || currency.equals(entry.getCurrency()))) {
-                total += entry.getAmount();
-            }
+    /** Records a refund Stripe has accepted, and fills the admin's response. */
+    private void completeAdminRefund(String adminId, BookAppointmentEntity appointment, RefundEntity refund,
+                                     com.stripe.model.Refund stripeRefund, RefundRequestData data, BaseResponse response) {
+        long capturedCents = capturedCents(appointment);
+        long refundCents = MoneyUtils.centsFromPrice(refund.getAmount());
+        long refundedNowCents = refundedCents(appointment.getPaymentIntentId()) + refundCents;
+        refund.setStripeRefundId(stripeRefund.getId());
+        refund.setStatus("COMPLETED");
+        refund.setCompletedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        boolean fullyRefunded = refundedNowCents >= capturedCents;
+        if (fullyRefunded) {
+            appointment.setPaymentStatus("REFUNDED");
+            appointmentRecords.save(appointment);
         }
-        return total;
-    }
-
-    private long sumPendingAmounts(java.util.List<Balance.Pending> entries, String currency) {
-        long total = 0L;
-        for (Balance.Pending entry : entries) {
-            if (entry.getAmount() != null && (currency == null || currency.equals(entry.getCurrency()))) {
-                total += entry.getAmount();
-            }
+        refundRepo.save(refund);
+        String reason = refund.getReason();
+        auditService.audit(adminId, "ADMIN", "PAYMENT_REFUND", "APPOINTMENT", appointment.getAppointmentId(),
+                "Refunded $" + refund.getAmount() + (reason == null || reason.isBlank() ? "" : " — " + reason));
+        if (outboxEventService != null) {
+            outboxEventService.refundEvent(appointment, refund.getAmount(), reason, true);
         }
-        return total;
+        String recovered = recoverStylistShare(adminId, appointment, refund, refundCents, data);
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("refundId", refund.getRefundId());
+        result.put("amount", refund.getAmount());
+        result.put("status", "COMPLETED");
+        result.put("stripeRefundId", stripeRefund.getId());
+        result.put("capturedAmount", MoneyUtils.moneyCents(capturedCents));
+        result.put("refundedTotal", MoneyUtils.moneyCents(refundedNowCents));
+        result.put("refundableRemaining", MoneyUtils.moneyCents(Math.max(0, capturedCents - refundedNowCents)));
+        result.put("fullyRefunded", fullyRefunded);
+        result.put("stylistShareRecovered", recovered);
+        response.setData(result);
     }
 
     /**

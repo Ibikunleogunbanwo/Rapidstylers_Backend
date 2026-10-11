@@ -11,6 +11,7 @@ import com.macrotel.rapidstylers.payment.service.CardService;
 import com.macrotel.rapidstylers.payment.service.ConnectAccountService;
 import com.macrotel.rapidstylers.payment.service.PaymentReconciliationService;
 import com.macrotel.rapidstylers.payment.service.PaymentService;
+import com.macrotel.rapidstylers.payment.service.StylerPayoutSummary;
 import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
 import com.macrotel.rapidstylers.payment.service.RefundReviewService;
 import java.util.Map;
@@ -36,6 +37,8 @@ public class PaymentController {
     ConnectAccountService connectAccountService;
     @Autowired
     PaymentService paymentService;
+    @Autowired
+    StylerPayoutSummary stylerPayoutSummary;
     @Autowired
     StepUpService stepUpService;
     @Autowired
@@ -93,7 +96,7 @@ public class PaymentController {
     public ResponseEntity<BaseResponse> stylerPayouts(HttpServletRequest request){
         String stylerId = CurrentAccount.id(request);
         if(stylerId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(paymentService.getStylerPayouts(stylerId));
+        return ApiResponses.respond(stylerPayoutSummary.getStylerPayouts(stylerId));
     }
 
     @GetMapping("/styler/business_summary")

@@ -32,6 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -473,5 +474,97 @@ class RefundServiceTest {
         long hoursAfterCompletion = java.time.Duration.between(appointment.getCompletedAt(), appointment.getPayoutDueAt())
                 .plusMinutes(1).toHours();
         assertEquals(24, hoursAfterCompletion);
+    }
+
+    // ── Refunds whose Stripe reply was lost ───────────────────────────
+
+    private RefundEntity unconfirmedRefund() {
+        RefundEntity refund = new RefundEntity();
+        refund.setRefundId("RFND-OLD");
+        refund.setAppointmentId("APPT1");
+        refund.setPaymentIntentId("pi_1");
+        refund.setAmount("50.00");
+        refund.setStatus("UNCONFIRMED");
+        return refund;
+    }
+
+    @Test
+    void aLostStripeReplyLeavesTheRefundUnconfirmedNotFailed() throws Exception {
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(capturedAppointment()));
+        when(stripeService.isConfigured()).thenReturn(true);
+        doThrow(new com.stripe.exception.ApiConnectionException("Read timed out"))
+                .when(stripeService).refundBookingPayment(eq("pi_1"), eq(5000L), any(), any());
+
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", refundOf("50.00"));
+
+        assertEquals("400", response.getStatusCode());
+        assertTrue(response.getMessage().contains("never refunds twice"));
+        ArgumentCaptor<RefundEntity> saved = ArgumentCaptor.forClass(RefundEntity.class);
+        verify(refundRepo, atLeastOnce()).save(saved.capture());
+        assertEquals("UNCONFIRMED", saved.getValue().getStatus());
+    }
+
+    @Test
+    void stripeRefusingTheRefundMarksItFailed() throws Exception {
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(capturedAppointment()));
+        when(stripeService.isConfigured()).thenReturn(true);
+        doThrow(new com.stripe.exception.InvalidRequestException("Amount too large", "amount", "req_1", null, 400, null))
+                .when(stripeService).refundBookingPayment(eq("pi_1"), eq(5000L), any(), any());
+
+        services.paymentService.adminRefund("ADMIN1", refundOf("50.00"));
+
+        ArgumentCaptor<RefundEntity> saved = ArgumentCaptor.forClass(RefundEntity.class);
+        verify(refundRepo, atLeastOnce()).save(saved.capture());
+        assertEquals("FAILED", saved.getValue().getStatus());
+    }
+
+    @Test
+    void retryingFinishesTheUnconfirmedRefundFoundAtStripeWithoutASecondOne() throws Exception {
+        BookAppointmentEntity appointment = capturedAppointment();
+        RefundEntity earlier = unconfirmedRefund();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(appointment));
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(refundRepo.findByAppointmentId("APPT1")).thenReturn(List.of(earlier));
+        com.stripe.model.Refund atStripe = new com.stripe.model.Refund();
+        atStripe.setId("re_found");
+        when(stripeService.findRefund("pi_1", "refund_pi_1_RFND-OLD")).thenReturn(Optional.of(atStripe));
+
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", refundOf("125.00"));
+
+        assertEquals("200", response.getStatusCode());
+        assertTrue(response.getMessage().contains("Nothing new was refunded"));
+        assertEquals("COMPLETED", earlier.getStatus());
+        assertEquals("re_found", earlier.getStripeRefundId());
+        verify(stripeService, never()).refundBookingPayment(anyString(), anyLong(), any(), any());
+    }
+
+    @Test
+    void retryingResendsTheUnconfirmedRefundUnderItsOwnKey() throws Exception {
+        RefundEntity earlier = unconfirmedRefund();
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(capturedAppointment()));
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(refundRepo.findByAppointmentId("APPT1")).thenReturn(List.of(earlier));
+        when(stripeService.findRefund("pi_1", "refund_pi_1_RFND-OLD")).thenReturn(Optional.empty());
+        stripeRefunds(5000L);
+
+        services.paymentService.adminRefund("ADMIN1", refundOf("125.00"));
+
+        // Same amount, same idempotency key: Stripe returns the original
+        // refund if the first request did reach it.
+        verify(stripeService).refundBookingPayment(eq("pi_1"), eq(5000L), any(), eq("refund_pi_1_RFND-OLD"));
+        assertEquals("COMPLETED", earlier.getStatus());
+    }
+
+    @Test
+    void aNewRefundStopsWhenStripeHasRefundedMoreThanOurRecords() throws Exception {
+        when(bookAppointmentRepo.findByAppointmentIdForUpdate("APPT1")).thenReturn(Optional.of(capturedAppointment()));
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(stripeService.refundedCents("pi_1")).thenReturn(5000L);
+
+        BaseResponse response = services.paymentService.adminRefund("ADMIN1", refundOf("50.00"));
+
+        assertEquals("400", response.getStatusCode());
+        assertTrue(response.getMessage().contains("Stripe shows $50.00 refunded"));
+        verify(stripeService, never()).refundBookingPayment(anyString(), anyLong(), any(), any());
     }
 }

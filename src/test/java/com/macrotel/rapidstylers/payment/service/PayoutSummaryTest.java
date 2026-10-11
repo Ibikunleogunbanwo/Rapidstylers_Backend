@@ -25,6 +25,7 @@ class PayoutSummaryTest {
     private StylerRepo stylerRepo;
     private BookAppointmentRepo appointmentRepo;
     private StripeService stripeService;
+    private StylerPayoutSummary summary;
 
     @BeforeEach
     void setUp() {
@@ -36,7 +37,7 @@ class PayoutSummaryTest {
         services.stylerRepo = stylerRepo;
         services.bookAppointmentRepo = appointmentRepo;
         services.stripeService = stripeService;
-        // Payout summary logic lives in PaymentService — share the same mocks.
+        // The payout summary reads the commission rate from PaymentService.
         PaymentService paymentOps = new PaymentService();
         paymentOps.stylerRecords = new com.macrotel.rapidstylers.styler.service.StylerRecords(stylerRepo, mock(com.macrotel.rapidstylers.styler.repo.SubServiceRepo.class));
         paymentOps.appointmentRecords = new com.macrotel.rapidstylers.booking.service.AppointmentRecords(appointmentRepo);
@@ -44,6 +45,11 @@ class PayoutSummaryTest {
         paymentOps.auditService = services.auditService;
         ReflectionTestUtils.setField(paymentOps, "stripeCommissionPercent", 10.0);
         services.paymentService = paymentOps;
+        summary = new StylerPayoutSummary();
+        summary.stylerRecords = paymentOps.stylerRecords;
+        summary.appointmentRecords = paymentOps.appointmentRecords;
+        summary.stripeService = stripeService;
+        summary.paymentService = paymentOps;
     }
 
     @Test
@@ -64,7 +70,7 @@ class PayoutSummaryTest {
         when(appointmentRepo.findByStylerId("STYLER1"))
                 .thenReturn(Arrays.asList(paid, paid2, pending, noIntent));
 
-        BaseResponse response = services.paymentService.getStylerPayouts("STYLER1");
+        BaseResponse response = summary.getStylerPayouts("STYLER1");
 
         assertEquals("200", response.getStatusCode());
         Map<String, Object> data = (Map<String, Object>) response.getData();
@@ -95,7 +101,7 @@ class PayoutSummaryTest {
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
         when(appointmentRepo.findByStylerId("STYLER1")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = services.paymentService.getStylerPayouts("STYLER1");
+        BaseResponse response = summary.getStylerPayouts("STYLER1");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals(true, data.get("connected"));
@@ -113,7 +119,7 @@ class PayoutSummaryTest {
         when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(styler));
         when(appointmentRepo.findByStylerId("STYLER1")).thenReturn(Collections.emptyList());
 
-        BaseResponse response = services.paymentService.getStylerPayouts("STYLER1");
+        BaseResponse response = summary.getStylerPayouts("STYLER1");
 
         Map<String, Object> data = (Map<String, Object>) response.getData();
         assertEquals("REJECTED", data.get("status"));
