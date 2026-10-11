@@ -60,7 +60,8 @@ public class PaymentReconciliationService {
     /** Most recent run report, exposed to the admin endpoint. */
     private volatile Map<String, Object> lastReport = new LinkedHashMap<>();
 
-    @Scheduled(fixedDelayString = "${app.payment.reconcile-interval-ms:86400000}")
+    @Scheduled(fixedDelayString = "${app.payment.reconcile-interval-ms:86400000}",
+            initialDelayString = "${app.payment.reconcile-initial-delay-ms:60000}")
     public void scheduledReconcile() {
         runReconciliation();
     }

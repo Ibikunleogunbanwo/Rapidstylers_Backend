@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,6 +48,15 @@ class PaymentReconciliationServiceTest {
         a.setPaymentStatus(paymentStatus);
         a.setStatus(bookingStatus);
         return a;
+    }
+
+    @Test
+    void scheduledReconciliationWaitsBeforeItsFirstProviderRequest() throws Exception {
+        Scheduled scheduled = PaymentReconciliationService.class
+                .getMethod("scheduledReconcile")
+                .getAnnotation(Scheduled.class);
+
+        assertEquals("${app.payment.reconcile-initial-delay-ms:60000}", scheduled.initialDelayString());
     }
 
     @Test

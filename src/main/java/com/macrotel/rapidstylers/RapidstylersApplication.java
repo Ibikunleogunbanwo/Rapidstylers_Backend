@@ -4,14 +4,12 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 import org.springframework.core.env.MapPropertySource;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.Collections;
 
 // Sign-in is our own JWT filter, so Spring's default in-memory user (and its
 // "generated security password" log line) is switched off.
 @SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
-@EnableScheduling
 public class RapidstylersApplication {
 
 	public static void main(String[] args) {

@@ -20,6 +20,9 @@ public class EmailConfig {
     @Value("${app.resend.api-key}")
     private String resendApiKey;
 
+    @Value("${app.resend.api-url:https://api.resend.com/emails}")
+    private String resendApiUrl;
+
     @Value("${app.resend.from}")
     private String sender;
 
@@ -43,7 +46,7 @@ public class EmailConfig {
                     .build();
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.resend.com/emails"))
+                    .uri(URI.create(resendApiUrl))
                     .timeout(Duration.ofSeconds(20))
                     .header("Authorization", "Bearer " + resendApiKey)
                     .header("Content-Type", "application/json")
