@@ -63,9 +63,19 @@ public class SearchController {
     @GetMapping("/place_autocomplete")
     public ResponseEntity<BaseResponse> placeAutocomplete(@RequestParam("input") String input){
         BaseResponse baseResponse = new BaseResponse();
+        java.util.List<Map<String, Object>> suggestions = geocodingService.placeAutocomplete(input);
+        if (suggestions == null) {
+            // 503, not an empty list: the website then says suggestions are
+            // unavailable and lets the address be typed in full, instead of
+            // implying the address does not exist.
+            baseResponse.setStatusCode("503");
+            baseResponse.setMessage("Address suggestions are unavailable right now. Please type the full address.");
+            baseResponse.setData(java.util.List.of());
+            return ApiResponses.respond(baseResponse);
+        }
         baseResponse.setStatusCode(SUCCESS_STATUS_CODE);
         baseResponse.setMessage(SUCCESS_MESSAGE);
-        baseResponse.setData(geocodingService.placeAutocomplete(input));
+        baseResponse.setData(suggestions);
         return ApiResponses.respond(baseResponse);
     }
 

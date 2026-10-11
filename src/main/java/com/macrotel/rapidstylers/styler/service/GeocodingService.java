@@ -48,7 +48,8 @@ public class GeocodingService {
 
             String status = root.path("status").asText();
             if (!"OK".equals(status)) {
-                LOG.warning("Geocoding returned status: " + status + " for address: " + address);
+                LOG.warning("Geocoding returned status: " + status + " for address: " + address
+                        + (root.has("error_message") ? " (" + root.path("error_message").asText() + ")" : ""));
                 return null;
             }
 
@@ -142,17 +143,62 @@ public class GeocodingService {
     }
 
     /**
-     * Address suggestions for the signup form via Google Places Autocomplete.
-     * Restricted to Canada and address results only.
-     * @return list of { "placeId": ..., "description": "10020 101A Ave, Edmonton, AB, Canada" }
-     * or an empty list if the key is missing or the call fails.
+     * Address suggestions for the signup and booking forms, restricted to
+     * Canadian addresses.
+     *
+     * <p>Tries Places API (New) first, then the legacy Places endpoint, so
+     * suggestions work with whichever of the two is enabled for the key
+     * (Google no longer lets new projects enable the legacy one).
+     *
+     * @return { "placeId", "description" } items, an empty list when Google
+     * found nothing, or null when suggestions are unavailable (no key, or
+     * Google refused or failed both calls). The reason is logged from
+     * Google's own error message, which never contains the key.
      */
     public List<Map<String, Object>> placeAutocomplete(String input) {
         if (googleApiKey == null || googleApiKey.isBlank()) {
             LOG.warning("Google API key not configured — places autocomplete disabled");
-            return List.of();
+            return null;
         }
+        List<Map<String, Object>> suggestions = placeAutocompleteNew(input);
+        return suggestions != null ? suggestions : placeAutocompleteLegacy(input);
+    }
 
+    private List<Map<String, Object>> placeAutocompleteNew(String input) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Goog-Api-Key", googleApiKey);
+            headers.set("X-Goog-FieldMask", "suggestions.placePrediction.placeId,suggestions.placePrediction.text.text");
+            Map<String, Object> body = new HashMap<>();
+            body.put("input", input);
+            body.put("includedRegionCodes", List.of("ca"));
+            body.put("includedPrimaryTypes", List.of("street_address", "premise", "subpremise", "route"));
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://places.googleapis.com/v1/places:autocomplete",
+                    new HttpEntity<>(objectMapper.writeValueAsString(body), headers), String.class);
+            JsonNode root = objectMapper.readTree(response.getBody());
+            List<Map<String, Object>> suggestions = new ArrayList<>();
+            for (JsonNode suggestion : root.path("suggestions")) {
+                JsonNode prediction = suggestion.path("placePrediction");
+                if (prediction.isMissingNode()) continue;
+                Map<String, Object> item = new HashMap<>();
+                item.put("placeId", prediction.path("placeId").asText());
+                item.put("description", prediction.path("text").path("text").asText());
+                suggestions.add(item);
+            }
+            return suggestions;
+        } catch (org.springframework.web.client.HttpStatusCodeException ex) {
+            LOG.warning("Places API (New) autocomplete refused (HTTP " + ex.getRawStatusCode() + "): "
+                    + googleErrorMessage(ex.getResponseBodyAsString()));
+            return null;
+        } catch (Exception ex) {
+            LOG.warning("Places API (New) autocomplete error: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    private List<Map<String, Object>> placeAutocompleteLegacy(String input) {
         try {
             String encoded = URLEncoder.encode(input, StandardCharsets.UTF_8);
             String url = "https://maps.googleapis.com/maps/api/place/autocomplete/json?input=" + encoded
@@ -160,10 +206,13 @@ public class GeocodingService {
 
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
-
-            if (!"OK".equals(root.path("status").asText())) {
-                LOG.warning("Places autocomplete returned status: " + root.path("status").asText() + " for input: " + input);
-                return List.of();
+            String status = root.path("status").asText();
+            if ("ZERO_RESULTS".equals(status)) {
+                return new ArrayList<>();
+            }
+            if (!"OK".equals(status)) {
+                LOG.warning("Legacy Places autocomplete returned " + status + ": " + root.path("error_message").asText(""));
+                return null;
             }
 
             List<Map<String, Object>> suggestions = new ArrayList<>();
@@ -176,8 +225,18 @@ public class GeocodingService {
             return suggestions;
 
         } catch (Exception ex) {
-            LOG.warning("Places autocomplete error: " + ex.getMessage());
-            return List.of();
+            LOG.warning("Legacy Places autocomplete error: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    /** Google's error text from a JSON error body ({"error":{"message":...}}), or the status alone. */
+    private String googleErrorMessage(String body) {
+        try {
+            JsonNode error = objectMapper.readTree(body).path("error");
+            return error.path("status").asText("") + " " + error.path("message").asText("");
+        } catch (Exception ex) {
+            return "(no detail)";
         }
     }
 
