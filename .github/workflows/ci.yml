@@ -177,6 +177,16 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} \
             "cd /opt/rapidstylers/backend && docker compose -f docker-compose.prod.yml up -d --build app"
 
+      # The demo showroom runs the image just built. Restart it only when it is
+      # already running, so deploys never start it before it has been set up.
+      - name: Restart the demo showroom if it is running
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'rapiddeploy' }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -i /tmp/deploy_key ${VPS_USER}@${VPS_HOST} \
+            "cd /opt/rapidstylers/backend && if docker ps --format '{{.Names}}' | grep -qx rapidstylers-api-demo; then docker compose -f docker-compose.prod.yml --profile demo up -d app-demo; else echo 'demo not running, skipped'; fi"
+
       - name: Wait for healthy
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}

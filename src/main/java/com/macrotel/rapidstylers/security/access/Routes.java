@@ -25,23 +25,11 @@ public final class Routes {
             "/swagger-ui/**",
     };
 
-    /** Anyone may call these: sign-up, sign-in, browsing the catalog, the Stripe webhook. */
-    public static final String[] PUBLIC = {
-            // Sign-up, sign-in and password reset
-            "/rapid_stylers/generate_sign_up_otp_code",
-            "/rapid_stylers/verify_otp_code",
-            "/rapid_stylers/create_user_account",
-            "/rapid_stylers/styler_generate_otp",
-            "/rapid_stylers/styler_verify_otp",
-            "/rapid_stylers/create_styler",
-            "/rapid_stylers/sign_in",
-            "/rapid_stylers/google_sign_in",
-            "/rapid_stylers/admin_sign_in",
-            "/rapid_stylers/auth/refresh",
-            "/rapid_stylers/generate_reset_password_token",
-            "/rapid_stylers/reset_user_password",
-
-            // Catalog and search
+    /**
+     * Browsing: the catalog, search and location helpers. Public, and the only
+     * POST routes (beyond admin work) the read-only demo site still answers.
+     */
+    public static final String[] BROWSE = {
             "/rapid_stylers/list_identification",
             "/rapid_stylers/list_service",
             "/rapid_stylers/list_sub_service",
@@ -58,16 +46,31 @@ public final class Routes {
             "/rapid_stylers/search_by_service",
             "/rapid_stylers/search_nearby",
             "/rapid_stylers/booking_estimate",
-
-            // Location helpers
             "/rapid_stylers/place_autocomplete",
             "/rapid_stylers/place_details",
             "/rapid_stylers/detect-location",
             "/rapid_stylers/reverse-geocode",
+    };
+
+    /** Anyone may call these: sign-up, sign-in, browsing ({@link #BROWSE}), the Stripe webhook. */
+    public static final String[] PUBLIC = join(new String[]{
+            // Sign-up, sign-in and password reset
+            "/rapid_stylers/generate_sign_up_otp_code",
+            "/rapid_stylers/verify_otp_code",
+            "/rapid_stylers/create_user_account",
+            "/rapid_stylers/styler_generate_otp",
+            "/rapid_stylers/styler_verify_otp",
+            "/rapid_stylers/create_styler",
+            "/rapid_stylers/sign_in",
+            "/rapid_stylers/google_sign_in",
+            "/rapid_stylers/admin_sign_in",
+            "/rapid_stylers/auth/refresh",
+            "/rapid_stylers/generate_reset_password_token",
+            "/rapid_stylers/reset_user_password",
 
             // Signed by Stripe instead of a token
             "/rapid_stylers/stripe/webhook",
-    };
+    }, BROWSE);
 
     public static final String[] ADMIN = {
             // Catalog maintenance
@@ -206,4 +209,10 @@ public final class Routes {
             "/rapid_stylers/get_upload_signature",
             "/rapid_stylers/delete_cloudinary_image",
     };
+
+    private static String[] join(String[] first, String[] second) {
+        String[] all = java.util.Arrays.copyOf(first, first.length + second.length);
+        System.arraycopy(second, 0, all, first.length, second.length);
+        return all;
+    }
 }

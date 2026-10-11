@@ -55,7 +55,8 @@ class EnvForwardingContractTest {
             "DB_URL", "in-network DB host is the service name, not .env.example's localhost",
             "REDIS_HOST", "in-network service name, not .env.example's localhost",
             "REDIS_PORT", "in-network port, not the host-mapped one",
-            "KAFKA_BOOTSTRAP_SERVERS", "in-network service name, not .env.example's localhost:9094");
+            "KAFKA_BOOTSTRAP_SERVERS", "in-network service name, not .env.example's localhost:9094",
+            "APP_DEMO_READ_ONLY", "the live app is never the read-only showroom; only app-demo sets it true");
 
     /**
      * Compose-supplied defaults that intentionally differ from the app's own. Kept
@@ -125,7 +126,7 @@ class EnvForwardingContractTest {
                 inApp = false; // reached the next service
                 inEnvironment = false;
             }
-            if (inApp && trimmed.equals("environment:")) {
+            if (inApp && (trimmed.equals("environment:") || trimmed.startsWith("environment: &"))) {
                 inEnvironment = true;
                 continue;
             }
