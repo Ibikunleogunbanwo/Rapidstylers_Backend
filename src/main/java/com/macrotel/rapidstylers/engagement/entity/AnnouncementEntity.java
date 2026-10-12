@@ -19,7 +19,10 @@ public class AnnouncementEntity implements Serializable {
     private String message;
     @Column(name = "recipient_count", nullable = false)
     private int recipientCount;
-    /** The one customer it went to; null when it went to every active customer. */
+    /** CUSTOMERS or STYLISTS: which kind of account it went to. */
+    @Column(name = "audience", nullable = false, length = 16)
+    private String audience = "CUSTOMERS";
+    /** The one customer (or stylist) it went to; null when it went to the whole audience. */
     @Column(name = "recipient_email", length = 190)
     private String recipientEmail;
     /** Server local time. */

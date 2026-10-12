@@ -22,11 +22,20 @@ public class BlogPostEntity implements Serializable {
     private String author;
     private String insertedDt;
     private String updatedDt;
+    /** {@link #DRAFT} (admin only) or {@link #PUBLISHED} (on the public site). */
     private String status;
 
+    public static final String DRAFT = "DRAFT";
+    public static final String PUBLISHED = "PUBLISHED";
+
     public BlogPostEntity() {
-        this.status = "0";
+        this.status = PUBLISHED;
         this.insertedDt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMMM dd, yyyy"));
         this.updatedDt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MMMM dd, yyyy"));
+    }
+
+    /** Whether the public site may show it. Only a draft is hidden. */
+    public boolean isPublished() {
+        return !DRAFT.equals(status);
     }
 }

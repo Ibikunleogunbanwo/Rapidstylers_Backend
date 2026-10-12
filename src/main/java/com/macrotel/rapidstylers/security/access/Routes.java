@@ -139,6 +139,8 @@ public final class Routes {
             "/rapid_stylers/create_blog",
             "/rapid_stylers/update_blog",
             "/rapid_stylers/delete_blog",
+            "/rapid_stylers/admin/blog_posts",
+            "/rapid_stylers/admin/blog_post",
             "/rapid_stylers/create_identification",
             "/rapid_stylers/update_identification",
             "/rapid_stylers/delete_identification",
@@ -154,6 +156,7 @@ public final class Routes {
             "/rapid_stylers/admin/send_announcement",
             "/rapid_stylers/admin/announcements",
             "/rapid_stylers/admin/announcement_audience_count",
+            "/rapid_stylers/admin/migrate_identification_images",
             "/rapid_stylers/admin/settings/commission",
             "/rapid_stylers/admin/recovery_campaigns",
             "/rapid_stylers/admin/failed_events",
@@ -265,6 +268,13 @@ public final class Routes {
             "/rapid_stylers/styler/payouts",
             "/rapid_stylers/styler/business_summary",
             "/rapid_stylers/styler/reviews",
+
+            // Notifications (admin announcements to stylists)
+            "/rapid_stylers/styler/notifications",
+            "/rapid_stylers/styler/notifications/read",
+            "/rapid_stylers/styler/notifications/read_all",
+            "/rapid_stylers/styler/notifications/delete",
+            "/rapid_stylers/styler/notifications/delete_all",
     };
 
     public static final String[] CUSTOMER = {

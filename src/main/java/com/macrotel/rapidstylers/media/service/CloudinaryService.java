@@ -300,6 +300,57 @@ public class CloudinaryService {
         }
     }
 
+    /**
+     * Copies a public (upload) image to a private (authenticated) asset with the
+     * same public id, and returns the new asset's secure_url, or null when
+     * Cloudinary is not configured or the copy failed. The source asset is left
+     * alone: the caller deletes it once the row points at the copy.
+     *
+     * Cloudinary fetches the source itself (the upload API takes a URL as the
+     * file), so no image bytes pass through this server. overwrite=true makes a
+     * repeat safe: copying again replaces the private copy with the same image.
+     * The source URL is never logged; it identifies a person's ID document.
+     */
+    public String copyToAuthenticated(String sourceUrl, String publicId) {
+        if (isBlank(sourceUrl) || isBlank(publicId) || !isConfigured()) {
+            return null;
+        }
+        try {
+            long timestamp = Instant.now().getEpochSecond();
+            java.util.TreeMap<String, String> signed = new java.util.TreeMap<>();
+            signed.put("overwrite", "true");
+            signed.put("public_id", publicId);
+            signed.put("timestamp", String.valueOf(timestamp));
+            signed.put("type", TYPE_AUTHENTICATED);
+            String signature = sha1(signable(signed) + apiSecret);
+
+            LinkedMultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+            body.add("file", sourceUrl.trim());
+            signed.forEach(body::add);
+            body.add("api_key", apiKey);
+            body.add("signature", signature);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+            // Cloudinary downloads the source before answering, so this waits longer than a destroy.
+            ResponseEntity<String> cloudRes = restTemplate(30000).postForEntity(
+                    URI.create("https://api.cloudinary.com/v1_1/" + cloudName + "/image/upload"),
+                    new HttpEntity<>(body, headers), String.class);
+            JsonNode root = cloudRes.getBody() == null ? null : new ObjectMapper().readTree(cloudRes.getBody());
+            String secureUrl = root == null ? "" : root.path("secure_url").asText("");
+            if (secureUrl.isBlank()) {
+                LOG.warning("Cloudinary did not copy " + publicId + " to a private asset");
+                return null;
+            }
+            return secureUrl;
+        } catch (Exception ex) {
+            // The message of a failed upload can quote the source URL, so only its type is logged.
+            LOG.warning("Cloudinary private copy failed for " + publicId + ": " + ex.getClass().getSimpleName());
+            return null;
+        }
+    }
+
     /** One uploaded asset as the listing reports it. */
     public static final class Upload {
         public final String publicId;
@@ -376,9 +427,13 @@ public class CloudinaryService {
      * triggered this cleanup, so it must not hang on a slow third party.
      */
     private RestTemplate restTemplate() {
+        return restTemplate(5000);
+    }
+
+    private RestTemplate restTemplate(int readTimeoutMs) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(3000);
-        factory.setReadTimeout(5000);
+        factory.setReadTimeout(readTimeoutMs);
         return new RestTemplate(factory);
     }
 

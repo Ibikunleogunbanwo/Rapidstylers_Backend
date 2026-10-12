@@ -174,11 +174,28 @@ public class NotificationService {
         return response;
     }
 
-    /**
-     * Admin announcement: an in-app notification for one customer (by email)
-     * or, with no email, for every active customer. In-app only, no email.
-     */
+    /** Who an announcement goes to: customers (the default) or stylists. */
+    public static final String AUDIENCE_CUSTOMERS = "CUSTOMERS";
+    public static final String AUDIENCE_STYLISTS = "STYLISTS";
+
+    /** The audience as stored: CUSTOMERS when missing, CUSTOMERS or STYLISTS in any case, null for anything else. */
+    static String audience(String requested){
+        if(requested == null || requested.isBlank()) return AUDIENCE_CUSTOMERS;
+        String upper = requested.trim().toUpperCase(Locale.ROOT);
+        return AUDIENCE_CUSTOMERS.equals(upper) || AUDIENCE_STYLISTS.equals(upper) ? upper : null;
+    }
+
     public BaseResponse sendAnnouncement(String adminId, String title, String message, String recipientEmail){
+        return sendAnnouncement(adminId, title, message, recipientEmail, null);
+    }
+
+    /**
+     * Admin announcement: an in-app notification for one account (by email) or,
+     * with no email, for the whole audience: every active customer (CUSTOMERS,
+     * the default) or every active, approved stylist (STYLISTS). In-app only, no
+     * email. A stylist's copy lands in their own inbox (StylerInboxService).
+     */
+    public BaseResponse sendAnnouncement(String adminId, String title, String message, String recipientEmail, String audience){
         BaseResponse response = new BaseResponse(true);
         try {
             String cleanTitle = title == null ? "" : title.trim();
@@ -186,26 +203,37 @@ public class NotificationService {
             if(cleanTitle.isEmpty() || cleanMessage.isEmpty()) return Responses.errorResponse(response, "Title and message are required");
             if(cleanTitle.length() > 120) return Responses.errorResponse(response, "Title must be 120 characters or fewer");
             if(cleanMessage.length() > 1000) return Responses.errorResponse(response, "Message must be 1000 characters or fewer");
+            String to = audience(audience);
+            if(to == null) return Responses.errorResponse(response, "Audience must be CUSTOMERS or STYLISTS");
+            boolean stylists = AUDIENCE_STYLISTS.equals(to);
             List<String> recipients;
             String sentTo = null;
             if(recipientEmail != null && !recipientEmail.isBlank()){
-                Optional<UserEntity> user = customerRecords.findByEmailAddress(recipientEmail.trim());
-                if(user.isEmpty()) return Responses.errorResponse(response, "No customer with that email");
-                recipients = List.of(user.get().getUserId());
-                sentTo = user.get().getEmailAddress();
+                if(stylists){
+                    Optional<StylerEntity> styler = stylerRecords.findByEmailAddress(recipientEmail.trim());
+                    if(styler.isEmpty()) return Responses.errorResponse(response, "No stylist with that email");
+                    recipients = List.of(styler.get().getStylerId());
+                    sentTo = styler.get().getEmailAddress();
+                } else {
+                    Optional<UserEntity> user = customerRecords.findByEmailAddress(recipientEmail.trim());
+                    if(user.isEmpty()) return Responses.errorResponse(response, "No customer with that email");
+                    recipients = List.of(user.get().getUserId());
+                    sentTo = user.get().getEmailAddress();
+                }
             } else {
-                recipients = customerRecords.findActiveUserIds();
+                recipients = stylists ? stylerRecords.findActiveApprovedStylerIds() : customerRecords.findActiveUserIds();
             }
             List<NotificationEntity> rows = new ArrayList<>();
-            for(String userId : recipients){
-                rows.add(new NotificationEntity(userId, "", "ANNOUNCEMENT", cleanTitle, cleanMessage));
+            for(String accountId : recipients){
+                rows.add(stylists ? NotificationEntity.forStylist(accountId, "ANNOUNCEMENT", cleanTitle, cleanMessage)
+                        : new NotificationEntity(accountId, "", "ANNOUNCEMENT", cleanTitle, cleanMessage));
             }
             notificationRepo.saveAll(rows);
-            recordAnnouncement(adminId, cleanTitle, cleanMessage, rows.size(), sentTo);
+            recordAnnouncement(adminId, to, cleanTitle, cleanMessage, rows.size(), sentTo);
             if(auditService != null){
                 auditService.audit(adminId, "ADMIN", "ADMIN_ANNOUNCEMENT", "NOTIFICATION",
                         recipients.size() == 1 ? recipients.get(0) : "ALL",
-                        "Sent \"" + cleanTitle + "\" to " + rows.size() + " customer(s)");
+                        "Sent \"" + cleanTitle + "\" to " + rows.size() + (stylists ? " stylist(s)" : " customer(s)"));
             }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Announcement sent");
@@ -217,10 +245,11 @@ public class NotificationService {
     }
 
     /** Keeps the announcement for the admin's sent history; never fails the send. */
-    private void recordAnnouncement(String adminId, String title, String message, int recipientCount, String recipientEmail){
+    private void recordAnnouncement(String adminId, String audience, String title, String message, int recipientCount, String recipientEmail){
         if(announcementRepo == null) return;
         try {
             AnnouncementEntity sent = new AnnouncementEntity();
+            sent.setAudience(audience);
             sent.setTitle(title);
             sent.setMessage(message);
             sent.setRecipientCount(recipientCount);
@@ -234,8 +263,9 @@ public class NotificationService {
     }
 
     /**
-     * Sent announcements, newest first: {title, message, recipientCount,
-     * recipientEmail (null = all customers), sentAt (ISO-8601), sentBy}.
+     * Sent announcements, newest first: {title, message, audience (CUSTOMERS or
+     * STYLISTS), recipientCount, recipientEmail (null = the whole audience),
+     * sentAt (ISO-8601), sentBy}.
      */
     public BaseResponse listAnnouncements(){
         BaseResponse response = new BaseResponse(true);
@@ -246,6 +276,7 @@ public class NotificationService {
                 row.put("id", sent.getId());
                 row.put("title", sent.getTitle());
                 row.put("message", sent.getMessage());
+                row.put("audience", sent.getAudience() == null ? AUDIENCE_CUSTOMERS : sent.getAudience());
                 row.put("recipientCount", sent.getRecipientCount());
                 row.put("recipientEmail", sent.getRecipientEmail());
                 row.put("sentAt", sent.getSentAt() == null ? null
@@ -264,11 +295,23 @@ public class NotificationService {
 
     /** How many customers an announcement to everyone would reach (active customers). */
     public BaseResponse announcementAudienceCount(){
+        return announcementAudienceCount(null);
+    }
+
+    /**
+     * How many accounts an announcement to the whole audience would reach:
+     * active customers (CUSTOMERS, the default) or active, approved stylists (STYLISTS).
+     */
+    public BaseResponse announcementAudienceCount(String audience){
         BaseResponse response = new BaseResponse(true);
         try {
+            String to = audience(audience);
+            if(to == null) return Responses.errorResponse(response, "Audience must be CUSTOMERS or STYLISTS");
+            int count = AUDIENCE_STYLISTS.equals(to) ? stylerRecords.findActiveApprovedStylerIds().size()
+                    : customerRecords.findActiveUserIds().size();
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(Map.of("count", customerRecords.findActiveUserIds().size()));
+            response.setData(Map.of("count", count));
         } catch (Exception ex) {
             LOG.warning("Announcement audience count failed: " + ex.getMessage());
         }
@@ -292,6 +335,7 @@ public class NotificationService {
                 item.put("message", notification.getMessage());
                 item.put("read", notification.isRead());
                 item.put("createdAt", notification.getCreatedAt());
+                item.put("createdAtUtc", NotificationTimes.utc(notification.getCreatedAt()));
                 result.add(item);
             }
             Map<String, Object> data = new LinkedHashMap<>();

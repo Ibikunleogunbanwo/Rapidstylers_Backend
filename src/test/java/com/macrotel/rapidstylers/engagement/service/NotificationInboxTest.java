@@ -127,4 +127,22 @@ class NotificationInboxTest {
         assertEquals("400", service.sendAnnouncement("A1", "t", "m", "nobody@example.com").getStatusCode());
         verify(notificationRepo, never()).saveAll(any());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void customerItemsCarryCreatedAtAsAnInstantToo() {
+        UserEntity ada = new UserEntity();
+        ada.setUserId("U1");
+        when(userRepo.findByUserId("U1")).thenReturn(Optional.of(ada));
+        NotificationEntity note = new NotificationEntity("U1", "", "ANNOUNCEMENT", "t", "m");
+        note.setCreatedAt("2026-10-12 15:04:05");
+        when(notificationRepo.findByUserIdOrderByCreatedAtDesc("U1")).thenReturn(List.of(note));
+
+        java.util.Map<String, Object> data = (java.util.Map<String, Object>) service.listNotifications("U1").getData();
+        java.util.Map<String, Object> item = ((List<java.util.Map<String, Object>>) data.get("items")).get(0);
+
+        assertEquals("2026-10-12 15:04:05", item.get("createdAt"));
+        assertEquals(java.time.LocalDateTime.of(2026, 10, 12, 15, 4, 5).atZone(java.time.ZoneId.systemDefault()).toInstant().toString(),
+                item.get("createdAtUtc"));
+    }
 }

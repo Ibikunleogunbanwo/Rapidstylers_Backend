@@ -32,8 +32,23 @@ public class NotificationEntity implements Serializable {
     @Column(name = "is_read", nullable = false)
     private boolean read;
 
+    /**
+     * Server local time (the JVM zone), "yyyy-MM-dd HH:mm:ss". Responses also
+     * carry it as an instant, createdAtUtc (see NotificationTimes).
+     */
     @Column(nullable = false)
     private String createdAt;
+
+    /**
+     * Whose inbox this row is in. CUSTOMER: the customer userId (stylerId only
+     * names the stylist it is about). STYLIST: the stylist stylerId, with an
+     * empty userId so no customer query can match it.
+     */
+    @Column(name = "recipient_role", nullable = false, length = 16)
+    private String recipientRole = RECIPIENT_CUSTOMER;
+
+    public static final String RECIPIENT_CUSTOMER = "CUSTOMER";
+    public static final String RECIPIENT_STYLIST = "STYLIST";
 
     public NotificationEntity() {
     }
@@ -46,5 +61,12 @@ public class NotificationEntity implements Serializable {
         this.message = message;
         this.read = false;
         this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+    }
+
+    /** A notification for a stylist's own inbox. */
+    public static NotificationEntity forStylist(String stylerId, String type, String title, String message) {
+        NotificationEntity notification = new NotificationEntity("", stylerId, type, title, message);
+        notification.recipientRole = RECIPIENT_STYLIST;
+        return notification;
     }
 }

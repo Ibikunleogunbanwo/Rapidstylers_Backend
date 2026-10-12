@@ -103,6 +103,20 @@ public class CatalogController {
         return new ResponseEntity<>(baseResponse,status);
     }
 
+    /** Admin-only: every article, drafts included, each with its status and content. */
+    @GetMapping("/admin/blog_posts")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity <BaseResponse> adminBlogPosts(){
+        return ApiResponses.respond(catalogService.listAdminBlogPosts());
+    }
+
+    /** Admin-only: one article, draft or published, for the editor. */
+    @GetMapping("/admin/blog_post")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity <BaseResponse> adminBlogPost(@RequestParam(value = "id", required = false) String id){
+        return ApiResponses.respond(catalogService.adminBlogPost(id));
+    }
+
     @PostMapping("/create_blog")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity <BaseResponse> createBlog(@Valid @RequestBody BlogPostData blogPostData){

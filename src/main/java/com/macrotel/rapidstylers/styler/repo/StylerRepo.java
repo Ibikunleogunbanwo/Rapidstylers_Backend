@@ -28,6 +28,14 @@ public interface StylerRepo extends JpaRepository<StylerEntity, Long> {
 
     Optional<StylerEntity> findByStripeConnectAccountId(String stripeConnectAccountId);
 
+    /** Ids of active, approved stylists, for admin announcements. */
+    @Query("SELECT s.stylerId FROM StylerEntity s WHERE s.status = '0' AND s.verificationStatus = 'APPROVED' AND s.stylerId IS NOT NULL")
+    List<String> findActiveApprovedStylerIds();
+
+    /** The next stylists after an id that have an ID photo on file, oldest first (ID photo migration). */
+    List<StylerEntity> findByIdGreaterThanAndIdentificationImageUrlIsNotNullOrderByIdAsc(Long id,
+            org.springframework.data.domain.Pageable page);
+
     /** How many stylist records hold this exact image URL (used before destroying an asset). */
     long countByProfileImageUrlContaining(String fragment);
 

@@ -13,4 +13,11 @@ public interface NotificationRepo extends JpaRepository<NotificationEntity, Long
     long countByUserIdAndReadFalse(String userId);
 
     Optional<NotificationEntity> findByIdAndUserId(Long id, String userId);
+
+    // A stylist's own inbox: rows whose recipientRole is STYLIST.
+    List<NotificationEntity> findByStylerIdAndRecipientRoleOrderByCreatedAtDesc(String stylerId, String recipientRole);
+
+    long countByStylerIdAndRecipientRoleAndReadFalse(String stylerId, String recipientRole);
+
+    Optional<NotificationEntity> findByIdAndStylerIdAndRecipientRole(Long id, String stylerId, String recipientRole);
 }

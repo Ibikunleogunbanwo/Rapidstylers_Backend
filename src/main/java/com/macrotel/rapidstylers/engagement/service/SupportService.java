@@ -47,8 +47,10 @@ public class SupportService {
         try {
             String senderRole = senderRole(role);
             if(!accountExists(accountId, senderRole)) return Responses.errorResponse(response, "Invalid User Id");
-            SupportTicketEntity ticket = supportTicketRepo.save(new SupportTicketEntity(accountId, senderRole,
-                    AppUtils.sanitizeText(data.getSubject().trim()), AppUtils.sanitizeText(data.getMessage().trim())));
+            SupportTicketEntity entity = new SupportTicketEntity(accountId, senderRole,
+                    AppUtils.sanitizeText(data.getSubject().trim()), AppUtils.sanitizeText(data.getMessage().trim()));
+            entity.setCategory(category(data.getCategory()));
+            SupportTicketEntity ticket = supportTicketRepo.save(entity);
             auditService.audit(accountId, SENDER_STYLIST.equals(senderRole) ? Roles.STYLER : Roles.CUSTOMER, "CREATE_SUPPORT_TICKET", "SUPPORT_TICKET", String.valueOf(ticket.getId()), ticket.getSubject());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Support ticket created");
@@ -78,9 +80,20 @@ public class SupportService {
      * fields plus ticketId, senderName, senderEmail and senderRole.
      */
     public BaseResponse listAllSupportTickets(){
+        return listAllSupportTickets(null);
+    }
+
+    /**
+     * {@link #listAllSupportTickets()} narrowed to one category when one is given;
+     * a blank filter lists every ticket, an unknown one lists none.
+     */
+    public BaseResponse listAllSupportTickets(String categoryFilter){
         BaseResponse response = new BaseResponse(true);
         try {
+            String wanted = categoryFilter == null || categoryFilter.isBlank() ? null
+                    : categoryFilter.trim().toUpperCase(Locale.ROOT);
             List<SupportTicketEntity> tickets = new ArrayList<>(supportTicketRepo.findAll());
+            if(wanted != null) tickets.removeIf(ticket -> !wanted.equals(category(ticket.getCategory())));
             tickets.sort(Comparator.comparing(SupportTicketEntity::getId, Comparator.nullsLast(Comparator.reverseOrder())));
             Map<String, String[]> senders = new HashMap<>();
             List<Map<String, Object>> rows = new ArrayList<>();
@@ -97,6 +110,7 @@ public class SupportService {
                 row.put("createdAt", ticket.getCreatedAt());
                 row.put("updatedAt", ticket.getUpdatedAt());
                 row.put("senderRole", role);
+                row.put("category", category(ticket.getCategory()));
                 row.put("ticketId", ticket.getId());
                 row.put("senderName", sender[0]);
                 row.put("senderEmail", sender[1]);
@@ -107,6 +121,17 @@ public class SupportService {
             response.setData(rows);
         } catch(Exception ex){ LOG.warning(ex.getMessage()); }
         return response;
+    }
+
+    /** What a ticket can be about. OTHER covers older tickets and anything not listed. */
+    static final List<String> CATEGORIES = List.of("BOOKING", "PAYMENT", "ACCOUNT", "TECHNICAL", "OTHER");
+    static final String CATEGORY_OTHER = "OTHER";
+
+    /** The category as stored: one of {@link #CATEGORIES}, case-insensitive; missing or unknown is OTHER. */
+    static String category(String requested){
+        if(requested == null) return CATEGORY_OTHER;
+        String upper = requested.trim().toUpperCase(Locale.ROOT);
+        return CATEGORIES.contains(upper) ? upper : CATEGORY_OTHER;
     }
 
     /** A ticket's sender role as the admin list reports it: STYLIST or CUSTOMER. */

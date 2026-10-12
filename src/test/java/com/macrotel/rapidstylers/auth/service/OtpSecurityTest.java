@@ -417,6 +417,9 @@ class OtpSecurityTest {
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(emailConfig).sendSimpleMail(eq(email), eq("You already have a RapidStylers account"), bodyCaptor.capture());
         assertTrue(bodyCaptor.getValue().contains("You already have a RapidStylers account. Sign in, or reset your password."));
+        // ...and how: where to sign in, and the reset option on the sign-in page.
+        assertTrue(bodyCaptor.getValue().contains("https://rapidstylers.ca"));
+        assertTrue(bodyCaptor.getValue().contains("Forgot password?"));
         assertFalse(OTP_IN_EMAIL.matcher(bodyCaptor.getValue()).find(), "the notice carries no code");
         // The notice counts against the same per-email generation cap as a code.
         verify(rateLimiterService).record("otp_gen:" + email, 900);

@@ -274,7 +274,8 @@ public class CatalogService {
                     ReadCacheService.KEY_CATALOG_BLOG + id, ReadCacheService.BLOG_TTL, null,
                     () -> {
                         Optional<BlogPostEntity> post = blogPostRepo.findById(Long.parseLong(id));
-                        if(post.isEmpty()) return null;
+                        // A draft is not on the site: the same answer as no article at all.
+                        if(post.isEmpty() || !post.get().isPublished()) return null;
                         BlogPostEntity blogPost = post.get();
                         HashMap<String, String> map = new HashMap<>();
                         map.put("id", String.valueOf(blogPost.getId()));
@@ -312,12 +313,21 @@ public class CatalogService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            String publishStatus = blogStatus(blogPostData.getStatus());
+            if(publishStatus == null){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage(BLOG_STATUS_ERROR);
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             BlogPostEntity post = new BlogPostEntity();
             applyBlogFields(post, blogPostData);
+            post.setStatus(publishStatus);
             post.setAuthor(blogPostData.getAuthor() == null || blogPostData.getAuthor().isEmpty()
                     ? "RapidStylers Team" : AppUtils.sanitizeText(blogPostData.getAuthor()));
-            blogPostRepo.save(post);
+            BlogPostEntity saved = blogPostRepo.save(post);
             evict(ReadCacheService.KEY_CATALOG_BLOGS);
+            if(saved != null && saved.getId() != null) evict(ReadCacheService.KEY_CATALOG_BLOG + saved.getId());
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Blog article created successfully");
@@ -352,14 +362,25 @@ public class CatalogService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            String publishStatus = blogStatus(blogPostData.getStatus());
+            if(publishStatus == null){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage(BLOG_STATUS_ERROR);
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             BlogPostEntity post = isPostExist.get();
             String previousImageUrl = post.getImageUrl();
             applyBlogFields(post, blogPostData);
+            post.setStatus(publishStatus);
             if(blogPostData.getAuthor() != null && !blogPostData.getAuthor().isEmpty()){
                 post.setAuthor(AppUtils.sanitizeText(blogPostData.getAuthor()));
             }
             blogPostRepo.save(post);
-            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + blogPostData.getId());
+            // Both keys go, whatever changed: publishing or unpublishing moves the
+            // article onto or off the public list as well as its own page.
+            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + blogPostData.getId(),
+                    ReadCacheService.KEY_CATALOG_BLOG + post.getId());
             // A new cover leaves the previous one unused, so it goes back.
             if(previousImageUrl != null && !previousImageUrl.equals(post.getImageUrl())){
                 imageReclaimService.reclaimIfUnreferenced(previousImageUrl);
@@ -389,6 +410,78 @@ public class CatalogService {
     private static String blogProblem(BlogPostData data){
         return CatalogRules.blogError(AppUtils.sanitizeText(data.getTitle()), AppUtils.sanitizeText(data.getContent()),
                 data.getImageUrl());
+    }
+
+    static final String BLOG_STATUS_ERROR = "Status must be DRAFT or PUBLISHED";
+
+    /**
+     * The status an admin asked for, as stored: missing or blank is PUBLISHED
+     * (what every save did before drafts existed), DRAFT or PUBLISHED in any
+     * case as given, and null for anything else.
+     */
+    static String blogStatus(String requested){
+        if(requested == null || requested.isBlank()) return BlogPostEntity.PUBLISHED;
+        String upper = requested.trim().toUpperCase(Locale.ROOT);
+        return BlogPostEntity.DRAFT.equals(upper) || BlogPostEntity.PUBLISHED.equals(upper) ? upper : null;
+    }
+
+    /**
+     * Admin view of every article, drafts included, newest first, with the full
+     * content so an article can be edited from the list. Never cached: the
+     * public caches hold published articles only.
+     */
+    public BaseResponse listAdminBlogPosts(){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            List<BlogPostEntity> posts = blogPostRepo.findAll();
+            posts.sort(Comparator.comparing(BlogPostEntity::getId, Comparator.nullsLast(Comparator.reverseOrder())));
+            List<Object> rows = new ArrayList<>();
+            for(BlogPostEntity post : posts) rows.add(adminBlogRow(post));
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(rows);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** One article for the admin editor, draft or not. */
+    public BaseResponse adminBlogPost(String id){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            Optional<BlogPostEntity> post = id == null || !id.trim().matches("\\d{1,18}") ? Optional.empty()
+                    : blogPostRepo.findById(Long.parseLong(id.trim()));
+            if(post.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("No blog article found for such id");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(adminBlogRow(post.get()));
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /** The public fields of an article plus content, status and dateUpdated. */
+    private static Map<String, String> adminBlogRow(BlogPostEntity post){
+        Map<String, String> row = new LinkedHashMap<>();
+        row.put("id", String.valueOf(post.getId()));
+        row.put("title", post.getTitle());
+        row.put("category", post.getCategory());
+        row.put("content", post.getContent());
+        row.put("imageUrl", post.getImageUrl());
+        row.put("author", post.getAuthor());
+        row.put("dateCreated", post.getInsertedDt());
+        row.put("dateUpdated", post.getUpdatedDt());
+        row.put("status", post.isPublished() ? BlogPostEntity.PUBLISHED : BlogPostEntity.DRAFT);
+        return row;
     }
 
     /** Title, category, content and image of an article; text is sanitised, category trimmed, a blank image dropped. */
@@ -463,6 +556,8 @@ public class CatalogService {
         allPosts.sort(Comparator.comparing(BlogPostEntity::getId).reversed());
         List<Object> built = new ArrayList<>();
         for(BlogPostEntity post : allPosts){
+            // Drafts never reach the public list (nor this cache entry).
+            if(!post.isPublished()) continue;
             HashMap<String, String> postMap = new HashMap<>();
             postMap.put("id", String.valueOf(post.getId()));
             postMap.put("title", post.getTitle());

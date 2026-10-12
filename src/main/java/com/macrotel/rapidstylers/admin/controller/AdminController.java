@@ -30,6 +30,8 @@ public class AdminController {
     com.macrotel.rapidstylers.engagement.service.NotificationService notificationService;
     @Autowired
     com.macrotel.rapidstylers.media.service.IdentificationImageService identificationImageService;
+    @Autowired
+    com.macrotel.rapidstylers.media.service.IdentificationImageMigrationService identificationImageMigrationService;
 
     @GetMapping("/admin/recovery_campaigns")
     @PreAuthorize("hasRole('ADMIN')")
@@ -76,14 +78,18 @@ public class AdminController {
         return ApiResponses.respond(adminService.searchAuditLogs(page, size, action, actorId, resourceId));
     }
 
-    /** Admin-only: an in-app announcement to one customer (recipientEmail) or all active customers. */
+    /**
+     * Admin-only: an in-app announcement. audience CUSTOMERS (default) or STYLISTS;
+     * with recipientEmail it goes to that one customer or stylist, without it to
+     * every active customer or every active, approved stylist.
+     */
     @PostMapping("/admin/send_announcement")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> adminSendAnnouncement(@RequestBody Map<String, String> body, HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();
         return ApiResponses.respond(notificationService.sendAnnouncement(adminId, body.get("title"),
-                body.get("message"), body.get("recipientEmail")));
+                body.get("message"), body.get("recipientEmail"), body.get("audience")));
     }
 
     /** Admin-only: sent announcements, newest first. */
@@ -94,12 +100,39 @@ public class AdminController {
         return ApiResponses.respond(notificationService.listAnnouncements());
     }
 
-    /** Admin-only: how many customers an announcement to everyone reaches. */
+    /** Admin-only: how many customers (or, with audience=STYLISTS, approved stylists) an announcement to everyone reaches. */
     @GetMapping("/admin/announcement_audience_count")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<BaseResponse> adminAnnouncementAudienceCount(HttpServletRequest request){
+    public ResponseEntity<BaseResponse> adminAnnouncementAudienceCount(@RequestParam(value = "audience", required = false) String audience,
+                                                                       HttpServletRequest request){
         if(CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(notificationService.announcementAudienceCount());
+        return ApiResponses.respond(notificationService.announcementAudienceCount(audience));
+    }
+
+    /**
+     * Owner-only: moves ID photos still stored as public Cloudinary assets to
+     * private ones. Body {dryRun (default true), afterId, limit}; call again with
+     * the returned nextAfterId until it is null.
+     */
+    @PostMapping("/admin/migrate_identification_images")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminMigrateIdentificationImages(@RequestBody(required = false) Map<String, Object> body,
+                                                                         HttpServletRequest request){
+        String adminId = CurrentAccount.adminId(request);
+        if(adminId == null) return CurrentAccount.unauthorized();
+        Map<String, Object> options = body == null ? Map.of() : body;
+        // Anything but an explicit false is a dry run, so a mistyped call changes nothing.
+        boolean dryRun = !(Boolean.FALSE.equals(options.get("dryRun")) || "false".equalsIgnoreCase(String.valueOf(options.get("dryRun"))));
+        Long limit = number(options.get("limit"));
+        return ApiResponses.respond(identificationImageMigrationService.migrate(adminId, dryRun,
+                number(options.get("afterId")), limit == null ? null : (int) Math.min(limit, Integer.MAX_VALUE)));
+    }
+
+    /** A JSON number (or numeric string) as a Long, or null. */
+    private static Long number(Object value){
+        if(value instanceof Number) return ((Number) value).longValue();
+        if(value instanceof String && ((String) value).trim().matches("\\d{1,18}")) return Long.parseLong(((String) value).trim());
+        return null;
     }
 
     /** Admin-only: a 10-minute signed link to a stylist's private ID photo ({url, expiresAt}). */

@@ -40,10 +40,11 @@ public class SupportController {
 
     @GetMapping("/admin/support_tickets")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    public ResponseEntity<BaseResponse> adminSupportTickets(HttpServletRequest request){
+    public ResponseEntity<BaseResponse> adminSupportTickets(@RequestParam(value = "category", required = false) String category,
+                                                            HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(supportService.listAllSupportTickets());
+        return ApiResponses.respond(supportService.listAllSupportTickets(category));
     }
 
     @PostMapping("/admin/update_support_ticket")

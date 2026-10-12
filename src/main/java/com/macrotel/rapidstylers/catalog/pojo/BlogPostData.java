@@ -13,4 +13,6 @@ public class BlogPostData {
     private String content;
     private String imageUrl;
     private String author;
+    /** Optional: DRAFT or PUBLISHED. Missing means PUBLISHED, as before drafts existed. */
+    private String status;
 }

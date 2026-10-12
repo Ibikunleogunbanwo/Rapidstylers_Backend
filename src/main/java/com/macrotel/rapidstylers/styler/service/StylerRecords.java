@@ -105,6 +105,17 @@ public class StylerRecords {
         return stylerRepo.findByPhoneNumber(phoneNumber);
     }
 
+    /** Ids of active (status 0), approved stylists, for admin announcements. */
+    public List<String> findActiveApprovedStylerIds() {
+        return stylerRepo.findActiveApprovedStylerIds();
+    }
+
+    /** Up to limit stylists with an ID photo on file whose row id is above afterId, in id order. */
+    public List<StylerEntity> withIdentificationImageAfter(long afterId, int limit) {
+        return stylerRepo.findByIdGreaterThanAndIdentificationImageUrlIsNotNullOrderByIdAsc(afterId,
+                org.springframework.data.domain.PageRequest.of(0, limit));
+    }
+
     public long count() {
         return stylerRepo.count();
     }

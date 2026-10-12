@@ -66,6 +66,9 @@ public class OtpService {
     RateLimiterService rateLimiterService;
     private static final Logger LOG = Logger.getLogger(OtpService.class.getName());
     AppUtils appUtils = new AppUtils();
+    /** The website, for the sign-in link in the account-exists notice. */
+    @org.springframework.beans.factory.annotation.Value("${app.newsletter.site-url:https://rapidstylers.ca}")
+    String siteUrl = "https://rapidstylers.ca";
 
 
     public BaseResponse generateSignUpOtpCode(OTPData otpData){
@@ -319,6 +322,9 @@ public class OtpService {
                 + "Someone, probably you, started a RapidStylers sign-up with this email address.<br><br>"
                 + "You already have a RapidStylers account. Sign in, or reset your password. "
                 + "One email can hold one account.<br><br>"
+                + "To sign in, go to <a href=\"" + siteUrl + "\">" + siteUrl + "</a>, choose Sign in and use this "
+                + "email address with your password. If you have forgotten your password, choose "
+                + "\"Forgot password?\" on the sign-in page: we will email you a code to set a new one.<br><br>"
                 + "If this was not you, you can safely ignore this email.<br><br>"
                 + "Thank you,<br>The Rapid Stylers Team";
         emailConfig.sendSimpleMail(emailAddress, emailSubject, emailBody);

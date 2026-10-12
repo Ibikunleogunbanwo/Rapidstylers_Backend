@@ -30,6 +30,9 @@ public class SupportTicketEntity implements Serializable {
     /** CUSTOMER or STYLIST: which kind of account userId names. */
     @Column(name = "sender_role", length = 16)
     private String senderRole;
+    /** BOOKING, PAYMENT, ACCOUNT, TECHNICAL or OTHER (see SupportService#category). */
+    @Column(name = "category", length = 16, nullable = false)
+    private String category = "OTHER";
 
     public SupportTicketEntity() {
     }
