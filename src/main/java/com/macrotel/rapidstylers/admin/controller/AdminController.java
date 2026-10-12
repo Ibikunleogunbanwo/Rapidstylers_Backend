@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.admin.controller;
 
+import com.macrotel.rapidstylers.admin.service.ManagerView;
 import com.macrotel.rapidstylers.admin.service.AdminService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -41,11 +42,12 @@ public class AdminController {
     }
 
     @GetMapping("/admin/kpis")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> adminKpis(HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(adminService.getAdminKpis());
+        BaseResponse response = adminService.getAdminKpis();
+        return ApiResponses.respond(ManagerView.isManager(request) ? ManagerView.kpis(response) : response);
     }
 
     /** Read-cache effectiveness (hits/misses/loads/evictions + per-key top) since boot. */
@@ -102,7 +104,7 @@ public class AdminController {
 
     /** Admin-only: a 10-minute signed link to a stylist's private ID photo ({url, expiresAt}). */
     @GetMapping("/admin/identification_image")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> adminIdentificationImage(@RequestParam(value = "stylerId", required = false) String stylerId,
                                                                  HttpServletRequest request){
         String adminId = CurrentAccount.adminId(request);

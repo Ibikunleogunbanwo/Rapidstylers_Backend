@@ -3,6 +3,7 @@ package com.macrotel.rapidstylers.admin.controller;
 import com.macrotel.rapidstylers.admin.entity.AdminAccountEntity;
 import com.macrotel.rapidstylers.admin.pojo.AdminAccountData;
 import com.macrotel.rapidstylers.admin.pojo.AdminPasswordData;
+import com.macrotel.rapidstylers.admin.pojo.AdminRoleData;
 import com.macrotel.rapidstylers.admin.repo.AdminAccountRepo;
 import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
 import com.macrotel.rapidstylers.auth.service.StepUpService;
@@ -34,7 +35,9 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_MESSAGE;
 import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
 
 /**
- * Admin account management. Every method is restricted to the ADMIN role via
+ * Admin account management: create owners (ADMIN) and managers (MANAGER),
+ * change roles, passwords and enabled state. Every method is restricted to the
+ * ADMIN role (owners; a manager cannot manage accounts) via
  * method-level security (@PreAuthorize), in addition to the path-level gate in
  * JwtAuthFilter — the design's "no missing @PreAuthorize can expose an admin
  * route" guarantee for the least-trusted surface.
@@ -70,7 +73,11 @@ public class AdminAccountController {
      * was just reset because it leaked, must not keep renewing their sign-in.
      */
     private void signOutEverywhere(AdminAccountEntity account) {
-        refreshTokenService.revokeAllForAccount(account.getEmail(), Roles.ADMIN);
+        // Both console roles: a session may have been issued under the role the
+        // account had before a role change.
+        for (String role : Roles.STAFF) {
+            refreshTokenService.revokeAllForAccount(account.getEmail(), role);
+        }
     }
 
     @GetMapping
@@ -136,7 +143,7 @@ public class AdminAccountController {
         account.setEmail(email);
         account.setPasswordHash(passwordEncoder.encode(data.getPassword()));
         account.setEnabled(true);
-        account.setRole("ADMIN");
+        account.setRole(Roles.adminAccountRole(data.getRole()));
         account = adminAccountRepo.save(account);
         response.setStatusCode(SUCCESS_STATUS_CODE);
         response.setMessage(SUCCESS_MESSAGE);
@@ -171,6 +178,59 @@ public class AdminAccountController {
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(toView(account));
         return ApiResponses.respond(response);
+    }
+
+    /**
+     * Makes an admin an owner (ADMIN) or a manager (MANAGER). The account is
+     * signed out everywhere so its next sign-in carries the new role. An owner
+     * cannot change their own role, and the last enabled owner cannot be made a
+     * manager, so the console always keeps someone who can manage it.
+     */
+    @PostMapping("/{id}/role")
+    public ResponseEntity<BaseResponse> changeAdminRole(@PathVariable Long id,
+                                                        @Valid @RequestBody AdminRoleData data) {
+        ResponseEntity<BaseResponse> stepUp = requireStepUp();
+        if (stepUp != null) return stepUp;
+        AdminAccountEntity account = adminAccountRepo.findById(id).orElse(null);
+        if (account == null) {
+            return error("Admin account not found.");
+        }
+        String role = Roles.adminAccountRole(data.getRole());
+        String current = Roles.adminAccountRole(account.getRole());
+        if (!role.equals(current)) {
+            if (account.getEmail().equalsIgnoreCase(String.valueOf(currentAdmin()))) {
+                return error("You cannot change your own role.");
+            }
+            if (Roles.ADMIN.equals(current) && account.isEnabled()
+                    && adminAccountRepo.countByRoleIgnoreCaseAndEnabledTrue(Roles.ADMIN) <= 1) {
+                return error("At least one enabled owner must remain.");
+            }
+            account.setRole(role);
+            adminAccountRepo.save(account);
+            signOutEverywhere(account);
+        }
+        BaseResponse response = new BaseResponse();
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setData(toView(account));
+        return ApiResponses.respond(response);
+    }
+
+    private static ResponseEntity<BaseResponse> error(String message) {
+        BaseResponse response = new BaseResponse();
+        response.setStatusCode(ERROR_STATUS_CODE);
+        response.setMessage(message);
+        response.setData(new Object[0]);
+        return ApiResponses.respond(response);
+    }
+
+    /** The signed-in owner's email (the token subject), or null outside a request. */
+    private static Object currentAdmin() {
+        var attrs = RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof ServletRequestAttributes) {
+            return ((ServletRequestAttributes) attrs).getRequest().getAttribute("accountId");
+        }
+        return null;
     }
 
     @PostMapping("/{id}/disable")
@@ -227,7 +287,7 @@ public class AdminAccountController {
         view.put("id", account.getId());
         view.put("email", account.getEmail());
         view.put("enabled", account.isEnabled());
-        view.put("role", account.getRole());
+        view.put("role", Roles.adminAccountRole(account.getRole()));
         view.put("createdAt", account.getCreatedAt());
         return view;
     }

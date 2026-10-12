@@ -78,6 +78,7 @@ public class SecurityConfig {
                 .antMatchers(Routes.FRAMEWORK_PUBLIC).permitAll()
                 .mvcMatchers(Routes.PUBLIC).permitAll()
                 .mvcMatchers(Routes.ADMIN).hasRole(Roles.ADMIN)
+                .mvcMatchers(Routes.STAFF).hasAnyRole(Roles.STAFF)
                 .mvcMatchers(Routes.STYLER).hasRole(Roles.STYLER)
                 .mvcMatchers(Routes.CUSTOMER).hasRole(Roles.CUSTOMER)
                 .mvcMatchers(Routes.SUPPORT).hasAnyRole(Roles.CUSTOMER, Roles.STYLER)

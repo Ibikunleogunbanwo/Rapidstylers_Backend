@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.admin.controller;
 
+import com.macrotel.rapidstylers.admin.service.ManagerView;
 import com.macrotel.rapidstylers.admin.service.AdminBookingService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -33,21 +34,24 @@ public class AdminBookingController {
     AdminBookingService adminBookingService;
 
     @GetMapping("/admin/bookings")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> bookings(@ModelAttribute AdminBookingService.Filters filters,
                                                  @RequestParam(value = "page", required = false) Integer page,
                                                  @RequestParam(value = "size", required = false) Integer size,
                                                  HttpServletRequest request) {
         if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(adminBookingService.list(filters, page, size));
+        BaseResponse response = adminBookingService.list(filters, page, size);
+        // A manager sees bookings without money (see ManagerView).
+        return ApiResponses.respond(ManagerView.isManager(request) ? ManagerView.bookingList(response) : response);
     }
 
     @GetMapping("/admin/booking_detail")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> booking(@RequestParam("appointmentId") String appointmentId,
                                                 HttpServletRequest request) {
         if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(adminBookingService.detail(appointmentId));
+        BaseResponse response = adminBookingService.detail(appointmentId);
+        return ApiResponses.respond(ManagerView.isManager(request) ? ManagerView.bookingDetail(response) : response);
     }
 
     @GetMapping("/admin/bookings_export")

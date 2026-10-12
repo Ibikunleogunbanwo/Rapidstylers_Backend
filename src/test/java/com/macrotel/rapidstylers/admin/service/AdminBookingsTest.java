@@ -167,6 +167,54 @@ class AdminBookingsTest {
                 .anyMatch(a -> "ADMIN_BOOKINGS_EXPORT".equals(a.getAction()) && admin.equals(a.getActorId())));
     }
 
+    /** The money keys a manager must never receive, at any depth. */
+    private static final java.util.regex.Pattern MONEY = java.util.regex.Pattern.compile(
+            "\"(price|travelFee|paymentAmount|platformFee|stylistShare|currency|commissionPercent|paymentIntentId"
+            + "|paymentFailureCode|stripeTransferId|payoutDueAt|payoutHoldReason|refunds|refundedTotal|bookingValue"
+            + "|platformFees|stylistEarnings|history)\"\\s*:");
+
+    private String read(String url, String role) throws Exception {
+        return mockMvc.perform(get(url).header("x-api-key", apiKey)
+                        .header("Authorization", "Bearer " + jwtUtil.generateToken(tag.toLowerCase() + "@staff.test", role)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    @Test
+    void aManagerSeesBookingsCustomersAndCountsWithoutMoney() throws Exception {
+        String[] urls = {
+                "/rapid_stylers/admin/bookings?userId=" + customer,
+                "/rapid_stylers/admin/booking_detail?appointmentId=" + tag + "2",
+                "/rapid_stylers/admin/customers?q=" + tag.toLowerCase(),
+                "/rapid_stylers/admin/customer_detail?userId=" + customer,
+                "/rapid_stylers/admin/kpis",
+        };
+        for (String url : urls) {
+            String body = read(url, "MANAGER");
+            assertFalse(MONEY.matcher(body).find(), "money in a manager's answer from " + url + ": " + body);
+        }
+        String list = read(urls[0], "MANAGER");
+        assertTrue(list.contains("\"paymentStatus\""), "status words stay");
+        assertTrue(list.contains("\"count\":3"), "the booking count stays");
+        assertTrue(read(urls[1], "MANAGER").contains("\"serviceAddress\""));
+        assertTrue(read(urls[3], "MANAGER").contains("\"bookings\""));
+        assertTrue(read(urls[4], "MANAGER").contains("\"customers\""));
+    }
+
+    @Test
+    void anOwnerStillSeesTheMoney() throws Exception {
+        String list = read("/rapid_stylers/admin/bookings?userId=" + customer, "ADMIN");
+        assertTrue(list.contains("\"price\""));
+        assertTrue(list.contains("\"bookingValue\""));
+        assertTrue(list.contains("\"platformFee\""));
+        String detail = read("/rapid_stylers/admin/booking_detail?appointmentId=" + tag + "2", "ADMIN");
+        assertTrue(detail.contains("\"refundedTotal\""));
+        assertTrue(detail.contains("\"paymentIntentId\""));
+        assertTrue(detail.contains("\"history\""));
+        String customerDetail = read("/rapid_stylers/admin/customer_detail?userId=" + customer, "ADMIN");
+        assertTrue(customerDetail.contains("\"bookingValue\""));
+    }
+
     private AdminBookingService.Filters filters() {
         AdminBookingService.Filters f = new AdminBookingService.Filters();
         f.setUserId(customer);

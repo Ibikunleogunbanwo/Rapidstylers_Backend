@@ -3,10 +3,13 @@ package com.macrotel.rapidstylers.common.service;
 import com.macrotel.rapidstylers.common.entity.AuditLogEntity;
 import com.macrotel.rapidstylers.common.repo.AuditLogRepo;
 import com.macrotel.rapidstylers.config.EmailConfig;
+import com.macrotel.rapidstylers.security.access.Roles;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 /**
  * Shared audit-log and ops-alert sink, so every domain service can record an
@@ -35,11 +38,27 @@ public class AuditService {
                       String resourceType, String resourceId, String details) {
         try {
             if (auditLogRepo != null) {
-                auditLogRepo.save(new AuditLogEntity(actorId, actorRole, action, resourceType, resourceId, details));
+                auditLogRepo.save(new AuditLogEntity(actorId, consoleRole(actorId, actorRole), action,
+                        resourceType, resourceId, details));
             }
         } catch (Exception ex) {
             LOG.warning("Audit log write failed: " + ex.getMessage());
         }
+    }
+
+    /**
+     * Admin-console services record their actor as "ADMIN" (they predate
+     * managers). When the signed-in caller is that same actor with the MANAGER
+     * role, the row says MANAGER instead, so the log shows which kind of admin
+     * acted. Anything else is kept as given.
+     */
+    static String consoleRole(String actorId, String actorRole) {
+        if (!Roles.ADMIN.equals(actorRole) || actorId == null) return actorRole;
+        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
+        if (attrs == null) return actorRole;
+        Object role = attrs.getAttribute("role", RequestAttributes.SCOPE_REQUEST);
+        Object account = attrs.getAttribute("accountId", RequestAttributes.SCOPE_REQUEST);
+        return Roles.MANAGER.equals(role) && actorId.equals(String.valueOf(account)) ? Roles.MANAGER : actorRole;
     }
 
     /** Sends an operational alert to the configured ops address (no-op when unset). */

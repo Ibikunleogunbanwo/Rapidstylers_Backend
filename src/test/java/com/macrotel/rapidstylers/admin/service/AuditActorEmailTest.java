@@ -50,4 +50,20 @@ class AuditActorEmailTest {
         // The row itself is unchanged.
         assertEquals("OPS@rapidstylers.ca", byToken.getActorId());
     }
+
+    @Test
+    void managerRowsCarryTheManagerEmailToo() {
+        AdminAccountRepo repo = mock(AdminAccountRepo.class);
+        AdminAccountEntity manager = new AdminAccountEntity();
+        manager.setEmail("desk@rapidstylers.ca");
+        manager.setRole("MANAGER");
+        when(repo.findByEmailIgnoreCase("desk@rapidstylers.ca")).thenReturn(Optional.of(manager));
+        AdminService adminService = new AdminService();
+        adminService.adminRecords = new AdminRecords(repo);
+        AuditLogEntity row = new AuditLogEntity("desk@rapidstylers.ca", "MANAGER", "MODERATE_REVIEW", "REVIEW", "1", "APPROVED");
+
+        adminService.withActorEmails(List.of(row));
+
+        assertEquals("desk@rapidstylers.ca", row.getActorEmail());
+    }
 }

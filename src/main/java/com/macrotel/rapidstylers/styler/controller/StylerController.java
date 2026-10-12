@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.controller;
 
+import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
@@ -32,6 +33,8 @@ public class StylerController {
     StylerService stylerService;
     @Autowired
     StylerProfileService stylerProfileService;
+    @Autowired(required = false)
+    AuditService auditService;
 
     /** The signed-in stylist's own editable profile. */
     @GetMapping("/styler/profile")
@@ -70,7 +73,7 @@ public class StylerController {
     }
 
     @GetMapping("/admin/styler_verification_queue")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity <BaseResponse> stylerVerificationQueue(){
         BaseResponse baseResponse = stylerService.getStylerVerificationQueue();
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
@@ -78,9 +81,16 @@ public class StylerController {
     }
 
     @PostMapping("/admin/update_styler_verification")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity <BaseResponse> updateStylerVerification(@Valid @RequestBody VerificationActionData verificationActionData){
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    public ResponseEntity <BaseResponse> updateStylerVerification(@Valid @RequestBody VerificationActionData verificationActionData,
+                                                                   HttpServletRequest request){
         BaseResponse baseResponse = stylerService.updateStylerVerification(verificationActionData);
+        // Owners and managers both decide applications, so record who did.
+        String adminId = CurrentAccount.adminId(request);
+        if(auditService != null && adminId != null && SUCCESS_STATUS_CODE.equals(baseResponse.getStatusCode())){
+            auditService.audit(adminId, "ADMIN", "STYLER_VERIFICATION_UPDATED", "STYLER",
+                    verificationActionData.getStylerId(), verificationActionData.getAction());
+        }
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

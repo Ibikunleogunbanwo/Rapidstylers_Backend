@@ -26,7 +26,7 @@ public class ReviewController {
     ReviewService reviewService;
 
     @GetMapping("/admin/review_moderation_queue")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> reviewModerationQueue(HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();
@@ -35,7 +35,7 @@ public class ReviewController {
 
     /** Published (APPROVED, the default), hidden (REJECTED) or PENDING reviews, searchable and paged. */
     @GetMapping("/admin/reviews")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> adminReviews(@RequestParam(value = "status", required = false) String status,
                                                      @RequestParam(value = "q", required = false) String q,
                                                      @RequestParam(value = "page", required = false) Integer page,
@@ -46,7 +46,7 @@ public class ReviewController {
     }
 
     @PostMapping("/admin/update_review_moderation")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> updateReviewModeration(@RequestBody Map<String, Object> body, HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();

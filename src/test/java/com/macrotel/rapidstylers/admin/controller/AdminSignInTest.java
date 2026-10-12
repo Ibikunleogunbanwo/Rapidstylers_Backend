@@ -34,6 +34,7 @@ class AdminSignInTest {
     private PasswordEncoder passwordEncoder;
     private JwtUtil jwtUtil;
     private RateLimiterService rateLimiterService;
+    private RefreshTokenService refreshTokenService;
 
     private static final String ADMIN_EMAIL = "admin@rapidstylers.com";
     private static final String ADMIN_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"; // bcrypt("secret")
@@ -49,7 +50,7 @@ class AdminSignInTest {
         when(rateLimiterService.clientIp()).thenReturn("127.0.0.1");
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
 
-        RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
+        refreshTokenService = mock(RefreshTokenService.class);
         when(refreshTokenService.issue(anyString(), anyString())).thenReturn("admin-refresh");
 
         ReflectionTestUtils.setField(controller, "adminAccountRepo", adminAccountRepo);
@@ -89,6 +90,67 @@ class AdminSignInTest {
         assertEquals("200", res.getBody().getStatusCode());
         assertEquals("admin-jwt", res.getBody().getToken());
         assertEquals("admin-refresh", res.getBody().getRefreshToken());
+    }
+
+    @Test
+    void ownerTokenAndRefreshCarryAdmin() {
+        when(adminAccountRepo.findByEmailIgnoreCase(ADMIN_EMAIL)).thenReturn(Optional.of(account(true)));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
+        when(jwtUtil.generateToken(ADMIN_EMAIL, "ADMIN")).thenReturn("owner-jwt");
+
+        ResponseEntity<BaseResponse> res = controller.adminSignIn(credentials(ADMIN_EMAIL, "secret"));
+
+        assertEquals("owner-jwt", res.getBody().getToken());
+        assertEquals("ADMIN", ((java.util.Map<?, ?>) res.getBody().getData()).get("role"));
+        verify(refreshTokenService).issue(ADMIN_EMAIL, "ADMIN");
+    }
+
+    @Test
+    void managerTokenAndRefreshCarryManager() {
+        AdminAccountEntity manager = account(true);
+        manager.setRole("MANAGER");
+        when(adminAccountRepo.findByEmailIgnoreCase(ADMIN_EMAIL)).thenReturn(Optional.of(manager));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
+        when(jwtUtil.generateToken(ADMIN_EMAIL, "MANAGER")).thenReturn("manager-jwt");
+
+        ResponseEntity<BaseResponse> res = controller.adminSignIn(credentials(ADMIN_EMAIL, "secret"));
+
+        assertEquals("200", res.getBody().getStatusCode());
+        assertEquals("manager-jwt", res.getBody().getToken());
+        assertEquals("MANAGER", ((java.util.Map<?, ?>) res.getBody().getData()).get("role"));
+        // The refresh token keeps the role, so a renewed access token is still MANAGER.
+        verify(refreshTokenService).issue(ADMIN_EMAIL, "MANAGER");
+        verify(jwtUtil, never()).generateToken(ADMIN_EMAIL, "ADMIN");
+    }
+
+    @Test
+    void meReportsTheAccountsRole() {
+        AdminAccountEntity manager = account(true);
+        manager.setRole("MANAGER");
+        when(adminAccountRepo.findByEmailIgnoreCase(ADMIN_EMAIL)).thenReturn(Optional.of(manager));
+        org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setAttribute("accountId", ADMIN_EMAIL);
+        request.setAttribute("role", "MANAGER");
+
+        ResponseEntity<BaseResponse> res = controller.adminMe(request);
+
+        assertEquals("200", res.getBody().getStatusCode());
+        assertEquals("MANAGER", ((java.util.Map<?, ?>) res.getBody().getData()).get("role"));
+        assertEquals(ADMIN_EMAIL, ((java.util.Map<?, ?>) res.getBody().getData()).get("email"));
+    }
+
+    @Test
+    void meRefusesNonAdminAndDisabledAccounts() {
+        org.springframework.mock.web.MockHttpServletRequest customer = new org.springframework.mock.web.MockHttpServletRequest();
+        customer.setAttribute("accountId", "c1");
+        customer.setAttribute("role", "CUSTOMER");
+        assertEquals(401, controller.adminMe(customer).getStatusCodeValue());
+
+        when(adminAccountRepo.findByEmailIgnoreCase(ADMIN_EMAIL)).thenReturn(Optional.of(account(false)));
+        org.springframework.mock.web.MockHttpServletRequest disabled = new org.springframework.mock.web.MockHttpServletRequest();
+        disabled.setAttribute("accountId", ADMIN_EMAIL);
+        disabled.setAttribute("role", "ADMIN");
+        assertEquals(401, controller.adminMe(disabled).getStatusCodeValue());
     }
 
     @Test

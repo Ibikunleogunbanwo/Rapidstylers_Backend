@@ -9,8 +9,11 @@ import com.macrotel.rapidstylers.engagement.repo.EmailSuppressionRepo;
 import com.macrotel.rapidstylers.engagement.repo.NewsletterCampaignRepo;
 import com.macrotel.rapidstylers.engagement.repo.NewsletterDeliveryRepo;
 import com.macrotel.rapidstylers.engagement.repo.NewsletterSubscriberRepo;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -22,9 +25,15 @@ import static com.macrotel.rapidstylers.engagement.service.NewsletterRules.*;
  * The last step of every newsletter email, run by the mail-queue consumer.
  * It builds the email at the moment it goes out and checks once more that the
  * person still wants it, so an unsubscribe a second earlier still counts.
+ *
+ * <p>Every kind of newsletter email (confirmation, admin test, campaign) is
+ * checked against the suppression list right before the provider is called,
+ * so an address blocked after the email was queued is still never mailed.
  */
 @Service
 public class NewsletterMailer {
+
+    private static final Logger log = LoggerFactory.getLogger(NewsletterMailer.class);
 
     @Autowired NewsletterDeliveryRepo deliveryRepo;
     @Autowired NewsletterCampaignRepo campaignRepo;
@@ -53,6 +62,7 @@ public class NewsletterMailer {
 
     private void confirmEmail(String email, String token) {
         if (email.isBlank() || !token.matches("[0-9a-f]{64}")) return;
+        if (suppressed(email, "confirmation")) return;
         String link = siteUrl + "/newsletter/confirm?token=" + token;
         emailConfig.sendSimpleMail(email, "Confirm your RapidStylers subscription",
                 "<p>Please confirm you'd like RapidStylers news, offers and tips by email.</p>"
@@ -64,6 +74,7 @@ public class NewsletterMailer {
     private void testEmail(String email, Long campaignId) {
         Optional<NewsletterCampaignEntity> c = campaignId == null ? Optional.empty() : campaignRepo.findById(campaignId);
         if (email.isBlank() || c.isEmpty()) return;
+        if (suppressed(email, "test")) return;
         SiteContentRules.RenderedEmail mail = render(c.get().getSubject(), c.get().getBody(), siteUrl + "/newsletter/unsubscribe");
         emailConfig.sendSimpleMail(email, "[Test] " + mail.subject, mail.html);
     }
@@ -75,7 +86,7 @@ public class NewsletterMailer {
         String skip = null;
         if (c.isEmpty() || "CANCELLED".equals(c.get().getStatus())) skip = "Campaign cancelled";
         else if (s.isEmpty() || !SUBSCRIBED.equals(s.get().getStatus())) skip = "No longer subscribed";
-        else if (suppressionRepo.existsByEmail(d.getEmail())) skip = "Address blocked";
+        else if (suppressed(d.getEmail(), "campaign")) skip = "Address blocked";
         if (skip != null) {
             d.setStatus("SKIPPED");
             d.setError(skip);
@@ -90,6 +101,23 @@ public class NewsletterMailer {
             if (sent) d.setSentAt(now());
         }
         deliveryRepo.save(d);
+    }
+
+    /**
+     * True when the address is on the suppression list. Skips are logged (address
+     * masked) rather than thrown, so a queued email to a blocked address is simply
+     * dropped instead of being retried by the mail queue.
+     */
+    private boolean suppressed(String email, String kind) {
+        String normalized = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+        if (!suppressionRepo.existsByEmail(normalized)) return false;
+        log.info("Newsletter {} email skipped: {} is on the suppression list", kind, mask(normalized));
+        return true;
+    }
+
+    private static String mask(String email) {
+        int at = email.indexOf('@');
+        return at <= 0 ? "***" : email.charAt(0) + "***" + email.substring(at);
     }
 
     private static Long id(String raw) {

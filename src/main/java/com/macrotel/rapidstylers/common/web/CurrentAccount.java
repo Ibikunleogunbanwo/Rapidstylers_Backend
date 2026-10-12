@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.common.web;
 
+import com.macrotel.rapidstylers.security.access.Roles;
 import javax.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,9 +28,13 @@ public final class CurrentAccount {
         return (role == null) ? null : String.valueOf(role);
     }
 
-    /** The account id only when the token's role is ADMIN; otherwise null. */
+    /**
+     * The account id only when the token belongs to the admin console (an ADMIN
+     * owner or a MANAGER); otherwise null. Which of the two may call a route is
+     * decided by the Routes lists and @PreAuthorize, not here.
+     */
     public static String adminId(HttpServletRequest request) {
-        if (!"ADMIN".equals(role(request))) return null;
+        if (!Roles.isStaff(role(request))) return null;
         return id(request);
     }
 

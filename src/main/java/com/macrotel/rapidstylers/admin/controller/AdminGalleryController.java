@@ -21,7 +21,7 @@ public class AdminGalleryController {
 
     /** status: PENDING (default), APPROVED, REJECTED or ALL. */
     @GetMapping("/admin/gallery_moderation")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> queue(@RequestParam(value = "status", required = false) String status,
                                               @RequestParam(value = "page", required = false) Integer page,
                                               @RequestParam(value = "size", required = false) Integer size,
@@ -31,7 +31,7 @@ public class AdminGalleryController {
     }
 
     @GetMapping("/admin/gallery_image_history")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> history(@RequestParam("portfolioId") Long portfolioId, HttpServletRequest request) {
         if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
         return ApiResponses.respond(moderationService.history(portfolioId));
@@ -39,7 +39,7 @@ public class AdminGalleryController {
 
     /** Body: {portfolioId, note?}. */
     @PostMapping("/admin/approve_gallery_image")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> approve(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         String adminId = CurrentAccount.adminId(request);
         if (adminId == null) return CurrentAccount.unauthorized();
@@ -48,7 +48,7 @@ public class AdminGalleryController {
 
     /** Body: {portfolioId, note}. The note is required and emailed to the stylist. */
     @PostMapping("/admin/reject_gallery_image")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> reject(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         String adminId = CurrentAccount.adminId(request);
         if (adminId == null) return CurrentAccount.unauthorized();

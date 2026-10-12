@@ -176,13 +176,20 @@ public class NewsletterCampaignService {
         return ok(message, view(c, true));
     }
 
-    /** Sends one copy to the given address, marked [Test], through the normal mail queue. */
+    /**
+     * Sends one copy to the given address, marked [Test], through the normal mail queue.
+     * A blocked address is refused here (409); the mailer checks again at send time.
+     */
     @Transactional
     public BaseResponse sendTest(String adminId, Long id, String rawEmail) {
         Optional<NewsletterCampaignEntity> found = find(id);
         if (found.isEmpty()) return status("404", "Campaign not found");
         String email = email(rawEmail);
         if (email == null) return error("Enter a valid email address");
+        if (suppressionRepo.existsByEmail(email)) {
+            return status("409", "Can't send a test to " + email + ": it's on the blocked list (it bounced, "
+                    + "complained or was blocked by an admin). Unblock it first or use another address.");
+        }
         outboxEventService.newsletterEmail(OutboxEventType.NEWSLETTER_TEST, String.valueOf(id),
                 Map.of("emailAddress", email, "campaignId", String.valueOf(id)));
         auditService.audit(adminId, "ADMIN", "ADMIN_NEWSLETTER_TEST", "NEWSLETTER", String.valueOf(id), email);

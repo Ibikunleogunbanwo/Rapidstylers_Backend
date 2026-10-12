@@ -71,7 +71,8 @@ public class DemoReadOnlyFilter extends OncePerRequestFilter {
         }
         return matchesAny(ALWAYS_ALLOWED, path)
                 || matchesAny(List.of(Routes.BROWSE), path)
-                || matchesAny(List.of(Routes.ADMIN), path);
+                || matchesAny(List.of(Routes.ADMIN), path)
+                || matchesAny(List.of(Routes.STAFF), path);
     }
 
     private boolean matchesAny(List<String> patterns, String path) {

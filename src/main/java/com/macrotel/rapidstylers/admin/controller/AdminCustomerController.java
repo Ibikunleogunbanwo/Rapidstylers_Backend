@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.admin.controller;
 
+import com.macrotel.rapidstylers.admin.service.ManagerView;
 import com.macrotel.rapidstylers.admin.service.AdminCustomerService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -20,21 +21,24 @@ public class AdminCustomerController {
     AdminCustomerService adminCustomerService;
 
     @GetMapping("/admin/customers")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> customers(@RequestParam(value = "q", required = false) String q,
                                                   @RequestParam(value = "status", required = false) String status,
                                                   @RequestParam(value = "page", required = false) Integer page,
                                                   @RequestParam(value = "size", required = false) Integer size,
                                                   HttpServletRequest request) {
         if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(adminCustomerService.search(q, status, page, size));
+        BaseResponse response = adminCustomerService.search(q, status, page, size);
+        return ApiResponses.respond(ManagerView.isManager(request) ? ManagerView.customerList(response) : response);
     }
 
     @GetMapping("/admin/customer_detail")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> customer(@RequestParam("userId") String userId, HttpServletRequest request) {
         if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(adminCustomerService.detail(userId));
+        BaseResponse response = adminCustomerService.detail(userId);
+        // A manager sees the account and its bookings without money or audit history.
+        return ApiResponses.respond(ManagerView.isManager(request) ? ManagerView.customerDetail(response) : response);
     }
 
     /** Body: {userId, reason}. */

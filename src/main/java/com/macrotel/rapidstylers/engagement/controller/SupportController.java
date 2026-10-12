@@ -39,7 +39,7 @@ public class SupportController {
     }
 
     @GetMapping("/admin/support_tickets")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> adminSupportTickets(HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();
@@ -47,7 +47,7 @@ public class SupportController {
     }
 
     @PostMapping("/admin/update_support_ticket")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> adminUpdateSupportTicket(@Valid @RequestBody SupportTicketActionData data, HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         return ApiResponses.respond(supportService.updateSupportTicket(data, adminId));

@@ -8,15 +8,19 @@ import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.common.web.CurrentAccount;
+import com.macrotel.rapidstylers.security.access.Roles;
 import com.macrotel.rapidstylers.security.jwt.JwtUtil;
 import com.macrotel.rapidstylers.security.verifier.TurnstileVerifier;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,8 +33,9 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
 /**
  * Admin authentication, backed by admin_accounts rows (BCrypt password hashes,
  * seeded from ADMIN_EMAIL/ADMIN_PASSWORD on first boot). A successful sign-in
- * issues a JWT with the ADMIN role, which JwtAuthFilter requires on admin-only
- * endpoints and method-level @PreAuthorize also enforces.
+ * issues a JWT with the account's role: ADMIN (an owner, every admin route) or
+ * MANAGER (the day-to-day routes in Routes.STAFF). The Routes rules and
+ * method-level @PreAuthorize enforce the difference.
  */
 @RestController
 @RequestMapping("/rapid_stylers")
@@ -98,15 +103,18 @@ public class AdminAuthController {
             return ApiResponses.respond(response);
         }
         try {
+            // The token carries the account's own role: ADMIN (an owner) or MANAGER.
+            String role = Roles.adminAccountRole(existing.get().getRole());
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("role", "ADMIN");
+            data.put("role", role);
+            data.put("email", existing.get().getEmail());
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setToken(jwtUtil.generateToken(existing.get().getEmail(), "ADMIN"));
+            response.setToken(jwtUtil.generateToken(existing.get().getEmail(), role));
             // DB-admin sessions get a rotating refresh token too, so the server-side
             // idle (30 min) + absolute (8h) admin caps apply the same way they do
             // for customers/stylers instead of a blunt 15-min hard logout.
-            response.setRefreshToken(refreshTokenService.issue(existing.get().getEmail(), "ADMIN"));
+            response.setRefreshToken(refreshTokenService.issue(existing.get().getEmail(), role));
             response.setData(data);
             rateLimiterService.clear("auth:" + emailAddress);
             rateLimiterService.clear("auth_ip:" + ip);
@@ -116,6 +124,28 @@ public class AdminAuthController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(new BaseResponse(true));
         }
+        return ApiResponses.respond(response);
+    }
+
+    /**
+     * Who is signed in to the admin console, so the website can show an owner or
+     * a manager the screens they may use. The role is the account's current one;
+     * a role change signs the account out everywhere, so it matches the token.
+     */
+    @GetMapping("/admin/me")
+    public ResponseEntity<BaseResponse> adminMe(HttpServletRequest request) {
+        String adminId = CurrentAccount.adminId(request);
+        if (adminId == null) return CurrentAccount.unauthorized();
+        AdminAccountEntity account = adminAccountRepo.findByEmailIgnoreCase(adminId)
+                .filter(AdminAccountEntity::isEnabled).orElse(null);
+        if (account == null) return CurrentAccount.unauthorized();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("email", account.getEmail());
+        data.put("role", Roles.adminAccountRole(account.getRole()));
+        BaseResponse response = new BaseResponse();
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage(SUCCESS_MESSAGE);
+        response.setData(data);
         return ApiResponses.respond(response);
     }
 

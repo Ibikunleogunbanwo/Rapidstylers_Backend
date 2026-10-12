@@ -57,7 +57,7 @@ public class PortfolioController {
     }
 
     @GetMapping("/admin/all_portfolios")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> allPortfolios(){
         BaseResponse baseResponse = portfolioService.listAllPortfolios();
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
@@ -65,7 +65,7 @@ public class PortfolioController {
     }
 
     @PostMapping("/admin/delete_portfolio_image")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<BaseResponse> deletePortfolioImage(@Valid @RequestBody PortfolioActionData portfolioActionData){
         BaseResponse baseResponse = portfolioService.adminDeletePortfolioImage(portfolioActionData.getPortfolioId());
         HttpStatus status = ApiResponses.httpStatus(baseResponse);

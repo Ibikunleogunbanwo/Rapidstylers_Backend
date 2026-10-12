@@ -86,6 +86,51 @@ public final class Routes {
             "/rapid_stylers/stripe/webhook",
     }, BROWSE);
 
+    /**
+     * Day-to-day admin work an owner (ADMIN) or a MANAGER may do: stylist
+     * verification and ID photos, gallery and review moderation, support tickets,
+     * feedback, the dashboard counts, and read-only views of bookings and
+     * customers. Nothing here moves money, exports data or changes settings.
+     */
+    public static final String[] STAFF = {
+            // Who is signed in to the admin console
+            "/rapid_stylers/admin/me",
+            "/rapid_stylers/admin/kpis",
+
+            // Stylist verification and ID photos
+            "/rapid_stylers/admin/styler_verification_queue",
+            "/rapid_stylers/admin/update_styler_verification",
+            "/rapid_stylers/admin/identification_image",
+
+            // Gallery and review moderation
+            "/rapid_stylers/admin/all_portfolios",
+            "/rapid_stylers/admin/delete_portfolio_image",
+            "/rapid_stylers/admin/gallery_moderation",
+            "/rapid_stylers/admin/gallery_image_history",
+            "/rapid_stylers/admin/approve_gallery_image",
+            "/rapid_stylers/admin/reject_gallery_image",
+            "/rapid_stylers/admin/review_moderation_queue",
+            "/rapid_stylers/admin/reviews",
+            "/rapid_stylers/admin/update_review_moderation",
+
+            // Support and feedback
+            "/rapid_stylers/admin/support_tickets",
+            "/rapid_stylers/admin/update_support_ticket",
+            "/rapid_stylers/list_feedback",
+
+            // Read-only bookings and customers (exports, suspend and reinstate stay owner-only)
+            "/rapid_stylers/admin/bookings",
+            "/rapid_stylers/admin/booking_detail",
+            "/rapid_stylers/admin/customers",
+            "/rapid_stylers/admin/customer_detail",
+    };
+
+    /**
+     * Owner-only admin work: money, exports, marketing, site content, catalog
+     * maintenance, platform settings, the audit log and admin accounts. Needs the
+     * ADMIN role (an owner). A MANAGER is refused. When a new admin route's
+     * audience is unclear, it belongs here.
+     */
     public static final String[] ADMIN = {
             // Catalog maintenance
             "/rapid_stylers/create_service",
@@ -98,23 +143,11 @@ public final class Routes {
             "/rapid_stylers/update_identification",
             "/rapid_stylers/delete_identification",
 
-            // Stylist verification and moderation
-            "/rapid_stylers/admin/styler_verification_queue",
-            "/rapid_stylers/admin/update_styler_verification",
+            // Stylist earnings and payout accounts
             "/rapid_stylers/admin/styler_business_summaries",
             "/rapid_stylers/admin/styler_connect_statuses",
-            "/rapid_stylers/admin/all_portfolios",
-            "/rapid_stylers/admin/delete_portfolio_image",
-            "/rapid_stylers/admin/review_moderation_queue",
-            "/rapid_stylers/admin/reviews",
-            "/rapid_stylers/admin/identification_image",
-            "/rapid_stylers/admin/update_review_moderation",
-            "/rapid_stylers/admin/support_tickets",
-            "/rapid_stylers/admin/update_support_ticket",
-            "/rapid_stylers/list_feedback",
 
             // Operations
-            "/rapid_stylers/admin/kpis",
             "/rapid_stylers/admin/cache_stats",
             "/rapid_stylers/admin/audit_logs",
             "/rapid_stylers/admin/test_email",
@@ -140,25 +173,15 @@ public final class Routes {
             "/rapid_stylers/admin/payment_reconciliation_latest",
 
             // Bookings
-            "/rapid_stylers/admin/bookings",
-            "/rapid_stylers/admin/booking_detail",
             "/rapid_stylers/admin/bookings_export",
 
             // Customers
-            "/rapid_stylers/admin/customers",
-            "/rapid_stylers/admin/customer_detail",
             "/rapid_stylers/admin/suspend_customer",
             "/rapid_stylers/admin/reinstate_customer",
 
             // Revenue
             "/rapid_stylers/admin/revenue",
             "/rapid_stylers/admin/revenue_export",
-
-            // Gallery moderation
-            "/rapid_stylers/admin/gallery_moderation",
-            "/rapid_stylers/admin/gallery_image_history",
-            "/rapid_stylers/admin/approve_gallery_image",
-            "/rapid_stylers/admin/reject_gallery_image",
 
             // Sign-up funnel
             "/rapid_stylers/admin/signup_funnel",
@@ -201,6 +224,7 @@ public final class Routes {
             "/rapid_stylers/admin/accounts/{id}/password",
             "/rapid_stylers/admin/accounts/{id}/disable",
             "/rapid_stylers/admin/accounts/{id}/enable",
+            "/rapid_stylers/admin/accounts/{id}/role",
     };
 
     public static final String[] STYLER = {

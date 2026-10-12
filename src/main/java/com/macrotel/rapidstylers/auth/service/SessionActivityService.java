@@ -68,7 +68,7 @@ public class SessionActivityService {
         long minutes;
         if ("STYLER".equalsIgnoreCase(role)) {
             minutes = stylerIdleMinutes;
-        } else if ("ADMIN".equalsIgnoreCase(role)) {
+        } else if ("ADMIN".equalsIgnoreCase(role) || "MANAGER".equalsIgnoreCase(role)) {
             minutes = adminIdleMinutes;
         } else {
             minutes = customerIdleMinutes;
@@ -179,7 +179,7 @@ public class SessionActivityService {
         if ("STYLER".equalsIgnoreCase(role)) {
             return stylerAbsoluteHours;
         }
-        if ("ADMIN".equalsIgnoreCase(role)) {
+        if ("ADMIN".equalsIgnoreCase(role) || "MANAGER".equalsIgnoreCase(role)) {
             return adminAbsoluteHours;
         }
         return customerAbsoluteHours;

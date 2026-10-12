@@ -66,6 +66,7 @@ class AdminAccountControllerTest {
         verify(repo).save(account);
         // A reset password usually means a leaked one: end that admin's sessions.
         verify(refreshTokenService).revokeAllForAccount("admin@example.com", "ADMIN");
+        verify(refreshTokenService).revokeAllForAccount("admin@example.com", "MANAGER");
     }
 
     @Test
@@ -114,6 +115,140 @@ class AdminAccountControllerTest {
         ResponseEntity<BaseResponse> result = controller.changeAdminPassword(99L, data);
 
         assertEquals(AppConstants.ERROR_STATUS_CODE, result.getBody().getStatusCode());
+        verify(repo, never()).save(any());
+    }
+
+    private AdminAccountEntity manager() {
+        AdminAccountEntity e = admin();
+        e.setId(7L);
+        e.setEmail("manager@example.com");
+        e.setRole("MANAGER");
+        return e;
+    }
+
+    private com.macrotel.rapidstylers.admin.pojo.AdminAccountData newAccount(String role) {
+        com.macrotel.rapidstylers.admin.pojo.AdminAccountData data = new com.macrotel.rapidstylers.admin.pojo.AdminAccountData();
+        data.setEmail("New@Example.com");
+        data.setPassword("New-Str0ng-Passw0rd!");
+        data.setRole(role);
+        return data;
+    }
+
+    private static com.macrotel.rapidstylers.admin.pojo.AdminRoleData role(String role) {
+        com.macrotel.rapidstylers.admin.pojo.AdminRoleData data = new com.macrotel.rapidstylers.admin.pojo.AdminRoleData();
+        data.setRole(role);
+        return data;
+    }
+
+    @Test
+    void createDefaultsToOwner() {
+        when(repo.save(any())).thenAnswer(call -> call.getArgument(0));
+
+        ResponseEntity<BaseResponse> result = controller.createAdmin(newAccount(null));
+
+        assertEquals(AppConstants.SUCCESS_STATUS_CODE, result.getBody().getStatusCode());
+        assertEquals("ADMIN", ((java.util.Map<?, ?>) result.getBody().getData()).get("role"));
+    }
+
+    @Test
+    void createsAManager() {
+        when(repo.save(any())).thenAnswer(call -> call.getArgument(0));
+
+        ResponseEntity<BaseResponse> result = controller.createAdmin(newAccount("manager"));
+
+        java.util.Map<?, ?> view = (java.util.Map<?, ?>) result.getBody().getData();
+        assertEquals("MANAGER", view.get("role"));
+        assertEquals("new@example.com", view.get("email"));
+    }
+
+    @Test
+    void roleValuesAreLimitedToAdminAndManager() {
+        javax.validation.Validator validator = javax.validation.Validation.buildDefaultValidatorFactory().getValidator();
+        assertTrue(validator.validate(newAccount("OWNER")).stream().anyMatch(v -> v.getPropertyPath().toString().equals("role")));
+        assertTrue(validator.validate(newAccount("MANAGER")).isEmpty());
+        assertTrue(validator.validate(newAccount(null)).isEmpty());
+        assertTrue(!validator.validate(role("SUPERUSER")).isEmpty());
+        assertTrue(!validator.validate(role("")).isEmpty());
+        assertTrue(validator.validate(role("admin")).isEmpty());
+    }
+
+    @Test
+    void listShowsEachAccountsRole() {
+        when(repo.findAll()).thenReturn(java.util.List.of(admin(), manager()));
+
+        java.util.List<?> rows = (java.util.List<?>) controller.listAdmins().getBody().getData();
+
+        assertEquals("ADMIN", ((java.util.Map<?, ?>) rows.get(0)).get("role"));
+        assertEquals("MANAGER", ((java.util.Map<?, ?>) rows.get(1)).get("role"));
+    }
+
+    @Test
+    void promotingAManagerSignsThemOutEverywhere() {
+        AdminAccountEntity account = manager();
+        when(repo.findById(7L)).thenReturn(Optional.of(account));
+
+        ResponseEntity<BaseResponse> result = controller.changeAdminRole(7L, role("ADMIN"));
+
+        assertEquals(AppConstants.SUCCESS_STATUS_CODE, result.getBody().getStatusCode());
+        assertEquals("ADMIN", account.getRole());
+        verify(repo).save(account);
+        // Old sessions carry the old role: both kinds are ended.
+        verify(refreshTokenService).revokeAllForAccount("manager@example.com", "MANAGER");
+        verify(refreshTokenService).revokeAllForAccount("manager@example.com", "ADMIN");
+    }
+
+    @Test
+    void demotingAnOwnerWhenAnotherOwnerRemains() {
+        AdminAccountEntity account = admin();
+        when(repo.findById(5L)).thenReturn(Optional.of(account));
+        when(repo.countByRoleIgnoreCaseAndEnabledTrue("ADMIN")).thenReturn(2L);
+
+        ResponseEntity<BaseResponse> result = controller.changeAdminRole(5L, role("MANAGER"));
+
+        assertEquals(AppConstants.SUCCESS_STATUS_CODE, result.getBody().getStatusCode());
+        assertEquals("MANAGER", account.getRole());
+    }
+
+    @Test
+    void theLastOwnerCannotBeDemoted() {
+        AdminAccountEntity account = admin();
+        when(repo.findById(5L)).thenReturn(Optional.of(account));
+        when(repo.countByRoleIgnoreCaseAndEnabledTrue("ADMIN")).thenReturn(1L);
+
+        ResponseEntity<BaseResponse> result = controller.changeAdminRole(5L, role("MANAGER"));
+
+        assertEquals(AppConstants.ERROR_STATUS_CODE, result.getBody().getStatusCode());
+        assertEquals("ADMIN", account.getRole());
+        verify(repo, never()).save(any());
+    }
+
+    @Test
+    void anOwnerCannotChangeTheirOwnRole() {
+        AdminAccountEntity account = admin();
+        when(repo.findById(5L)).thenReturn(Optional.of(account));
+        when(repo.countByRoleIgnoreCaseAndEnabledTrue("ADMIN")).thenReturn(3L);
+        org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setAttribute("accountId", "admin@example.com");
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(request));
+        try {
+            ResponseEntity<BaseResponse> result = controller.changeAdminRole(5L, role("MANAGER"));
+            assertEquals(AppConstants.ERROR_STATUS_CODE, result.getBody().getStatusCode());
+            assertEquals("ADMIN", account.getRole());
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    void roleChangeNeedsStepUp() {
+        StepUpService refusing = mock(StepUpService.class);
+        when(refusing.verify(any(), any())).thenReturn(false);
+        controller.setStepUpService(refusing);
+
+        ResponseEntity<BaseResponse> result = controller.changeAdminRole(7L, role("ADMIN"));
+
+        assertEquals(403, result.getStatusCodeValue());
         verify(repo, never()).save(any());
     }
 }

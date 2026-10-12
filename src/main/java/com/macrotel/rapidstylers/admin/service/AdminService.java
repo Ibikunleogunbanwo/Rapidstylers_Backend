@@ -182,14 +182,15 @@ public class AdminService {
     }
 
     /**
-     * Fills in actorEmail on admin rows (the admin account behind the actor id),
+     * Fills in actorEmail on admin rows, owner or manager (the admin account behind the actor id),
      * one lookup per distinct admin, so the log says which admin acted.
      */
     List<com.macrotel.rapidstylers.common.entity.AuditLogEntity> withActorEmails(
             List<com.macrotel.rapidstylers.common.entity.AuditLogEntity> rows){
         Map<String, Optional<String>> emails = new HashMap<>();
         for(com.macrotel.rapidstylers.common.entity.AuditLogEntity row : rows){
-            if(!"ADMIN".equalsIgnoreCase(row.getActorRole()) || adminRecords == null) continue;
+            boolean console = "ADMIN".equalsIgnoreCase(row.getActorRole()) || "MANAGER".equalsIgnoreCase(row.getActorRole());
+            if(!console || adminRecords == null) continue;
             row.setActorEmail(emails.computeIfAbsent(String.valueOf(row.getActorId()),
                     id -> Optional.ofNullable(adminRecords.emailForActor(id))).orElse(null));
         }

@@ -7,4 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface AdminAccountRepo extends JpaRepository<AdminAccountEntity, Long> {
     Optional<AdminAccountEntity> findByEmailIgnoreCase(String email);
     boolean existsByEmailIgnoreCase(String email);
+    long countByRoleIgnoreCaseAndEnabledTrue(String role);
 }
