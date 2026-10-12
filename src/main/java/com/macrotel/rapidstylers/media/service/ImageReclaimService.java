@@ -55,7 +55,7 @@ public class ImageReclaimService {
     @Autowired
     UploadOwnership uploadOwnership = new UploadOwnership();
 
-    /** A sign-up photo nothing uses after this long was abandoned (the sign-up pass lasts 30 minutes). */
+    /** A sign-up photo nothing uses after this long was abandoned (the sign-up pass lasts 6 hours). */
     @Value("${app.uploads.abandoned-after-hours:24}")
     long abandonedAfterHours = 24;
 
