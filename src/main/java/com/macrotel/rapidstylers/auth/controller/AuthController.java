@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.auth.controller;
 
+import com.macrotel.rapidstylers.auth.pojo.ChangePasswordData;
 import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.pojo.OTPData;
 import com.macrotel.rapidstylers.auth.pojo.SignInData;
@@ -145,6 +146,17 @@ public class AuthController {
             return CurrentAccount.unauthorized();
         }
         BaseResponse baseResponse = authService.updateUserPassword(forgotPasswordData, accountId);
+        HttpStatus status = ApiResponses.httpStatus(baseResponse);
+        return new ResponseEntity<>(baseResponse,status);
+    }
+
+    @PostMapping("/update_styler_password")
+    public ResponseEntity <BaseResponse> updateStylerPassword(@Valid @RequestBody ChangePasswordData changePasswordData, HttpServletRequest request){
+        String stylerId = CurrentAccount.id(request);
+        if(stylerId == null){
+            return CurrentAccount.unauthorized();
+        }
+        BaseResponse baseResponse = authService.updateStylerPassword(changePasswordData, stylerId);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }

@@ -1,15 +1,13 @@
 package com.macrotel.rapidstylers.catalog.pojo;
 
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.Pattern;
+import javax.validation.constraints.NotBlank;
 import lombok.Data;
-
-import static com.macrotel.rapidstylers.config.AppConstants.CHARACTER_VALIDATION_REGEX;
 
 @Data
 public class ServiceTypeData {
-    @NotEmpty(message = "Service name cannot be empty")
-    @Pattern(regexp = CHARACTER_VALIDATION_REGEX)
+    // Length, characters and duplicates are checked on the trimmed name in
+    // CatalogService (see CatalogRules), so the message can say what is wrong.
+    @NotBlank(message = "Service name cannot be empty")
     private String serviceName;
     private String id;
     private String imageUrl;

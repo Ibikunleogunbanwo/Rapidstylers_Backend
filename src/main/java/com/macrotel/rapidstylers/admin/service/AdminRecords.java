@@ -26,4 +26,23 @@ public class AdminRecords {
     public Optional<AdminAccountEntity> findByEmailIgnoreCase(String email) {
         return adminAccountRepo.findByEmailIgnoreCase(email);
     }
+
+    /**
+     * The email of the admin account an audit row's actor id names, or null.
+     * Admin tokens carry the account's email as their subject, so that is the
+     * usual actor id; a numeric id (the account's row id) is accepted as well.
+     */
+    public String emailForActor(String actorId) {
+        if (actorId == null || actorId.isBlank()) {
+            return null;
+        }
+        String id = actorId.trim();
+        if (adminAccountRepo == null) {
+            return id.contains("@") ? id : null;
+        }
+        Optional<AdminAccountEntity> account = id.matches("\\d{1,18}")
+                ? adminAccountRepo.findById(Long.parseLong(id))
+                : adminAccountRepo.findByEmailIgnoreCase(id);
+        return account.map(AdminAccountEntity::getEmail).orElse(id.contains("@") ? id : null);
+    }
 }

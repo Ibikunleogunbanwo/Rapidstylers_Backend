@@ -27,6 +27,13 @@ public class AuditLogEntity implements Serializable {
     private String details;
     @Column(nullable = false)
     private String createdAt;
+    /**
+     * The admin account's email when the actor is an admin, else null. Not a
+     * column: filled in when the admin log is read (see AdminService), so rows
+     * written before it existed show it too.
+     */
+    @Transient
+    private String actorEmail;
 
     public AuditLogEntity() {
     }

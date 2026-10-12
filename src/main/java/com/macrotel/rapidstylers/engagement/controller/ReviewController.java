@@ -33,6 +33,18 @@ public class ReviewController {
         return ApiResponses.respond(reviewService.getReviewModerationQueue());
     }
 
+    /** Published (APPROVED, the default), hidden (REJECTED) or PENDING reviews, searchable and paged. */
+    @GetMapping("/admin/reviews")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminReviews(@RequestParam(value = "status", required = false) String status,
+                                                     @RequestParam(value = "q", required = false) String q,
+                                                     @RequestParam(value = "page", required = false) Integer page,
+                                                     @RequestParam(value = "size", required = false) Integer size,
+                                                     HttpServletRequest request){
+        if(CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(reviewService.listReviewsForAdmin(status, q, page, size));
+    }
+
     @PostMapping("/admin/update_review_moderation")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BaseResponse> updateReviewModeration(@RequestBody Map<String, Object> body, HttpServletRequest request){

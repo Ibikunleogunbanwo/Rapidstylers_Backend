@@ -97,6 +97,20 @@ class SecurityRulesTest {
             "POST,   /rapid_stylers/decrypt,                          ,         401",
             "GET,    /rapid_stylers/styler/reviews,                   STYLER,   200",
             "GET,    /rapid_stylers/styler/reviews,                   CUSTOMER, 401",
+            // Support tickets: customers and stylists, not admins (they use the admin list)
+            "POST,   /rapid_stylers/support_tickets,                  CUSTOMER, 200",
+            "POST,   /rapid_stylers/support_tickets,                  STYLER,   200",
+            "GET,    /rapid_stylers/support_tickets,                  STYLER,   200",
+            "GET,    /rapid_stylers/support_tickets,                  ADMIN,    401",
+            "GET,    /rapid_stylers/support_tickets,                  ,         401",
+            // New admin screens are admin only
+            "GET,    /rapid_stylers/admin/identification_image,       ADMIN,    200",
+            "GET,    /rapid_stylers/admin/identification_image,       STYLER,   401",
+            "GET,    /rapid_stylers/admin/identification_image,       ,         401",
+            "GET,    /rapid_stylers/admin/reviews,                    CUSTOMER, 401",
+            "GET,    /rapid_stylers/admin/payment_reconciliation_latest, STYLER, 401",
+            "GET,    /rapid_stylers/admin/announcements,              CUSTOMER, 401",
+            "GET,    /rapid_stylers/admin/announcement_audience_count, ADMIN,   200",
             // Closed by default: unlisted routes need a signed-in account of any role
             "POST,   /rapid_stylers/auth/logout,                      CUSTOMER, 200",
             "POST,   /rapid_stylers/auth/logout,                      STYLER,   200",

@@ -143,6 +143,57 @@ public class ReviewService {
         return response;
     }
 
+    /**
+     * Admin review list for one moderation status (APPROVED by default, also
+     * PENDING or REJECTED = hidden), optionally searched by stylist business
+     * name, reviewer name or message. Returns {items, total, page, size}; page
+     * counts from 0 and size is capped at 100.
+     */
+    public BaseResponse listReviewsForAdmin(String status, String query, Integer page, Integer size){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            String wanted = status == null || status.isBlank() ? "APPROVED" : status.trim().toUpperCase(Locale.ROOT);
+            if(!Arrays.asList("APPROVED", "REJECTED", "PENDING").contains(wanted)){
+                return Responses.errorResponse(response, "Status must be APPROVED, REJECTED or PENDING");
+            }
+            int pageNumber = page == null || page < 0 ? 0 : page;
+            int pageSize = size == null || size < 1 ? 20 : Math.min(size, 100);
+            String text = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+            // A % or _ typed into the search would match anything, so they are dropped.
+            text = text.replace("%", "").replace("_", "");
+            String pattern = text.isEmpty() ? null : "%" + (text.length() > 100 ? text.substring(0, 100) : text) + "%";
+            org.springframework.data.domain.Page<ReviewEntity> found = reviewRepo.adminSearch(wanted, pattern,
+                    org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
+            Map<String, String> businessNames = new HashMap<>();
+            List<Map<String, Object>> items = new ArrayList<>();
+            for(ReviewEntity review : found.getContent()){
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("reviewId", review.getId());
+                item.put("stylerId", review.getStylerId());
+                item.put("businessName", businessNames.computeIfAbsent(String.valueOf(review.getStylerId()),
+                        id -> stylerRecords.findByStylerId(id).map(StylerEntity::getBusinessName).orElse(null)));
+                item.put("userName", review.getUserName());
+                item.put("ratingScore", review.getRatingScore());
+                item.put("message", review.getMessage());
+                item.put("createdAt", review.getCreatedAt());
+                item.put("moderationStatus", review.getModerationStatus());
+                items.add(item);
+            }
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("items", items);
+            data.put("total", found.getTotalElements());
+            data.put("page", pageNumber);
+            data.put("size", pageSize);
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(data);
+        } catch(Exception ex){
+            LOG.warning("Admin review list failed: " + ex.getMessage());
+            return Responses.errorResponse(response, "Could not load reviews");
+        }
+        return response;
+    }
+
     public BaseResponse updateReviewModeration(Long reviewId, String action, String adminId){
         BaseResponse response = new BaseResponse(true);
         try {

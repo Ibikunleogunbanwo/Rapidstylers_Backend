@@ -28,14 +28,14 @@ public class SupportController {
     public ResponseEntity<BaseResponse> createSupportTicket(@Valid @RequestBody SupportTicketData data, HttpServletRequest request){
         String accountId = CurrentAccount.id(request);
         if(accountId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(supportService.createSupportTicket(accountId, data));
+        return ApiResponses.respond(supportService.createSupportTicket(accountId, CurrentAccount.role(request), data));
     }
 
     @GetMapping("/support_tickets")
     public ResponseEntity<BaseResponse> supportTickets(HttpServletRequest request){
         String accountId = CurrentAccount.id(request);
         if(accountId == null) return CurrentAccount.unauthorized();
-        return ApiResponses.respond(supportService.listSupportTickets(accountId));
+        return ApiResponses.respond(supportService.listSupportTickets(accountId, CurrentAccount.role(request)));
     }
 
     @GetMapping("/admin/support_tickets")

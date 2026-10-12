@@ -7,8 +7,10 @@ import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.customer.entity.SavedStylistEntity;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.service.CustomerRecords;
+import com.macrotel.rapidstylers.engagement.entity.AnnouncementEntity;
 import com.macrotel.rapidstylers.engagement.entity.NotificationEntity;
 import com.macrotel.rapidstylers.engagement.pojo.NotificationPreferencesData;
+import com.macrotel.rapidstylers.engagement.repo.AnnouncementRepo;
 import com.macrotel.rapidstylers.engagement.repo.NotificationRepo;
 import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
@@ -40,6 +42,9 @@ public class NotificationService {
     OutboxEventService outboxEventService;
     @Autowired
     com.macrotel.rapidstylers.common.service.AuditService auditService;
+    /** Sent-announcement history; optional so hand-built tests need no database. */
+    @Autowired(required = false)
+    AnnouncementRepo announcementRepo;
 
     /**
      * Emails both parties about an appointment event with role-appropriate
@@ -181,10 +186,12 @@ public class NotificationService {
             if(cleanTitle.length() > 120) return Responses.errorResponse(response, "Title must be 120 characters or fewer");
             if(cleanMessage.length() > 1000) return Responses.errorResponse(response, "Message must be 1000 characters or fewer");
             List<String> recipients;
+            String sentTo = null;
             if(recipientEmail != null && !recipientEmail.isBlank()){
                 Optional<UserEntity> user = customerRecords.findByEmailAddress(recipientEmail.trim());
                 if(user.isEmpty()) return Responses.errorResponse(response, "No customer with that email");
                 recipients = List.of(user.get().getUserId());
+                sentTo = user.get().getEmailAddress();
             } else {
                 recipients = customerRecords.findActiveUserIds();
             }
@@ -193,6 +200,7 @@ public class NotificationService {
                 rows.add(new NotificationEntity(userId, "", "ANNOUNCEMENT", cleanTitle, cleanMessage));
             }
             notificationRepo.saveAll(rows);
+            recordAnnouncement(adminId, cleanTitle, cleanMessage, rows.size(), sentTo);
             if(auditService != null){
                 auditService.audit(adminId, "ADMIN", "ADMIN_ANNOUNCEMENT", "NOTIFICATION",
                         recipients.size() == 1 ? recipients.get(0) : "ALL",
@@ -203,6 +211,65 @@ public class NotificationService {
             response.setData(Map.of("sent", rows.size()));
         } catch (Exception ex) {
             LOG.warning("Announcement failed: " + ex.getMessage());
+        }
+        return response;
+    }
+
+    /** Keeps the announcement for the admin's sent history; never fails the send. */
+    private void recordAnnouncement(String adminId, String title, String message, int recipientCount, String recipientEmail){
+        if(announcementRepo == null) return;
+        try {
+            AnnouncementEntity sent = new AnnouncementEntity();
+            sent.setTitle(title);
+            sent.setMessage(message);
+            sent.setRecipientCount(recipientCount);
+            sent.setRecipientEmail(recipientEmail);
+            sent.setSentAt(java.time.LocalDateTime.now());
+            sent.setSentBy(adminId);
+            announcementRepo.save(sent);
+        } catch (Exception ex) {
+            LOG.warning("Announcement history write failed: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Sent announcements, newest first: {title, message, recipientCount,
+     * recipientEmail (null = all customers), sentAt (ISO-8601), sentBy}.
+     */
+    public BaseResponse listAnnouncements(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for(AnnouncementEntity sent : announcementRepo.findTop200ByOrderBySentAtDescIdDesc()){
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", sent.getId());
+                row.put("title", sent.getTitle());
+                row.put("message", sent.getMessage());
+                row.put("recipientCount", sent.getRecipientCount());
+                row.put("recipientEmail", sent.getRecipientEmail());
+                row.put("sentAt", sent.getSentAt() == null ? null
+                        : sent.getSentAt().atZone(java.time.ZoneId.systemDefault()).toOffsetDateTime().toString());
+                row.put("sentBy", sent.getSentBy());
+                rows.add(row);
+            }
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(rows);
+        } catch (Exception ex) {
+            LOG.warning("Announcement history failed: " + ex.getMessage());
+        }
+        return response;
+    }
+
+    /** How many customers an announcement to everyone would reach (active customers). */
+    public BaseResponse announcementAudienceCount(){
+        BaseResponse response = new BaseResponse(true);
+        try {
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage(SUCCESS_MESSAGE);
+            response.setData(Map.of("count", customerRecords.findActiveUserIds().size()));
+        } catch (Exception ex) {
+            LOG.warning("Announcement audience count failed: " + ex.getMessage());
         }
         return response;
     }

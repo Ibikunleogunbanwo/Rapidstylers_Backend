@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 /**
- * Admin dashboard tools: KPIs, audit log, cache stats, test email, recovery campaigns, failed events and the decrypt helper. Same URLs as before, under /rapid_stylers.
+ * Admin dashboard tools: KPIs, audit log, cache stats, test email, announcements, ID photo links, recovery campaigns, failed events and the decrypt helper. Same URLs as before, under /rapid_stylers.
  */
 @RestController
 @RequestMapping("/rapid_stylers")
@@ -27,6 +27,8 @@ public class AdminController {
     EncryptionConfig encryptionConfig;
     @Autowired
     com.macrotel.rapidstylers.engagement.service.NotificationService notificationService;
+    @Autowired
+    com.macrotel.rapidstylers.media.service.IdentificationImageService identificationImageService;
 
     @GetMapping("/admin/recovery_campaigns")
     @PreAuthorize("hasRole('ADMIN')")
@@ -80,6 +82,32 @@ public class AdminController {
         if(adminId == null) return CurrentAccount.unauthorized();
         return ApiResponses.respond(notificationService.sendAnnouncement(adminId, body.get("title"),
                 body.get("message"), body.get("recipientEmail")));
+    }
+
+    /** Admin-only: sent announcements, newest first. */
+    @GetMapping("/admin/announcements")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminAnnouncements(HttpServletRequest request){
+        if(CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(notificationService.listAnnouncements());
+    }
+
+    /** Admin-only: how many customers an announcement to everyone reaches. */
+    @GetMapping("/admin/announcement_audience_count")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminAnnouncementAudienceCount(HttpServletRequest request){
+        if(CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(notificationService.announcementAudienceCount());
+    }
+
+    /** Admin-only: a 10-minute signed link to a stylist's private ID photo ({url, expiresAt}). */
+    @GetMapping("/admin/identification_image")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminIdentificationImage(@RequestParam(value = "stylerId", required = false) String stylerId,
+                                                                 HttpServletRequest request){
+        String adminId = CurrentAccount.adminId(request);
+        if(adminId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(identificationImageService.signedIdentificationLink(stylerId, adminId));
     }
 
     /** Admin-only: sends a test email through EmailConfig to verify delivery. */

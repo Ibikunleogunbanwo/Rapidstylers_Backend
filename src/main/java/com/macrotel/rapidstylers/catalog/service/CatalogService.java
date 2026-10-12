@@ -136,22 +136,23 @@ public class CatalogService {
     public BaseResponse createServiceType (ServiceTypeData serviceTypeData){
         BaseResponse response = new BaseResponse(true);
         try{
-            Optional<ServiceEntity> isServiceNameExist = serviceRepo.findByServiceName(serviceTypeData.getServiceName());
-            if(isServiceNameExist.isPresent()){
+            String name = CatalogRules.clean(serviceTypeData.getServiceName());
+            String invalid = categoryNameProblem(name, null);
+            if(invalid != null){
                 response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Service Name already exist");
+                response.setMessage(invalid);
                 response.setData(EMPTY_DATA);
                 return response;
             }
             ServiceEntity serviceEntity = new ServiceEntity();
-            serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
+            serviceEntity.setServiceName(name);
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
             serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
             evict(ReadCacheService.KEY_CATALOG_SERVICES);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
-            response.setMessage(serviceTypeData.getServiceName()+ " successfully added to list of service");
+            response.setMessage(name + " successfully added to list of service");
             response.setData(EMPTY_DATA);
         }
         catch (Exception ex){
@@ -194,8 +195,16 @@ public class CatalogService {
                 return response;
             }
             ServiceEntity serviceEntity = isServiceExist.get();
+            String name = CatalogRules.clean(serviceTypeData.getServiceName());
+            String invalid = categoryNameProblem(name, serviceEntity.getId());
+            if(invalid != null){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage(invalid);
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             String previousImageUrl = serviceEntity.getServiceImageUrl();
-            serviceEntity.setServiceName(AppUtils.sanitizeText(serviceTypeData.getServiceName()));
+            serviceEntity.setServiceName(name);
             serviceEntity.setServiceImageUrl(serviceTypeData.getImageUrl());
             serviceEntity.setDescription(AppUtils.sanitizeText(serviceTypeData.getDescription()));
             serviceRepo.save(serviceEntity);
@@ -296,17 +305,15 @@ public class CatalogService {
     public BaseResponse createBlogPost(BlogPostData blogPostData){
         BaseResponse response = new BaseResponse(true);
         try{
-            if(blogPostData.getTitle() == null || blogPostData.getTitle().isEmpty()){
+            String invalid = blogProblem(blogPostData);
+            if(invalid != null){
                 response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Blog title cannot be empty");
+                response.setMessage(invalid);
                 response.setData(EMPTY_DATA);
                 return response;
             }
             BlogPostEntity post = new BlogPostEntity();
-            post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
-            post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
-            post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
-            post.setImageUrl(blogPostData.getImageUrl());
+            applyBlogFields(post, blogPostData);
             post.setAuthor(blogPostData.getAuthor() == null || blogPostData.getAuthor().isEmpty()
                     ? "RapidStylers Team" : AppUtils.sanitizeText(blogPostData.getAuthor()));
             blogPostRepo.save(post);
@@ -338,12 +345,16 @@ public class CatalogService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            String invalid = blogProblem(blogPostData);
+            if(invalid != null){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage(invalid);
+                response.setData(EMPTY_DATA);
+                return response;
+            }
             BlogPostEntity post = isPostExist.get();
             String previousImageUrl = post.getImageUrl();
-            post.setTitle(AppUtils.sanitizeText(blogPostData.getTitle()));
-            post.setCategory(AppUtils.sanitizeText(blogPostData.getCategory()));
-            post.setContent(AppUtils.sanitizeText(blogPostData.getContent()));
-            post.setImageUrl(blogPostData.getImageUrl());
+            applyBlogFields(post, blogPostData);
             if(blogPostData.getAuthor() != null && !blogPostData.getAuthor().isEmpty()){
                 post.setAuthor(AppUtils.sanitizeText(blogPostData.getAuthor()));
             }
@@ -362,6 +373,31 @@ public class CatalogService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    /** Why this category name cannot be saved (excluding the category being edited), or null. */
+    private String categoryNameProblem(String name, Long editingId){
+        String invalid = CatalogRules.categoryNameError(name);
+        if(invalid != null) return invalid;
+        for(ServiceEntity same : serviceRepo.findBySameName(name)){
+            if(editingId == null || !editingId.equals(same.getId())) return CatalogRules.DUPLICATE_CATEGORY;
+        }
+        return null;
+    }
+
+    /** Why this article cannot be saved, judged on what would actually be stored, or null. */
+    private static String blogProblem(BlogPostData data){
+        return CatalogRules.blogError(AppUtils.sanitizeText(data.getTitle()), AppUtils.sanitizeText(data.getContent()),
+                data.getImageUrl());
+    }
+
+    /** Title, category, content and image of an article; text is sanitised, category trimmed, a blank image dropped. */
+    private static void applyBlogFields(BlogPostEntity post, BlogPostData data){
+        post.setTitle(AppUtils.sanitizeText(data.getTitle()));
+        post.setCategory(AppUtils.sanitizeText(CatalogRules.clean(data.getCategory())));
+        post.setContent(AppUtils.sanitizeText(data.getContent()));
+        String imageUrl = data.getImageUrl() == null ? null : data.getImageUrl().trim();
+        post.setImageUrl(imageUrl == null || imageUrl.isEmpty() ? null : imageUrl);
     }
 
     public BaseResponse deleteBlogPost(String id){

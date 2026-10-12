@@ -21,7 +21,8 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 /**
- * Destroys assets on Cloudinary on the application's own behalf.
+ * Destroys assets on Cloudinary on the application's own behalf, and signs the
+ * short-lived links an admin uses to view a private ID photo.
  *
  * The upload path already existed: the frontend is handed a signed parameter set
  * and posts the bytes straight to Cloudinary, so this server never carries image
@@ -58,10 +59,26 @@ public class CloudinaryService {
      * value is allowed to be something else entirely, a static path under the app
      * (`/images/gallery/locs-2.jpg`), an image hosted elsewhere, or a URL that
      * merely contains those words, and none of them may be mistaken for an asset
-     * this account can delete. Group 1 is the cloud name and group 2 the public id.
+     * this account can delete. Group 1 is the cloud name, group 2 the delivery
+     * type (public `upload`, or private `authenticated` with a `s--SIG--` path
+     * signature) and group 3 the public id.
      */
     private static final Pattern DELIVERY_URL = Pattern.compile(
-            "^https?://res\\.cloudinary\\.com/([^/]+)/image/upload/(?:v\\d+/)?(.+)$");
+            "^https?://res\\.cloudinary\\.com/([^/]+)/image/(upload|authenticated)/(?:s--[^/]+--/)?(?:v\\d+/)?(.+)$");
+
+    /** Delivery type of an ordinary, public upload. */
+    public static final String TYPE_UPLOAD = "upload";
+
+    /**
+     * Delivery type of a private asset (ID photos): Cloudinary serves it only
+     * through a signed URL. The secure_url returned on upload carries a
+     * permanent `s--SIG--` path signature, so that stored URL must not be shown
+     * to anyone (see {@link #withoutDeliverySignature}).
+     */
+    public static final String TYPE_AUTHENTICATED = "authenticated";
+
+    /** The `s--SIG--/` path segment of a signed delivery URL. */
+    private static final Pattern PATH_SIGNATURE = Pattern.compile("/s--[^/]+--/");
 
     /**
      * The public id inside a stored delivery URL, or null when the URL is not one
@@ -81,7 +98,7 @@ public class CloudinaryService {
         if (!isBlank(cloudName) && !cloudName.equals(cloud)) {
             return null;
         }
-        String publicId = matcher.group(2);
+        String publicId = matcher.group(3);
         int query = publicId.indexOf('?');
         if (query >= 0) {
             publicId = publicId.substring(0, query);
@@ -91,6 +108,106 @@ public class CloudinaryService {
             publicId = publicId.substring(0, extension);
         }
         return isBlank(publicId) ? null : publicId;
+    }
+
+    /**
+     * The delivery type of a stored delivery URL ({@link #TYPE_UPLOAD} or
+     * {@link #TYPE_AUTHENTICATED}), or null when it is not one of ours.
+     */
+    public String deliveryType(String url) {
+        if (extractPublicId(url) == null) {
+            return null;
+        }
+        Matcher matcher = DELIVERY_URL.matcher(url.trim());
+        return matcher.find() ? matcher.group(2) : null;
+    }
+
+    /** The file extension of a stored delivery URL (png, jpg...), or null when it has none. */
+    public static String fileFormat(String url) {
+        if (isBlank(url)) {
+            return null;
+        }
+        String path = url.trim();
+        int query = path.indexOf('?');
+        if (query >= 0) {
+            path = path.substring(0, query);
+        }
+        String last = path.substring(path.lastIndexOf('/') + 1);
+        int dot = last.lastIndexOf('.');
+        String format = dot > 0 ? last.substring(dot + 1).toLowerCase(java.util.Locale.ROOT) : "";
+        return format.matches("[a-z0-9]{1,5}") ? format : null;
+    }
+
+    /**
+     * The URL with any `s--SIG--` path signature removed. For a private asset
+     * that leaves a link that no longer opens the image, which is what a list
+     * row should carry: viewing goes through a short-lived signed link instead.
+     * Other URLs come back unchanged.
+     */
+    public static String withoutDeliverySignature(String url) {
+        if (url == null || !url.contains("res.cloudinary.com/")) {
+            return url;
+        }
+        return PATH_SIGNATURE.matcher(url).replaceFirst("/");
+    }
+
+    /**
+     * A private download link for one asset that stops working at expiresAt
+     * (epoch seconds), or null when Cloudinary is not configured.
+     *
+     * This is Cloudinary's signed download API
+     * (`api.cloudinary.com/v1_1/<cloud>/image/download`), chosen over a
+     * `s--SIG--` signed delivery URL on purpose: a path signature never expires
+     * (expiring delivery URLs need the paid token-authentication add-on), while
+     * the download API checks `expires_at` itself, so a copied link is useless
+     * after a few minutes. It also serves any delivery type, so older ID photos
+     * stored as public uploads open the same way as new authenticated ones.
+     *
+     * Signed like every Cloudinary API call: the parameters other than api_key,
+     * sorted by name, joined as name=value with '&', the API secret appended,
+     * then SHA-1.
+     */
+    public String privateDownloadUrl(String publicId, String format, String type, long expiresAt) {
+        if (isBlank(publicId) || !isConfigured()) {
+            return null;
+        }
+        try {
+            java.util.TreeMap<String, String> params = new java.util.TreeMap<>();
+            params.put("public_id", publicId);
+            if (!isBlank(format)) {
+                params.put("format", format);
+            }
+            params.put("type", isBlank(type) ? TYPE_UPLOAD : type);
+            params.put("expires_at", String.valueOf(expiresAt));
+            params.put("timestamp", String.valueOf(Instant.now().getEpochSecond()));
+            String signature = sha1(signable(params) + apiSecret);
+
+            StringBuilder url = new StringBuilder("https://api.cloudinary.com/v1_1/")
+                    .append(cloudName).append("/image/download?api_key=").append(encode(apiKey));
+            for (java.util.Map.Entry<String, String> param : params.entrySet()) {
+                url.append('&').append(param.getKey()).append('=').append(encode(param.getValue()));
+            }
+            return url.append("&signature=").append(signature).toString();
+        } catch (Exception ex) {
+            LOG.warning("Could not sign a download link for " + publicId + ": " + ex.getMessage());
+            return null;
+        }
+    }
+
+    /** name=value pairs joined with '&', in the (sorted) order of the map: the string Cloudinary signs. */
+    static String signable(java.util.SortedMap<String, String> params) {
+        StringBuilder joined = new StringBuilder();
+        for (java.util.Map.Entry<String, String> param : params.entrySet()) {
+            if (joined.length() > 0) {
+                joined.append('&');
+            }
+            joined.append(param.getKey()).append('=').append(param.getValue());
+        }
+        return joined.toString();
+    }
+
+    private static String encode(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /**
@@ -117,6 +234,15 @@ public class CloudinaryService {
      * where it was already gone, which is the state we wanted either way)
      */
     public boolean destroy(String publicId) {
+        return destroy(publicId, TYPE_UPLOAD);
+    }
+
+    /**
+     * Destroys one asset of the given delivery type. A private (authenticated)
+     * asset is a different asset from a public one with the same public id, so
+     * Cloudinary has to be told which one is meant.
+     */
+    public boolean destroy(String publicId, String type) {
         if (isBlank(publicId)) {
             return false;
         }
@@ -128,10 +254,17 @@ public class CloudinaryService {
             long timestamp = Instant.now().getEpochSecond();
             // Cloudinary signs the destroy params (public_id + timestamp), sorted
             // alphabetically, with the API secret appended, then SHA-1.
-            String signature = sha1("public_id=" + publicId + "&timestamp=" + timestamp + apiSecret);
+            // A public upload is signed exactly as before; any other type is
+            // sent, and so signed, as one more parameter.
+            boolean typed = !isBlank(type) && !TYPE_UPLOAD.equals(type);
+            String signature = sha1("public_id=" + publicId + "&timestamp=" + timestamp
+                    + (typed ? "&type=" + type : "") + apiSecret);
 
             LinkedMultiValueMap<String, String> body = new LinkedMultiValueMap<>();
             body.add("public_id", publicId);
+            if (typed) {
+                body.add("type", type);
+            }
             body.add("api_key", apiKey);
             body.add("timestamp", String.valueOf(timestamp));
             body.add("signature", signature);
@@ -171,10 +304,16 @@ public class CloudinaryService {
     public static final class Upload {
         public final String publicId;
         public final Instant createdAt;
+        public final String type;
 
         public Upload(String publicId, Instant createdAt) {
+            this(publicId, createdAt, TYPE_UPLOAD);
+        }
+
+        public Upload(String publicId, Instant createdAt, String type) {
             this.publicId = publicId;
             this.createdAt = createdAt;
+            this.type = type;
         }
     }
 
@@ -195,11 +334,17 @@ public class CloudinaryService {
      * configured or the call fails, so a caller simply finds nothing to do.
      */
     public UploadPage listUploads(String prefix, String cursor) {
-        if (!isConfigured() || isBlank(prefix)) {
+        return listUploads(prefix, cursor, TYPE_UPLOAD);
+    }
+
+    /** {@link #listUploads(String, String)} for one delivery type (private ID photos are `authenticated`). */
+    public UploadPage listUploads(String prefix, String cursor, String type) {
+        if (!isConfigured() || isBlank(prefix) || isBlank(type) || !type.matches("[a-z]+")) {
             return new UploadPage(Collections.emptyList(), null);
         }
         try {
-            String url = "https://api.cloudinary.com/v1_1/" + cloudName + "/resources/image/upload?max_results=500&prefix="
+            String url = "https://api.cloudinary.com/v1_1/" + cloudName + "/resources/image/" + type
+                    + "?max_results=500&prefix="
                     + java.net.URLEncoder.encode(prefix, StandardCharsets.UTF_8)
                     + (isBlank(cursor) ? "" : "&next_cursor=" + java.net.URLEncoder.encode(cursor, StandardCharsets.UTF_8));
             HttpHeaders headers = new HttpHeaders();
@@ -214,7 +359,7 @@ public class CloudinaryService {
                     String publicId = resource.path("public_id").asText("");
                     String created = resource.path("created_at").asText("");
                     if (!publicId.isBlank() && !created.isBlank()) {
-                        uploads.add(new Upload(publicId, Instant.parse(created)));
+                        uploads.add(new Upload(publicId, Instant.parse(created), type));
                     }
                 }
             }
@@ -237,7 +382,7 @@ public class CloudinaryService {
         return new RestTemplate(factory);
     }
 
-    private String sha1(String input) throws Exception {
+    private static String sha1(String input) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-1");
         byte[] hashed = digest.digest(input.getBytes(StandardCharsets.UTF_8));
         StringBuilder builder = new StringBuilder();

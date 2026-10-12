@@ -34,6 +34,7 @@ class RoutesTest {
             "ADMIN", Routes.ADMIN,
             "STYLER", Routes.STYLER,
             "CUSTOMER", Routes.CUSTOMER,
+            "SUPPORT", Routes.SUPPORT,
             "UPLOAD", Routes.UPLOAD);
 
     @Test

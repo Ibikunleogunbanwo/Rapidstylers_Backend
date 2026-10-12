@@ -80,6 +80,7 @@ public class SecurityConfig {
                 .mvcMatchers(Routes.ADMIN).hasRole(Roles.ADMIN)
                 .mvcMatchers(Routes.STYLER).hasRole(Roles.STYLER)
                 .mvcMatchers(Routes.CUSTOMER).hasRole(Roles.CUSTOMER)
+                .mvcMatchers(Routes.SUPPORT).hasAnyRole(Roles.CUSTOMER, Roles.STYLER)
                 .mvcMatchers(Routes.UPLOAD).hasAnyRole(Roles.ADMIN, Roles.STYLER, Roles.SIGNUP_UPLOAD)
                 .anyRequest().hasAnyRole(Roles.ACCOUNTS)
             .and()

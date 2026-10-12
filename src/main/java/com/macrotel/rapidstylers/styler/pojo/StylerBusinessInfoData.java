@@ -1,8 +1,12 @@
 package com.macrotel.rapidstylers.styler.pojo;
 
+import com.macrotel.rapidstylers.config.InputFields;
 import javax.validation.constraints.NotEmpty;
+import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 import lombok.Data;
+
+import static com.macrotel.rapidstylers.config.AppConstants.*;
 
 /**
  * A stylist changing their business details. A new address is located again,
@@ -24,16 +28,24 @@ public class StylerBusinessInfoData {
     @Size(max = 50, message = "Keep the unit under 50 characters")
     private String unit;
     @NotEmpty(message = "City cannot be empty")
-    @Size(max = 100, message = "Keep the city under 100 characters")
+    @Pattern(regexp = CITY_REGEX, message = CITY_MESSAGE)
     private String city;
     @NotEmpty(message = "Business Province cannot be empty")
-    @Size(max = 100, message = "Keep the province under 100 characters")
+    @Pattern(regexp = PROVINCE_REGEX, message = PROVINCE_MESSAGE)
     private String province;
-    @Size(max = 20, message = "Keep the postal code under 20 characters")
+    /** Optional. Blank means none. */
+    @Pattern(regexp = POSTAL_CODE_REGEX, message = POSTAL_CODE_MESSAGE)
     private String postalCode;
     @Size(max = 100, message = "Keep the country under 100 characters")
     private String country;
     /** Optional. Blank keeps the zone that follows the address. */
     @Size(max = 64, message = "Time zone is not valid")
     private String timeZone;
+
+    // Trimmed (the province by its full name) before the rules above run.
+    public void setCity(String city) { this.city = InputFields.trim(city); }
+    public void setProvince(String province) { this.province = InputFields.province(province); }
+    public void setPostalCode(String postalCode) {
+        this.postalCode = postalCode == null || postalCode.isBlank() ? null : postalCode.trim();
+    }
 }

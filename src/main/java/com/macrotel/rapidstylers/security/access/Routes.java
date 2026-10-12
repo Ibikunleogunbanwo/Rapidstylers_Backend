@@ -106,6 +106,8 @@ public final class Routes {
             "/rapid_stylers/admin/all_portfolios",
             "/rapid_stylers/admin/delete_portfolio_image",
             "/rapid_stylers/admin/review_moderation_queue",
+            "/rapid_stylers/admin/reviews",
+            "/rapid_stylers/admin/identification_image",
             "/rapid_stylers/admin/update_review_moderation",
             "/rapid_stylers/admin/support_tickets",
             "/rapid_stylers/admin/update_support_ticket",
@@ -117,6 +119,8 @@ public final class Routes {
             "/rapid_stylers/admin/audit_logs",
             "/rapid_stylers/admin/test_email",
             "/rapid_stylers/admin/send_announcement",
+            "/rapid_stylers/admin/announcements",
+            "/rapid_stylers/admin/announcement_audience_count",
             "/rapid_stylers/admin/settings/commission",
             "/rapid_stylers/admin/recovery_campaigns",
             "/rapid_stylers/admin/failed_events",
@@ -133,6 +137,7 @@ public final class Routes {
             "/rapid_stylers/admin/pay_stylist_now",
             "/rapid_stylers/admin/resolve_service_dispute",
             "/rapid_stylers/admin/payment_reconciliation",
+            "/rapid_stylers/admin/payment_reconciliation_latest",
 
             // Bookings
             "/rapid_stylers/admin/bookings",
@@ -200,6 +205,7 @@ public final class Routes {
 
     public static final String[] STYLER = {
             "/rapid_stylers/styler_sign_out",
+            "/rapid_stylers/update_styler_password",
 
             // Services and portfolio
             "/rapid_stylers/create_sub_service",
@@ -267,9 +273,13 @@ public final class Routes {
             "/rapid_stylers/notifications/delete",
             "/rapid_stylers/notifications/delete_all",
             "/rapid_stylers/notification_preferences",
-            "/rapid_stylers/support_tickets",
             "/rapid_stylers/loyalty_account",
             "/rapid_stylers/apply_referral",
+    };
+
+    /** Support tickets: a signed-in customer or stylist, each seeing only their own. */
+    public static final String[] SUPPORT = {
+            "/rapid_stylers/support_tickets",
     };
 
     /**

@@ -126,4 +126,64 @@ class PaymentReconciliationServiceTest {
         assertEquals(Boolean.TRUE, report.get("ok"));
         assertEquals(1, report.get("matched"));
     }
+
+    // ── Saved reports ─────────────────────────────────────────────────
+
+    @Test
+    void latestReportSaysSoBeforeAnyRun() {
+        com.macrotel.rapidstylers.payment.repo.ReconciliationRunRepo repo =
+                mock(com.macrotel.rapidstylers.payment.repo.ReconciliationRunRepo.class);
+        when(repo.findFirstByOrderByRanAtDescIdDesc()).thenReturn(java.util.Optional.empty());
+        ReflectionTestUtils.setField(service, "reconciliationRunRepo", repo);
+
+        com.macrotel.rapidstylers.common.web.BaseResponse response = service.latestSavedReport();
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals("No reconciliation report yet", response.getMessage());
+        assertEquals(null, response.getData());
+    }
+
+    /** A scheduled run's report comes back as it was, plus when and how it ran. */
+    @Test
+    void everyRunIsSavedAndTheLatestComesBackWithItsTrigger() {
+        com.macrotel.rapidstylers.payment.repo.ReconciliationRunRepo repo =
+                mock(com.macrotel.rapidstylers.payment.repo.ReconciliationRunRepo.class);
+        ReflectionTestUtils.setField(service, "reconciliationRunRepo", repo);
+        when(bookAppointmentRepo.findAll()).thenReturn(List.of(appointment("pi_1", "AUTHORIZED", "0")));
+        Map<String, Object> report = service.buildReport(List.of(intent("pi_1", "succeeded"), intent("pi_2", "succeeded")));
+
+        service.saveRun(report, PaymentReconciliationService.TRIGGER_SCHEDULED);
+
+        org.mockito.ArgumentCaptor<com.macrotel.rapidstylers.payment.entity.ReconciliationRunEntity> saved =
+                org.mockito.ArgumentCaptor.forClass(com.macrotel.rapidstylers.payment.entity.ReconciliationRunEntity.class);
+        org.mockito.Mockito.verify(repo).save(saved.capture());
+        assertEquals("SCHEDULED", saved.getValue().getTriggerSource());
+        assertEquals(2, saved.getValue().getIssueCount());
+        assertEquals(false, saved.getValue().isOk());
+
+        when(repo.findFirstByOrderByRanAtDescIdDesc()).thenReturn(java.util.Optional.of(saved.getValue()));
+        Map<?, ?> latest = (Map<?, ?>) service.latestSavedReport().getData();
+
+        assertEquals("SCHEDULED", latest.get("trigger"));
+        assertEquals(2, ((Number) latest.get("issueCount")).intValue());
+        assertEquals(report.get("issues"), latest.get("issues"));
+        assertEquals(report.get("runAt"), latest.get("runAt"));
+        java.time.OffsetDateTime.parse((String) latest.get("ranAt"));
+    }
+
+    @Test
+    void anythingButTheScheduleIsAManualRun() {
+        com.macrotel.rapidstylers.payment.repo.ReconciliationRunRepo repo =
+                mock(com.macrotel.rapidstylers.payment.repo.ReconciliationRunRepo.class);
+        ReflectionTestUtils.setField(service, "reconciliationRunRepo", repo);
+        when(bookAppointmentRepo.findAll()).thenReturn(List.of());
+
+        service.saveRun(service.buildReport(List.of()), null);
+
+        org.mockito.ArgumentCaptor<com.macrotel.rapidstylers.payment.entity.ReconciliationRunEntity> saved =
+                org.mockito.ArgumentCaptor.forClass(com.macrotel.rapidstylers.payment.entity.ReconciliationRunEntity.class);
+        org.mockito.Mockito.verify(repo).save(saved.capture());
+        assertEquals("MANUAL", saved.getValue().getTriggerSource());
+        assertTrue(saved.getValue().isOk());
+    }
 }

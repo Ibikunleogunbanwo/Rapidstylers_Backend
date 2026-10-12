@@ -6,11 +6,16 @@ import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.config.EmailConfig;
 import com.macrotel.rapidstylers.config.ThrottledLog;
+import com.macrotel.rapidstylers.payment.entity.ReconciliationRunEntity;
+import com.macrotel.rapidstylers.payment.repo.ReconciliationRunRepo;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentIntentCollection;
 import com.stripe.param.PaymentIntentListParams;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,13 +39,15 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
  * intents) becomes visible instead of silently building up.
  *
  * Runs on a schedule and on demand via GET /admin/payment_reconciliation.
- * Every run writes an audit record; runs with findings also email the
- * configured ops address (app.admin.alert-email).
+ * Every run writes an audit record and keeps its report (the admin screen
+ * shows the latest through GET /admin/payment_reconciliation_latest); runs
+ * with findings also email the configured ops address (app.admin.alert-email).
  */
 @Service
 public class PaymentReconciliationService {
 
     private static final Logger LOG = Logger.getLogger(PaymentReconciliationService.class.getName());
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     @Autowired
     private AppointmentRecords appointmentRecords;
@@ -47,6 +55,12 @@ public class PaymentReconciliationService {
     private AuditService auditService;
     @Autowired
     private EmailConfig emailConfig;
+    /** Optional so unit tests that build this by hand need no database. */
+    @Autowired(required = false)
+    private ReconciliationRunRepo reconciliationRunRepo;
+
+    public static final String TRIGGER_SCHEDULED = "SCHEDULED";
+    public static final String TRIGGER_MANUAL = "MANUAL";
 
     @Value("${app.payment.reconcile-window-hours:72}")
     private long windowHours;
@@ -63,15 +77,21 @@ public class PaymentReconciliationService {
     @Scheduled(fixedDelayString = "${app.payment.reconcile-interval-ms:86400000}",
             initialDelayString = "${app.payment.reconcile-initial-delay-ms:60000}")
     public void scheduledReconcile() {
-        runReconciliation();
+        runReconciliation(TRIGGER_SCHEDULED);
     }
 
+    /** A run an admin asked for. */
     public BaseResponse runReconciliation() {
+        return runReconciliation(TRIGGER_MANUAL);
+    }
+
+    public BaseResponse runReconciliation(String trigger) {
         BaseResponse response = new BaseResponse(true);
         try {
             List<PaymentIntent> intents = fetchRecentIntents();
             Map<String, Object> report = buildReport(intents);
             lastReport = report;
+            saveRun(report, trigger);
 
             String summary = "Checked " + report.get("stripeIntentsChecked") + " Stripe intents; "
                     + report.get("issueCount") + " issue(s)";
@@ -194,6 +214,58 @@ public class PaymentReconciliationService {
     /** Latest report from the most recent run, for the admin endpoint. */
     public Map<String, Object> latestReport() {
         return lastReport;
+    }
+
+    /**
+     * Keeps a run's report. Never throws: a run that checked Stripe has done its
+     * job even if the copy for the admin screen could not be written.
+     */
+    void saveRun(Map<String, Object> report, String trigger) {
+        if (reconciliationRunRepo == null) {
+            return;
+        }
+        try {
+            ReconciliationRunEntity run = new ReconciliationRunEntity();
+            run.setRanAt(LocalDateTime.now());
+            run.setTriggerSource(TRIGGER_SCHEDULED.equals(trigger) ? TRIGGER_SCHEDULED : TRIGGER_MANUAL);
+            run.setOk(Boolean.TRUE.equals(report.get("ok")));
+            run.setIssueCount(((Number) report.getOrDefault("issueCount", 0)).intValue());
+            run.setReportJson(JSON.writeValueAsString(report));
+            reconciliationRunRepo.save(run);
+        } catch (Exception ex) {
+            LOG.warning("Could not save the reconciliation report: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * The newest saved run: its report plus ranAt (ISO-8601 with offset) and
+     * trigger (SCHEDULED or MANUAL). Data is null, with a message saying so,
+     * before the first run.
+     */
+    public BaseResponse latestSavedReport() {
+        BaseResponse response = new BaseResponse(true);
+        try {
+            Optional<ReconciliationRunEntity> latest = reconciliationRunRepo == null ? Optional.empty()
+                    : reconciliationRunRepo.findFirstByOrderByRanAtDescIdDesc();
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            if (latest.isEmpty()) {
+                response.setMessage("No reconciliation report yet");
+                response.setData(null);
+                return response;
+            }
+            ReconciliationRunEntity run = latest.get();
+            Map<String, Object> data = JSON.readValue(run.getReportJson(), new TypeReference<LinkedHashMap<String, Object>>() { });
+            data.put("ranAt", run.getRanAt().atZone(ZoneId.systemDefault()).toOffsetDateTime().toString());
+            data.put("trigger", run.getTriggerSource());
+            response.setMessage("Latest reconciliation report");
+            response.setData(data);
+        } catch (Exception ex) {
+            LOG.warning("Could not read the reconciliation report: " + ex.getMessage());
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("Could not load the reconciliation report");
+            response.setData(Collections.emptyMap());
+        }
+        return response;
     }
 
     private void audit(String actorId, String actorRole, String action, String resourceType,

@@ -67,6 +67,9 @@ public class ImageReclaimService {
      * letters, digits, dashes and underscores only. Anything else is refused before
      * a database or Cloudinary is asked about it.
      */
+    /** The folder of ID photos, which are uploaded as private (authenticated) assets. */
+    private static final String ID_FOLDER = "rapid_stylers/id/";
+
     private static final Pattern OUR_PUBLIC_ID = Pattern.compile("^rapid_stylers/[A-Za-z0-9_\\-/]+$");
 
     /**
@@ -113,7 +116,13 @@ public class ImageReclaimService {
                 // sharing an image is normal and not worth a log line per delete.
                 return false;
             }
-            boolean destroyed = cloudinaryService.destroy(publicId);
+            boolean destroyed = isIdPhoto(publicId)
+                    // An ID photo is private (authenticated) since uploads in that
+                    // folder became private, and a public upload before that, so
+                    // both are asked for; "already gone" counts as done for each.
+                    ? cloudinaryService.destroy(publicId, CloudinaryService.TYPE_AUTHENTICATED)
+                            & cloudinaryService.destroy(publicId)
+                    : cloudinaryService.destroy(publicId);
             if (destroyed) {
                 LOG.info("Reclaimed orphaned image " + publicId);
             }
@@ -124,6 +133,11 @@ public class ImageReclaimService {
             LOG.warning("Image reclaim failed for " + publicId + ": " + ex.getMessage());
             return false;
         }
+    }
+
+    /** Whether the public id is in the ID-photo folder, whose newer files are private. */
+    static boolean isIdPhoto(String publicId) {
+        return publicId != null && publicId.startsWith(ID_FOLDER);
     }
 
     /**
@@ -162,10 +176,27 @@ public class ImageReclaimService {
             return 0;
         }
         Instant cutoff = Instant.now().minus(Duration.ofHours(abandonedAfterHours));
+        // Public uploads everywhere, then the private ID photos, which a listing
+        // of public uploads never shows.
+        int deleted = sweep("rapid_stylers/", CloudinaryService.TYPE_UPLOAD, cutoff)
+                + sweep(ID_FOLDER, CloudinaryService.TYPE_AUTHENTICATED, cutoff);
+        if (deleted > 0) {
+            LOG.info("Deleted " + deleted + " abandoned sign-up photo(s)");
+        }
+        return deleted;
+    }
+
+    /** One sweep pass over the uploads of one delivery type under a folder. */
+    private int sweep(String prefix, String type, Instant cutoff) {
         int deleted = 0;
         String cursor = null;
         for (int page = 0; page < MAX_SWEEP_PAGES; page++) {
-            CloudinaryService.UploadPage uploads = cloudinaryService.listUploads("rapid_stylers/", cursor);
+            CloudinaryService.UploadPage uploads = CloudinaryService.TYPE_UPLOAD.equals(type)
+                    ? cloudinaryService.listUploads(prefix, cursor)
+                    : cloudinaryService.listUploads(prefix, cursor, type);
+            if (uploads == null) {
+                break;
+            }
             for (CloudinaryService.Upload upload : uploads.uploads) {
                 if (UploadOwnership.isSignupUpload(upload.publicId) && upload.createdAt.isBefore(cutoff)
                         && reclaimPublicIdIfUnreferenced(upload.publicId)) {
@@ -176,9 +207,6 @@ public class ImageReclaimService {
             if (cursor == null) {
                 break;
             }
-        }
-        if (deleted > 0) {
-            LOG.info("Deleted " + deleted + " abandoned sign-up photo(s)");
         }
         return deleted;
     }

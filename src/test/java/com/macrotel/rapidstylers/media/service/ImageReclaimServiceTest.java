@@ -224,4 +224,45 @@ class ImageReclaimServiceTest {
         verify(cloudinaryService, never()).destroy(account);
         verify(cloudinaryService, never()).destroy(PUBLIC_ID);
     }
+
+    // ── Private ID photos ─────────────────────────────────────────────
+
+    @Test
+    void anUnusedIdPhotoIsDestroyedWhicheverWayItWasStored() {
+        String idPhoto = "rapid_stylers/id/" + new UploadOwnership().folderFor("STYLER", "CM1") + "/card";
+        when(cloudinaryService.destroy(idPhoto, CloudinaryService.TYPE_AUTHENTICATED)).thenReturn(true);
+
+        assertTrue(reclaimService.reclaimPublicIdIfUnreferenced(idPhoto));
+
+        verify(cloudinaryService).destroy(idPhoto, CloudinaryService.TYPE_AUTHENTICATED);
+        verify(cloudinaryService).destroy(idPhoto);
+    }
+
+    @Test
+    void anIdPhotoStillOnAProfileIsKept() {
+        String idPhoto = "rapid_stylers/id/card";
+        when(stylerRepo.countByIdentificationImageUrlContaining("/" + idPhoto)).thenReturn(1L);
+
+        assertFalse(reclaimService.reclaimPublicIdIfUnreferenced(idPhoto));
+
+        verify(cloudinaryService, never()).destroy(anyString());
+        verify(cloudinaryService, never()).destroy(anyString(), anyString());
+    }
+
+    @Test
+    void theSweepAlsoFindsAbandonedPrivateIdPhotos() {
+        String owner = new UploadOwnership().folderFor("SIGNUP_UPLOAD", "gone@example.com");
+        String abandonedId = "rapid_stylers/id/" + owner + "/card";
+        java.time.Instant old = java.time.Instant.now().minus(java.time.Duration.ofDays(2));
+        when(cloudinaryService.isConfigured()).thenReturn(true);
+        when(cloudinaryService.listUploads("rapid_stylers/", null))
+                .thenReturn(new CloudinaryService.UploadPage(java.util.List.of(), null));
+        when(cloudinaryService.listUploads("rapid_stylers/id/", null, CloudinaryService.TYPE_AUTHENTICATED))
+                .thenReturn(new CloudinaryService.UploadPage(java.util.List.of(
+                        new CloudinaryService.Upload(abandonedId, old, CloudinaryService.TYPE_AUTHENTICATED)), null));
+        when(cloudinaryService.destroy(abandonedId, CloudinaryService.TYPE_AUTHENTICATED)).thenReturn(true);
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, reclaimService.sweepAbandonedSignupUploads());
+        verify(cloudinaryService).destroy(abandonedId, CloudinaryService.TYPE_AUTHENTICATED);
+    }
 }

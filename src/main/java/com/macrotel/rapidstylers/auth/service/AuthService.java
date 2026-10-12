@@ -1,6 +1,7 @@
 package com.macrotel.rapidstylers.auth.service;
 
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
+import com.macrotel.rapidstylers.auth.pojo.ChangePasswordData;
 import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.pojo.SignInData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
@@ -419,17 +420,10 @@ public class AuthService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
-            String encryptPassword = appUtils.encryptPassword(password);
-            Optional<UserEntity> getUserData = customerRecords.findByEmailAddress(emailAddress);
-            if(getUserData.isEmpty()){
-                response.setStatusCode(ERROR_STATUS_CODE);
-                response.setMessage("Invalid Email Address, Kindly create account");
-                response.setData(EMPTY_DATA);
-                return response;
-            }
-
             // SECURITY: Require a verified "FORGET PASSWORD" OTP before allowing the reset.
             // Without this check, anyone who knows an email address could reset the password.
+            // Checked before the account lookup, so this answer says nothing about
+            // whether the email has an account.
             Optional<OTPEntity> verifiedOtp = otpRepo.verifyOtpSuccessForPurpose(emailAddress, "FORGET PASSWORD");
             if(verifiedOtp.isEmpty()){
                 response.setStatusCode(ERROR_STATUS_CODE);
@@ -437,13 +431,31 @@ public class AuthService {
                 response.setData(EMPTY_DATA);
                 return response;
             }
+            String encryptPassword = appUtils.encryptPassword(password);
+            // Customers and stylists reset the same way; one email holds one account.
+            Optional<UserEntity> getUserData = customerRecords.findByEmailAddress(emailAddress);
+            Optional<StylerEntity> getStylerData = getUserData.isPresent()
+                    ? Optional.empty() : stylerRecords.findByEmailAddress(emailAddress);
+            if(getUserData.isEmpty() && getStylerData.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Email Address, Kindly create account");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
 
-            UserEntity userPrevData = getUserData.get();
-            userPrevData.setPassword(encryptPassword);
-            customerRecords.save(userPrevData);
             // A reset is how someone takes their account back: sign out every
             // device, so a stolen session cannot keep renewing itself.
-            refreshTokenService.revokeAllForAccount(userPrevData.getUserId(), Roles.CUSTOMER);
+            if(getUserData.isPresent()){
+                UserEntity userPrevData = getUserData.get();
+                userPrevData.setPassword(encryptPassword);
+                customerRecords.save(userPrevData);
+                refreshTokenService.revokeAllForAccount(userPrevData.getUserId(), Roles.CUSTOMER);
+            } else {
+                StylerEntity stylerPrevData = getStylerData.get();
+                stylerPrevData.setPassword(encryptPassword);
+                stylerRecords.save(stylerPrevData);
+                refreshTokenService.revokeAllForAccount(stylerPrevData.getStylerId(), Roles.STYLER);
+            }
 
             // Invalidate the OTP so it cannot authorize another reset. Re-saving
             // it with is_used='0' is NOT enough: '0' is exactly the state that
@@ -496,6 +508,53 @@ public class AuthService {
             refreshTokenService.revokeAllForAccount(accountId, Roles.CUSTOMER);
             response.setToken(jwtUtil.generateToken(accountId, Roles.CUSTOMER));
             response.setRefreshToken(refreshTokenService.issue(accountId, Roles.CUSTOMER));
+
+            response.setStatusCode(SUCCESS_STATUS_CODE);
+            response.setMessage("Password Change Successfully");
+            response.setData(EMPTY_DATA);
+        }
+        catch (Exception ex){
+            LOG.warning(ex.getMessage());
+        }
+        return response;
+    }
+
+    /**
+     * A signed-in stylist changing their password: same rules and messages as
+     * updateUserPassword. Signs out every other device and hands this one a
+     * fresh session.
+     */
+    public BaseResponse updateStylerPassword(ChangePasswordData data, String stylerId){
+        BaseResponse response = new BaseResponse(true);
+        try{
+            String oldPassword = data.getOldPassword();
+            String newPassword = data.getPassword();
+            if(oldPassword == null || oldPassword.isEmpty()){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Old Password cannot be empty");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            if(newPassword == null || !newPassword.equals(data.getConfirmPassword())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("The entered password does not match the confirmed password. Please ensure both passwords are identical.");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            // Ownership: the password being changed belongs to the authenticated token subject.
+            Optional<StylerEntity> getStylerData = stylerRecords.findByStylerId(stylerId);
+            if(getStylerData.isEmpty() || !appUtils.passwordMatches(oldPassword, getStylerData.get().getPassword())){
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Invalid Old Password");
+                response.setData(EMPTY_DATA);
+                return response;
+            }
+            StylerEntity stylerEntity = getStylerData.get();
+            stylerEntity.setPassword(appUtils.encryptPassword(newPassword));
+            stylerRecords.save(stylerEntity);
+            refreshTokenService.revokeAllForAccount(stylerId, Roles.STYLER);
+            response.setToken(jwtUtil.generateToken(stylerId, Roles.STYLER));
+            response.setRefreshToken(refreshTokenService.issue(stylerId, Roles.STYLER));
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Password Change Successfully");

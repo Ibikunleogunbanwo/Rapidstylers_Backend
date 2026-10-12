@@ -92,4 +92,89 @@ class CloudinaryServiceTest {
 
         assertTrue(cloudinaryService.isConfigured());
     }
+
+    // ── Private (authenticated) ID photos ─────────────────────────────
+
+    private static final String SIGNED_ID_URL =
+            "https://res.cloudinary.com/demo/image/authenticated/s--Ab1_cD-2--/v1712345678/rapid_stylers/id/acct_0123456789abcdef/card.png";
+
+    @Test
+    void readsThePublicIdAndTypeOfAPrivateUpload() {
+        assertEquals("rapid_stylers/id/acct_0123456789abcdef/card", cloudinaryService.extractPublicId(SIGNED_ID_URL));
+        assertEquals("authenticated", cloudinaryService.deliveryType(SIGNED_ID_URL));
+        assertEquals("upload", cloudinaryService.deliveryType(
+                "https://res.cloudinary.com/demo/image/upload/v1/rapid_stylers/id/scan.png"));
+        assertNull(cloudinaryService.deliveryType("/images/gallery/locs-2.jpg"));
+    }
+
+    @Test
+    void aListRowNeverCarriesThePermanentSignature() {
+        assertEquals("https://res.cloudinary.com/demo/image/authenticated/v1712345678/rapid_stylers/id/acct_0123456789abcdef/card.png",
+                CloudinaryService.withoutDeliverySignature(SIGNED_ID_URL));
+        String publicUrl = "https://res.cloudinary.com/demo/image/upload/v1/rapid_stylers/id/scan.png";
+        assertEquals(publicUrl, CloudinaryService.withoutDeliverySignature(publicUrl));
+        assertNull(CloudinaryService.withoutDeliverySignature(null));
+    }
+
+    @Test
+    void readsTheFileFormat() {
+        assertEquals("png", CloudinaryService.fileFormat(SIGNED_ID_URL));
+        assertEquals("jpeg", CloudinaryService.fileFormat("https://res.cloudinary.com/d/image/upload/a/b.JPEG?x=1"));
+        assertNull(CloudinaryService.fileFormat("https://res.cloudinary.com/d/image/upload/a/b"));
+    }
+
+    /**
+     * The download link is signed the way Cloudinary checks it: every parameter
+     * but api_key, sorted, joined with '&', the secret appended, SHA-1. This
+     * recomputes it from the link itself, so a parameter that is sent but not
+     * signed (or the reverse) fails here instead of with a live 401.
+     */
+    @Test
+    void signsAnExpiringPrivateDownloadLink() throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(cloudinaryService, "cloudName", "demo");
+        org.springframework.test.util.ReflectionTestUtils.setField(cloudinaryService, "apiKey", "key123");
+        org.springframework.test.util.ReflectionTestUtils.setField(cloudinaryService, "apiSecret", "s3cret");
+
+        String url = cloudinaryService.privateDownloadUrl("rapid_stylers/id/x/card", "png", "authenticated", 1790000000L);
+
+        assertTrue(url.startsWith("https://api.cloudinary.com/v1_1/demo/image/download?api_key=key123&"), url);
+        java.util.Map<String, String> query = new java.util.LinkedHashMap<>();
+        for (String pair : url.substring(url.indexOf('?') + 1).split("&")) {
+            String[] kv = pair.split("=", 2);
+            query.put(kv[0], java.net.URLDecoder.decode(kv[1], java.nio.charset.StandardCharsets.UTF_8));
+        }
+        assertEquals("rapid_stylers/id/x/card", query.get("public_id"));
+        assertEquals("authenticated", query.get("type"));
+        assertEquals("1790000000", query.get("expires_at"));
+        assertEquals("png", query.get("format"));
+        String signed = "expires_at=1790000000&format=png&public_id=rapid_stylers/id/x/card"
+                + "&timestamp=" + query.get("timestamp") + "&type=authenticated" + "s3cret";
+        assertEquals(sha1(signed), query.get("signature"));
+    }
+
+    @Test
+    void anOlderPublicIdPhotoGetsTheSameKindOfLink() {
+        org.springframework.test.util.ReflectionTestUtils.setField(cloudinaryService, "cloudName", "demo");
+        org.springframework.test.util.ReflectionTestUtils.setField(cloudinaryService, "apiKey", "key123");
+        org.springframework.test.util.ReflectionTestUtils.setField(cloudinaryService, "apiSecret", "s3cret");
+
+        String url = cloudinaryService.privateDownloadUrl("rapid_stylers/id/scan", null, null, 1790000000L);
+
+        assertTrue(url.contains("&type=upload&"), url);
+        assertFalse(url.contains("format="), url);
+    }
+
+    @Test
+    void noLinkWithoutCredentials() {
+        assertNull(cloudinaryService.privateDownloadUrl("rapid_stylers/id/scan", "png", "authenticated", 1L));
+    }
+
+    private static String sha1(String input) throws Exception {
+        byte[] digest = java.security.MessageDigest.getInstance("SHA-1").digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        for (byte b : digest) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
 }

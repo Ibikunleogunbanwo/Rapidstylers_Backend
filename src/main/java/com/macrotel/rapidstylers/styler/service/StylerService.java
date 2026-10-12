@@ -304,7 +304,7 @@ public class StylerService {
                 entry.put("businessAddress", styler.getBusinessAddress());
                 entry.put("addressOnFile", StylerEligibility.hasStreetAddress(styler));
                 entry.put("identificationId", styler.getIdentificationId());
-                entry.put("identificationImageUrl", styler.getIdentificationImageUrl());
+                entry.put("identificationImageUrl", com.macrotel.rapidstylers.media.service.CloudinaryService.withoutDeliverySignature(styler.getIdentificationImageUrl())); // viewed via /admin/identification_image
                 entry.put("profileImageUrl", styler.getProfileImageUrl());
                 entry.put("verificationStatus", styler.getVerificationStatus());
                 entry.put("dateRegistered", styler.getInsertedDt());

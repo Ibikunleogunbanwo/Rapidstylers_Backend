@@ -136,7 +136,8 @@ public class PaymentController {
     public ResponseEntity<BaseResponse> adminUpdateCommissionSetting(@RequestBody Map<String, Object> body, HttpServletRequest request){
         String adminId = CurrentAccount.id(request);
         if(adminId == null) return CurrentAccount.unauthorized();
-        double percent = 0;
+        // Missing or unreadable stays NaN, which is refused, instead of becoming 0%.
+        double percent = Double.NaN;
         Object value = body.get("commissionPercent");
         if(value instanceof Number){
             percent = ((Number) value).doubleValue();
@@ -221,6 +222,14 @@ public class PaymentController {
         String adminId = CurrentAccount.adminId(request);
         if (adminId == null) return CurrentAccount.unauthorized();
         return ApiResponses.respond(paymentReconciliationService.runReconciliation());
+    }
+
+    /** The newest saved reconciliation report (scheduled or manual), without running a new check. */
+    @GetMapping("/admin/payment_reconciliation_latest")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BaseResponse> adminPaymentReconciliationLatest(HttpServletRequest request) {
+        if (CurrentAccount.adminId(request) == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(paymentReconciliationService.latestSavedReport());
     }
 
     private BaseResponse stepUpRequired(){

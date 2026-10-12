@@ -5,10 +5,14 @@ import com.macrotel.rapidstylers.auth.pojo.ForgotPasswordData;
 import com.macrotel.rapidstylers.auth.repo.OTPRepo;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.repo.UserRepo;
 import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.security.access.Roles;
+import com.macrotel.rapidstylers.styler.entity.StylerEntity;
+import com.macrotel.rapidstylers.styler.repo.StylerRepo;
+import com.macrotel.rapidstylers.styler.service.StylerRecords;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +37,7 @@ class PasswordResetOtpVerificationTest {
 
     private AuthService authService;
     private UserRepo userRepo;
+    private StylerRepo stylerRepo;
     private OTPRepo otpRepo;
     private RateLimiterService rateLimiterService;
     private RefreshTokenService refreshTokenService;
@@ -44,7 +49,9 @@ class PasswordResetOtpVerificationTest {
         otpRepo = mock(OTPRepo.class);
         rateLimiterService = mock(RateLimiterService.class);
 
+        stylerRepo = mock(StylerRepo.class);
         authService.customerRecords = new CustomerRecords(userRepo);
+        authService.stylerRecords = new StylerRecords(stylerRepo, null);
         authService.otpRepo = otpRepo;
         authService.rateLimiterService = rateLimiterService;
         refreshTokenService = mock(RefreshTokenService.class);
@@ -53,6 +60,7 @@ class PasswordResetOtpVerificationTest {
         // Rate limiter always permits — individual tests override when needed
         when(rateLimiterService.isBlocked(anyString(), anyInt(), anyInt())).thenReturn(false);
         when(rateLimiterService.clientIp()).thenReturn("127.0.0.1");
+        when(stylerRepo.findByEmailAddress(anyString())).thenReturn(Optional.empty());
     }
 
     // ── Bypass prevention ─────────────────────────────────────────────
@@ -174,16 +182,57 @@ class PasswordResetOtpVerificationTest {
     // ── Email validation ──────────────────────────────────────────────
 
     @Test
-    void resetRejectedForNonExistentEmail() {
+    void resetForUnknownEmailAnswersLikeAKnownOneWithoutACode() {
+        // The code is checked before the account, so an unknown email gets the
+        // same refusal as a registered one: nothing to learn about who has an account.
         when(userRepo.findByEmailAddress("ghost@example.com")).thenReturn(Optional.empty());
+        when(otpRepo.verifyOtpSuccessForPurpose("ghost@example.com", "FORGET PASSWORD")).thenReturn(Optional.empty());
 
         BaseResponse response = authService.resetPassword(
                 resetData("ghost@example.com", "Pass1111!", "Pass1111!"));
 
         assertEquals("400", response.getStatusCode());
-        assertTrue(response.getMessage().toLowerCase().contains("invalid"));
-        // Should fail before reaching OTP check
-        verify(otpRepo, never()).verifyOtpSuccessForPurpose(anyString(), anyString());
+        assertTrue(response.getMessage().toLowerCase().contains("not authorized"));
+        verify(userRepo, never()).save(any());
+        verify(stylerRepo, never()).save(any());
+    }
+
+    // ── Stylists reset through the same endpoints ─────────────────────
+
+    @Test
+    void stylistResetsTheirPasswordWithAVerifiedCode() {
+        StylerEntity styler = new StylerEntity();
+        styler.setStylerId("JS1234");
+        styler.setEmailAddress("pro@example.com");
+        styler.setPassword("$2a$10$abcdefghijklmnopqrstuuMONLYBCRYPTHASH");
+        when(stylerRepo.findByEmailAddress("pro@example.com")).thenReturn(Optional.of(styler));
+        OTPEntity verifiedOtp = new OTPEntity();
+        verifiedOtp.setIsUsed("0");
+        when(otpRepo.verifyOtpSuccessForPurpose("pro@example.com", "FORGET PASSWORD"))
+                .thenReturn(Optional.of(verifiedOtp));
+
+        BaseResponse response = authService.resetPassword(resetData("pro@example.com", "NewPass1!", "NewPass1!"));
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals("Password Change Successful", response.getMessage());
+        verify(stylerRepo).save(styler);
+        assertTrue(new AppUtils().passwordMatches("NewPass1!", styler.getPassword()));
+        verify(refreshTokenService).revokeAllForAccount("JS1234", Roles.STYLER);
+        verify(otpRepo).delete(verifiedOtp);
+        verify(userRepo, never()).save(any());
+    }
+
+    @Test
+    void stylistResetIsRefusedWithoutAVerifiedCode() {
+        StylerEntity styler = new StylerEntity();
+        styler.setStylerId("JS1234");
+        when(stylerRepo.findByEmailAddress("pro@example.com")).thenReturn(Optional.of(styler));
+        when(otpRepo.verifyOtpSuccessForPurpose("pro@example.com", "FORGET PASSWORD")).thenReturn(Optional.empty());
+
+        BaseResponse response = authService.resetPassword(resetData("pro@example.com", "NewPass1!", "NewPass1!"));
+
+        assertEquals("400", response.getStatusCode());
+        verify(stylerRepo, never()).save(any());
     }
 
     // ── OTP purpose isolation ─────────────────────────────────────────

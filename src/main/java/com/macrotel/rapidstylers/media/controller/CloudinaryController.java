@@ -47,7 +47,7 @@ import static com.macrotel.rapidstylers.config.AppConstants.SUCCESS_STATUS_CODE;
  *
  * Accepts an optional folderPrefix to partition uploads:
  *   ?folderPrefix=profile   → rapid_stylers/profile
- *   ?folderPrefix=id        → rapid_stylers/id
+ *   ?folderPrefix=id        → rapid_stylers/id (private: type=authenticated)
  *   ?folderPrefix=store     → rapid_stylers/store
  *   (no prefix)             → rapid_stylers
  *
@@ -86,6 +86,9 @@ public class CloudinaryController {
      */
     @Value("${cloudinary.incoming-transformation:c_limit,h_2000,w_2000}")
     private String incomingTransformation = "c_limit,h_2000,w_2000";
+
+    /** The upload folder whose files are private (government ID photos). */
+    static final String PRIVATE_PREFIX = "id";
 
     @Autowired
     private RateLimiterService rateLimiterService;
@@ -142,10 +145,15 @@ public class CloudinaryController {
             // Cloudinary signs the exact params sent with the upload, sorted
             // alphabetically, with the API secret appended, then SHA-1 hashed.
             String transformation = incomingTransformation == null ? "" : incomingTransformation.trim();
+            // ID photos are private: stored as type=authenticated, Cloudinary
+            // serves them only through a signed link (see the admin
+            // identification_image endpoint), never at a plain public URL.
+            String type = PRIVATE_PREFIX.equals(sanitizedPrefix) ? "authenticated" : "";
             String toSign = "allowed_formats=" + formats
                     + "&folder=" + folder
                     + "&timestamp=" + timestamp
                     + (transformation.isEmpty() ? "" : "&transformation=" + transformation)
+                    + (type.isEmpty() ? "" : "&type=" + type)
                     + apiSecret;
             String signature = sha1(toSign);
 
@@ -159,6 +167,9 @@ public class CloudinaryController {
             params.put("allowed_formats", formats);
             if (!transformation.isEmpty()) {
                 params.put("transformation", transformation);
+            }
+            if (!type.isEmpty()) {
+                params.put("type", type);
             }
             params.put("signature", signature);
 

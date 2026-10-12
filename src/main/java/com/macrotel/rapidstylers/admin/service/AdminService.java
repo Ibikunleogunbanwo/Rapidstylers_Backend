@@ -48,6 +48,8 @@ public class AdminService {
     AuditService auditService = new AuditService();
     @Autowired
     StylerEligibility stylerEligibility;
+    @Autowired
+    AdminRecords adminRecords;
 
     /**
      * Admin recovery-campaign funnel: every email that started a sign-up, with
@@ -150,7 +152,7 @@ public class AdminService {
         try {
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
-            response.setData(auditService.recentLogs());
+            response.setData(withActorEmails(auditService.recentLogs()));
         } catch(Exception ex){ LOG.warning(ex.getMessage()); }
         return response;
     }
@@ -168,7 +170,7 @@ public class AdminService {
                 auditService.searchLogs(blankToNull(action), blankToNull(actorId), blankToNull(resourceId),
                         org.springframework.data.domain.PageRequest.of(pageNumber, pageSize));
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("items", found.getContent());
+        data.put("items", withActorEmails(found.getContent()));
         data.put("page", pageNumber);
         data.put("size", pageSize);
         data.put("total", found.getTotalElements());
@@ -177,6 +179,21 @@ public class AdminService {
         response.setMessage(SUCCESS_MESSAGE);
         response.setData(data);
         return response;
+    }
+
+    /**
+     * Fills in actorEmail on admin rows (the admin account behind the actor id),
+     * one lookup per distinct admin, so the log says which admin acted.
+     */
+    List<com.macrotel.rapidstylers.common.entity.AuditLogEntity> withActorEmails(
+            List<com.macrotel.rapidstylers.common.entity.AuditLogEntity> rows){
+        Map<String, Optional<String>> emails = new HashMap<>();
+        for(com.macrotel.rapidstylers.common.entity.AuditLogEntity row : rows){
+            if(!"ADMIN".equalsIgnoreCase(row.getActorRole()) || adminRecords == null) continue;
+            row.setActorEmail(emails.computeIfAbsent(String.valueOf(row.getActorId()),
+                    id -> Optional.ofNullable(adminRecords.emailForActor(id))).orElse(null));
+        }
+        return rows;
     }
 
     private static String blankToNull(String value){

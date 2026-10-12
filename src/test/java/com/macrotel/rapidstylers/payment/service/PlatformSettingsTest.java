@@ -71,4 +71,27 @@ class PlatformSettingsTest {
         BaseResponse response = paymentOps.updateCommissionSetting("ADMIN1", 150);
         assertEquals("400", response.getStatusCode());
     }
+
+    @Test
+    void commissionIsCappedAtFiftyPercent() {
+        assertEquals("200", paymentOps.updateCommissionSetting("ADMIN1", 50).getStatusCode());
+        assertEquals("200", paymentOps.updateCommissionSetting("ADMIN1", 0).getStatusCode());
+        BaseResponse tooHigh = paymentOps.updateCommissionSetting("ADMIN1", 50.5);
+        assertEquals("400", tooHigh.getStatusCode());
+        assertEquals("Commission must be between 0 and 50", tooHigh.getMessage());
+        assertEquals("400", paymentOps.updateCommissionSetting("ADMIN1", -1).getStatusCode());
+        // What the controller passes for a missing or unreadable value.
+        assertEquals("400", paymentOps.updateCommissionSetting("ADMIN1", Double.NaN).getStatusCode());
+    }
+
+    @Test
+    void theAuditLogRecordsOldAndNewValue() {
+        AuditService audit = mock(AuditService.class);
+        paymentOps.auditService = audit;
+        when(platformSettingRepo.findBySettingKey(anyString())).thenReturn(Optional.empty());
+
+        paymentOps.updateCommissionSetting("admin@example.com", 15);
+
+        verify(audit).audit("admin@example.com", "ADMIN", "UPDATE_COMMISSION", "SETTINGS", "commission_percent", "12.0 -> 15.0");
+    }
 }

@@ -72,12 +72,13 @@ public class CustomerService {
                 return response;
             }
             UserEntity userEntity = isUserExist.get();
-            userEntity.setFirstname(updateData.getFirstname().isEmpty() ? userEntity.getFirstname() : updateData.getFirstname());
-            userEntity.setLastname(updateData.getLastname().isEmpty() ? userEntity.getLastname() : updateData.getLastname());
-            userEntity.setAddress(updateData.getAddress().isEmpty() ? userEntity.getAddress() : updateData.getAddress());
-            userEntity.setCountry(updateData.getCountry().isEmpty() ? userEntity.getCountry() : updateData.getCountry());
-            userEntity.setPhoneNumber(updateData.getPhoneNumber().isEmpty() ? userEntity.getPhoneNumber() : updateData.getPhoneNumber());
-            userEntity.setState(updateData.getState().isEmpty() ?  userEntity.getState() : updateData.getState());
+            // A field left out or blank keeps what is saved.
+            userEntity.setFirstname(givenOr(updateData.getFirstname(), userEntity.getFirstname()));
+            userEntity.setLastname(givenOr(updateData.getLastname(), userEntity.getLastname()));
+            userEntity.setAddress(givenOr(updateData.getAddress(), userEntity.getAddress()));
+            userEntity.setCountry(givenOr(updateData.getCountry(), userEntity.getCountry()));
+            userEntity.setPhoneNumber(givenOr(updateData.getPhoneNumber(), userEntity.getPhoneNumber()));
+            userEntity.setState(givenOr(updateData.getState(), userEntity.getState()));
             userRepo.save(userEntity);
 
             response.setStatusCode(SUCCESS_STATUS_CODE);
@@ -89,6 +90,10 @@ public class CustomerService {
             LOG.warning(ex.getMessage());
         }
         return response;
+    }
+
+    private static String givenOr(String given, String saved){
+        return given == null || given.isEmpty() ? saved : given;
     }
 
     /** Saves an approved stylist for the authenticated customer. */

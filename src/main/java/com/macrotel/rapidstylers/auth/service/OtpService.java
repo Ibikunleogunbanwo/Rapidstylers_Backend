@@ -42,6 +42,8 @@ public class OtpService {
     static final Duration SIGNUP_UPLOAD_TTL = Duration.ofHours(6);
     private static final int OTP_GEN_WINDOW_SECONDS = 900;
     private static final int OTP_GEN_MAX = 3;             // per email
+    // Account-exists notices: one a minute per flow, like a code.
+    private static final int NOTICE_WINDOW_SECONDS = 60;
     private static final int OTP_VERIFY_WINDOW_SECONDS = 900;
     private static final int OTP_VERIFY_MAX = 10;         // per IP
     // Wrong guesses one emailed code survives, from any number of IPs.
@@ -87,15 +89,12 @@ public class OtpService {
                 return response;
             }
             // Enumeration-safe: an email already registered in EITHER table gets
-            // the same generic success response as a fresh one — no OTP is issued
-            // and no mail is sent, so valid and invalid addresses are indistinguishable.
+            // the same response as a fresh one. No OTP is issued; the address gets
+            // the account-exists notice instead (see existingAccountNotice).
             Optional<UserEntity> isEmailExist = customerRecords.findByEmailAddress(email);
             Optional<StylerEntity> isStylerEmailExist = stylerRecords.findByEmailAddress(email);
             if(isEmailExist.isPresent() || isStylerEmailExist.isPresent()){
-                response.setStatusCode(SUCCESS_STATUS_CODE);
-                response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
-                response.setData(EMPTY_DATA);
-                return response;
+                return existingAccountNotice(response, email, "USER SIGN UP");
             }
             //Check if user has requested for OTPCode in the past 1 minute;
             Optional<OTPEntity> getPreviousOtp = otpRepo.checkSignUpValidityOtp(email, "USER SIGN UP");
@@ -236,16 +235,19 @@ public class OtpService {
             // Enumeration-safe: an unknown email gets the identical generic success
             // response as a registered one — no OTP is issued and no mail is sent,
             // so valid and invalid addresses are indistinguishable.
+            // Customers and stylists reset the same way; one email holds one account.
             Optional<UserEntity> isEmailExist = customerRecords.findByEmailAddress(emailAddress);
-            if(isEmailExist.isEmpty()){
+            Optional<StylerEntity> isStylerEmailExist = isEmailExist.isPresent()
+                    ? Optional.empty() : stylerRecords.findByEmailAddress(emailAddress);
+            if(isEmailExist.isEmpty() && isStylerEmailExist.isEmpty()){
                 response.setStatusCode(SUCCESS_STATUS_CODE);
                 response.setMessage("Password Reset Initiated, Check Mail for OTP Code");
                 response.setData(EMPTY_DATA);
                 return response;
             }
             rateLimiterService.record("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS);
-            UserEntity userEntity = isEmailExist.get();
-            String firstname = userEntity.getFirstname();
+            String firstname = isEmailExist.isPresent()
+                    ? isEmailExist.get().getFirstname() : isStylerEmailExist.get().getFirstname();
             String otpCode = appUtils.randomDigit(6);
             OTPEntity otpEntity = new OTPEntity();
 
@@ -287,6 +289,42 @@ public class OtpService {
     }
 
     /**
+     * Sign-up asked for an email that already has an account (customer or
+     * stylist). The caller sees exactly what a fresh email sees, including the
+     * one-a-minute refusal and the per-email generation cap, which the notice
+     * counts against like a code would, so it cannot flood an inbox. The owner
+     * is told by email, instead of waiting for a code that never comes.
+     */
+    private BaseResponse existingAccountNotice(BaseResponse response, String emailAddress, String purpose){
+        String minuteKey = "otp_notice:" + purpose + ":" + emailAddress;
+        if (rateLimiterService.isBlocked(minuteKey, NOTICE_WINDOW_SECONDS, 1)) {
+            response.setStatusCode(ERROR_STATUS_CODE);
+            response.setMessage("OTP Code was generated earlier, Kindly wait for another minute to regenerate another one");
+            response.setData(EMPTY_DATA);
+            return response;
+        }
+        rateLimiterService.record(minuteKey, NOTICE_WINDOW_SECONDS);
+        rateLimiterService.record("otp_gen:" + emailAddress, OTP_GEN_WINDOW_SECONDS);
+        sendAccountExistsEmail(emailAddress);
+        response.setStatusCode(SUCCESS_STATUS_CODE);
+        response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
+        response.setData(EMPTY_DATA);
+        return response;
+    }
+
+    /** The notice an existing account's owner gets when someone starts a sign-up with their email. */
+    void sendAccountExistsEmail(String emailAddress) {
+        String emailSubject = "You already have a RapidStylers account";
+        String emailBody = "Hello,<br><br>"
+                + "Someone, probably you, started a RapidStylers sign-up with this email address.<br><br>"
+                + "You already have a RapidStylers account. Sign in, or reset your password. "
+                + "One email can hold one account.<br><br>"
+                + "If this was not you, you can safely ignore this email.<br><br>"
+                + "Thank you,<br>The Rapid Stylers Team";
+        emailConfig.sendSimpleMail(emailAddress, emailSubject, emailBody);
+    }
+
+    /**
      * Send OTP for stylist registration — checks the STYLER table (not user table).
      */
     public BaseResponse stylerGenerateOtp(OTPData otpData){
@@ -310,15 +348,12 @@ public class OtpService {
                 return response;
             }
             // Enumeration-safe: an email already registered in EITHER table gets
-            // the same generic success response as a fresh one — no OTP is issued
-            // and no mail is sent, so valid and invalid addresses are indistinguishable.
+            // the same response as a fresh one. No OTP is issued; the address gets
+            // the account-exists notice instead (see existingAccountNotice).
             Optional<StylerEntity> isStylerEmailExist = stylerRecords.findByEmailAddress(emailAddress);
             Optional<UserEntity> isUserEmailExist = customerRecords.findByEmailAddress(emailAddress);
             if(isStylerEmailExist.isPresent() || isUserEmailExist.isPresent()){
-                response.setStatusCode(SUCCESS_STATUS_CODE);
-                response.setMessage("A one-time password (OTP) code has been sent to your email. Please verify it.");
-                response.setData(EMPTY_DATA);
-                return response;
+                return existingAccountNotice(response, emailAddress, "STYLER SIGN UP");
             }
             // Rate limit: 1 OTP per minute (purpose-scoped so this actually fires)
             Optional<OTPEntity> getPreviousOtp = otpRepo.checkSignUpValidityOtp(emailAddress, "STYLER SIGN UP");

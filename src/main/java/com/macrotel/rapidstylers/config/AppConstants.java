@@ -11,12 +11,31 @@ public class AppConstants {
     public static final  String SUCCESS_MESSAGE = "Successful";
     public static  final Object EMPTY_DATA = new Object[0];
     public static final String CHARACTER_VALIDATION_REGEX = "^[a-zA-Z ]{3,}(?: [a-zA-Z ]+){0,2}$";
-    // A person's name: 3 to 50 characters, starting with a letter in any language,
-    // then letters, spaces, hyphens, apostrophes or periods (Anne-Marie, O'Neil, Adébáyọ̀).
-    public static final String PERSON_NAME_REGEX = "^\\p{L}[\\p{L}\\p{M} '\u2019.-]{2,49}$";
+    // A person's name: 1 to 50 characters, starting with a letter in any language,
+    // then letters, spaces, hyphens, apostrophes or periods (Li, Anne-Marie, O'Neil, Adébáyọ̀).
+    // The website checks the same rule; the DTO setters trim before it is checked.
+    public static final String PERSON_NAME_REGEX = "^\\p{L}[\\p{L}\\p{M} '\u2019.-]{0,49}$";
+    public static final String PERSON_NAME_MESSAGE = "name must be 1 to 50 letters (spaces, hyphens, apostrophes and periods allowed)";
+    // A city: 1 to 60 characters, same alphabet as a name (Saint-Jérôme, St. John's).
+    public static final String CITY_REGEX = "^\\p{L}[\\p{L}\\p{M} '\u2019.-]{0,59}$";
+    public static final String CITY_MESSAGE = "Enter a valid city name (letters, spaces, hyphens, apostrophes or periods)";
+    // A Canadian postal code: T2P 1B5, T2P1B5 or T2P-1B5.
+    public static final String POSTAL_CODE_REGEX = "^[A-Za-z]\\d[A-Za-z][ -]?\\d[A-Za-z]\\d$";
+    public static final String POSTAL_CODE_MESSAGE = "Enter a valid Canadian postal code, e.g. T2P 1B5";
+    // One of the 13 provinces and territories, by full English name or 2-letter code, any case.
+    public static final String PROVINCE_REGEX = "(?iu)^(AB|BC|MB|NB|NL|NS|ON|PE|QC|SK|NT|NU|YT|Alberta|British Columbia|Manitoba"
+            + "|New Brunswick|Newfoundland and Labrador|Nova Scotia|Ontario|Prince Edward Island|Qu[e\u00e9]bec|Saskatchewan"
+            + "|Northwest Territories|Nunavut|Yukon)$";
+    public static final String PROVINCE_MESSAGE = "Choose a Canadian province or territory";
+    // Prefix for an optional field's rule, where blank means "not given": BLANK_OR + CITY_REGEX.
+    public static final String BLANK_OR = "^$|";
     public static final String NUMBER_VALIDATION_REGEX = "^[0-9]+$";
-    // Canadian phone: exactly 10 digits, or 11 with leading 1
-    public static final String PHONE_NUMBER_VALIDATION_REGEX ="^1?[0-9]{10}$";
+    // Canadian (NANP) phone, formatting already stripped by the DTO setter: 10 digits,
+    // or 11 with a leading 1; area code and exchange each start with 2-9.
+    public static final String PHONE_NUMBER_VALIDATION_REGEX ="^1?[2-9][0-9]{2}[2-9][0-9]{6}$";
+    public static final String PHONE_NUMBER_MESSAGE = "Enter a valid Canadian phone number (10 digits, or 11 with leading 1)";
+    // Sub-service price, in dollars: above 0 and at most this.
+    public static final int MAX_SERVICE_PRICE = 10000;
     // Password: 8+ chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special char
     public static final String PASSWORD_PATTERN = "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#&()-[{}]:;'?/*~$^+=<>.]).{8,30}$";
     public static final String ALGORITHM = "AES";

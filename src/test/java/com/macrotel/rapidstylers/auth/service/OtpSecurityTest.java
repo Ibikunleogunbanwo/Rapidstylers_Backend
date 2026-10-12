@@ -47,7 +47,8 @@ import static org.mockito.Mockito.when;
  *   <li>Verification is purpose-scoped: a styler code cannot be verified through
  *       the customer endpoint and vice versa.</li>
  *   <li>OTP generation is enumeration-safe: registered emails get the identical
- *       generic success response, with no OTP row and no email sent.</li>
+ *       generic success response, with no OTP row; the owner gets an
+ *       account-exists notice (no code) instead of a code.</li>
  * </ul>
  */
 class OtpSecurityTest {
@@ -232,7 +233,7 @@ class OtpSecurityTest {
         assertEquals("200", response.getStatusCode(), "existing email must look like success");
         assertEquals(GENERIC_SENT, response.getMessage(), "response must be identical to a fresh email");
         verify(otpRepo, never()).save(any());
-        verify(emailConfig, never()).sendSimpleMail(anyString(), anyString(), anyString());
+        assertAccountExistsNoticeSentTo("taken@example.com");
     }
 
     @Test
@@ -245,7 +246,7 @@ class OtpSecurityTest {
         assertEquals("200", response.getStatusCode());
         assertEquals(GENERIC_SENT, response.getMessage());
         verify(otpRepo, never()).save(any());
-        verify(emailConfig, never()).sendSimpleMail(anyString(), anyString(), anyString());
+        assertAccountExistsNoticeSentTo("styler@example.com");
     }
 
     @Test
@@ -258,7 +259,7 @@ class OtpSecurityTest {
         assertEquals("200", response.getStatusCode(), "existing email must look like success");
         assertEquals(GENERIC_SENT, response.getMessage(), "response must be identical to a fresh email");
         verify(otpRepo, never()).save(any());
-        verify(emailConfig, never()).sendSimpleMail(anyString(), anyString(), anyString());
+        assertAccountExistsNoticeSentTo("taken-vendor@example.com");
     }
 
     @Test
@@ -271,10 +272,60 @@ class OtpSecurityTest {
         assertEquals("200", response.getStatusCode());
         assertEquals(GENERIC_SENT, response.getMessage());
         verify(otpRepo, never()).save(any());
+        assertAccountExistsNoticeSentTo("customer@example.com");
+    }
+
+    // ── Existing-account notice: rate limited like a code ─────────────
+
+    @Test
+    void noticeIsNotSentWhenTheEmailHitTheGenerationCap() {
+        when(userRepo.findByEmailAddress("taken@example.com")).thenReturn(Optional.of(mock(UserEntity.class)));
+        when(rateLimiterService.isBlocked(eq("otp_gen:taken@example.com"), anyInt(), anyInt())).thenReturn(true);
+
+        BaseResponse response = otpService.stylerGenerateOtp(otpData("taken@example.com"));
+
+        assertEquals("400", response.getStatusCode());
+        assertEquals("Too many OTP requests. Please try again in a few minutes.", response.getMessage());
         verify(emailConfig, never()).sendSimpleMail(anyString(), anyString(), anyString());
     }
 
+    @Test
+    void aSecondNoticeWithinAMinuteGetsTheSameAnswerAsASecondCode() {
+        when(stylerRepo.findByEmailAddress("taken@example.com")).thenReturn(Optional.of(mock(StylerEntity.class)));
+        when(rateLimiterService.isBlocked(eq("otp_notice:USER SIGN UP:taken@example.com"), anyInt(), anyInt())).thenReturn(true);
+
+        BaseResponse response = otpService.generateSignUpOtpCode(otpData("taken@example.com"));
+
+        assertEquals("400", response.getStatusCode());
+        assertEquals("OTP Code was generated earlier, Kindly wait for another minute to regenerate another one", response.getMessage());
+        verify(emailConfig, never()).sendSimpleMail(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void aFreshEmailGetsACodeNotTheNotice() {
+        otpService.stylerGenerateOtp(otpData("fresh@example.com"));
+
+        verify(emailConfig).sendSimpleMail(eq("fresh@example.com"), eq("RapidStylers Verification Code"), anyString());
+        verify(emailConfig, never()).sendSimpleMail(anyString(), eq("You already have a RapidStylers account"), anyString());
+    }
+
     // ── Password-reset OTP: enumeration-safe + hashed + verifiable ────
+
+    @Test
+    void resetOtpIsSentToAStylistEmail() {
+        StylerEntity styler = new StylerEntity();
+        styler.setFirstname("Ama");
+        when(stylerRepo.findByEmailAddress("pro@example.com")).thenReturn(Optional.of(styler));
+
+        BaseResponse response = otpService.resetPasswordMessage(otpData("pro@example.com"));
+
+        assertEquals("200", response.getStatusCode());
+        assertEquals(RESET_SENT, response.getMessage());
+        assertEquals("FORGET PASSWORD", captureSavedOtp().getPurpose());
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailConfig).sendSimpleMail(eq("pro@example.com"), anyString(), bodyCaptor.capture());
+        assertTrue(bodyCaptor.getValue().startsWith("Dear Ama,"));
+    }
 
     @Test
     void resetOtpForUnknownEmailDoesNotEnumerate() {
@@ -361,6 +412,15 @@ class OtpSecurityTest {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
+
+    private void assertAccountExistsNoticeSentTo(String email) {
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(emailConfig).sendSimpleMail(eq(email), eq("You already have a RapidStylers account"), bodyCaptor.capture());
+        assertTrue(bodyCaptor.getValue().contains("You already have a RapidStylers account. Sign in, or reset your password."));
+        assertFalse(OTP_IN_EMAIL.matcher(bodyCaptor.getValue()).find(), "the notice carries no code");
+        // The notice counts against the same per-email generation cap as a code.
+        verify(rateLimiterService).record("otp_gen:" + email, 900);
+    }
 
     private OTPData otpData(String email) {
         OTPData data = new OTPData();

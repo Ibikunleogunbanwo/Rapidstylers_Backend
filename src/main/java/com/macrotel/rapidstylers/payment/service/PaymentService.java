@@ -143,19 +143,24 @@ public class PaymentService {
         return response;
     }
 
+    /** Highest commission an admin may set, in percent. */
+    static final double MAX_COMMISSION_PERCENT = 50;
+
     public BaseResponse updateCommissionSetting(String adminId, double percent) {
         BaseResponse response = new BaseResponse(true);
         try {
-            if (percent < 0 || percent > 100) {
-                return errorResponse(response, "Commission must be between 0 and 100");
+            // NaN is what the controller passes for a missing or unreadable value.
+            if (Double.isNaN(percent) || percent < 0 || percent > MAX_COMMISSION_PERCENT) {
+                return errorResponse(response, "Commission must be between 0 and 50");
             }
+            double previous = effectiveCommissionPercent();
             com.macrotel.rapidstylers.payment.entity.PlatformSettingEntity setting =
                     platformSettingRepo.findBySettingKey(COMMISSION_SETTING_KEY)
                             .orElseGet(() -> new com.macrotel.rapidstylers.payment.entity.PlatformSettingEntity(COMMISSION_SETTING_KEY, "12"));
             setting.setSettingValue(String.valueOf(percent));
             platformSettingRepo.save(setting);
             updateCachedCommissionPercent(percent);
-            auditService.audit(adminId, "ADMIN", "UPDATE_COMMISSION", "SETTINGS", COMMISSION_SETTING_KEY, String.valueOf(percent));
+            auditService.audit(adminId, "ADMIN", "UPDATE_COMMISSION", "SETTINGS", COMMISSION_SETTING_KEY, previous + " -> " + percent);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage("Commission updated");
             response.setData(EMPTY_DATA);

@@ -27,12 +27,20 @@ public class SupportTicketEntity implements Serializable {
     private String createdAt;
     @Column(nullable = false)
     private String updatedAt;
+    /** CUSTOMER or STYLIST: which kind of account userId names. */
+    @Column(name = "sender_role", length = 16)
+    private String senderRole;
 
     public SupportTicketEntity() {
     }
 
     public SupportTicketEntity(String userId, String subject, String message) {
+        this(userId, "CUSTOMER", subject, message);
+    }
+
+    public SupportTicketEntity(String userId, String senderRole, String subject, String message) {
         this.userId = userId;
+        this.senderRole = senderRole;
         this.subject = subject;
         this.message = message;
         this.status = "OPEN";

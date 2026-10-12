@@ -82,6 +82,33 @@ class CloudinaryControllerTest {
         assertEquals("5242880", ((Map<?, ?>) response.getBody().getData()).get("maxFileSize"));
     }
 
+    /**
+     * ID photos are uploaded private: type=authenticated is sent and signed (in
+     * its sorted place, after transformation), so a client cannot drop it and
+     * still upload into the ID folder.
+     */
+    @Test
+    void idPhotosAreUploadedAsPrivateAssets() throws Exception {
+        Map<?, ?> params = params(controller.getUploadSignature("id"));
+
+        assertEquals("authenticated", params.get("type"));
+        assertEquals(java.util.Set.of("api_key", "timestamp", "folder", "allowed_formats", "transformation", "type", "signature"),
+                params.keySet());
+        assertEquals(sha1("allowed_formats=jpg,jpeg,png,webp,gif"
+                + "&folder=rapid_stylers/id"
+                + "&timestamp=" + params.get("timestamp")
+                + "&transformation=c_limit,h_2000,w_2000"
+                + "&type=authenticated"
+                + "secret"), params.get("signature"));
+    }
+
+    @Test
+    void otherFoldersStayPublic() {
+        for (String prefix : new String[]{"profile", "store", "portfolio", ""}) {
+            assertEquals(null, params(controller.getUploadSignature(prefix)).get("type"), prefix);
+        }
+    }
+
     /** With the size cap switched off, nothing about it is sent or signed. */
     @Test
     void blankIncomingTransformationIsNeitherSentNorSigned() throws Exception {
