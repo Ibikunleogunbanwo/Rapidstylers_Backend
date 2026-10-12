@@ -44,7 +44,11 @@ public final class SiteContentRules {
         t.put("booking_received", BOOKING_FIELDS);
         t.put("booking_confirmed", BOOKING_FIELDS);
         t.put("booking_cancelled", BOOKING_FIELDS);
-        t.put("booking_reminder", BOOKING_FIELDS);
+        // Sent by BookingReminderService about a day before an accepted booking.
+        List<String> reminder = new ArrayList<>(BOOKING_FIELDS);
+        reminder.add("location");
+        reminder.add("bookingsLink");
+        t.put("booking_reminder", Collections.unmodifiableList(reminder));
         EMAIL_TEMPLATES = Collections.unmodifiableMap(t);
     }
 
@@ -167,6 +171,8 @@ public final class SiteContentRules {
         v.put("stylistName", "Bella's Braids");
         v.put("appointmentDate", "2026-11-14");
         v.put("appointmentTime", "10:30");
+        v.put("location", "123 Example Street, Calgary, Alberta");
+        v.put("bookingsLink", "https://rapidstylers.ca/dashboard");
         return v;
     }
 

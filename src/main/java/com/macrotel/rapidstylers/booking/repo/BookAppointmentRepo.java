@@ -8,6 +8,7 @@ import javax.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -81,4 +82,25 @@ public interface BookAppointmentRepo extends JpaRepository<BookAppointmentEntity
 
     /** How many bookings a customer has ever made (the sign-up funnel's "first booking"). */
     long countByUserId(String userId);
+
+    /**
+     * Accepted bookings with no reminder yet whose date falls in [from, to],
+     * soonest first. The caller works out, per stylist zone, which are due.
+     */
+    @Query("SELECT b FROM BookAppointmentEntity b WHERE b.status = '3' AND b.reminderSentAt IS NULL "
+            + "AND b.appointmentDateValue BETWEEN :from AND :to ORDER BY b.appointmentDateValue, b.appointmentStartTime")
+    List<BookAppointmentEntity> findReminderCandidates(@Param("from") java.time.LocalDate from,
+                                                       @Param("to") java.time.LocalDate to,
+                                                       org.springframework.data.domain.Pageable page);
+
+    /**
+     * Claims the reminder: sets reminder_sent_at only while it is still empty
+     * and the booking is still accepted and not under a payment dispute.
+     * Returns 1 for the one caller that won, 0 for everyone else.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE BookAppointmentEntity b SET b.reminderSentAt = :sentAt WHERE b.id = :id "
+            + "AND b.reminderSentAt IS NULL AND b.status = '3' "
+            + "AND (b.paymentStatus IS NULL OR b.paymentStatus NOT LIKE 'DISPUTE%')")
+    int claimReminder(@Param("id") Long id, @Param("sentAt") LocalDateTime sentAt);
 }

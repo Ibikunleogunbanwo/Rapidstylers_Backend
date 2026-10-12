@@ -137,6 +137,11 @@ public class NotificationEventConsumer {
                 acknowledge(acknowledgment);
                 return;
             }
+            if ("BOOKING_REMINDER".equals(eventType)) {
+                sendReminder(readPayload(payload));
+                acknowledge(acknowledgment);
+                return;
+            }
             if (eventType != null && !eventType.startsWith("BOOKING_")) {
                 acknowledge(acknowledgment);
                 return;
@@ -319,6 +324,42 @@ public class NotificationEventConsumer {
                 .filter(email -> !email.isBlank())
                 .ifPresent(email -> emailConfig.sendSimpleMail(email, subject, bodyBuilder.build(
                         event.get("stylerHeadline"), event.get("stylerDetail"), service, event, zoneSuffix)));
+    }
+
+    /**
+     * The day-before reminder: customer only. Skipped when the customer was
+     * suspended or removed after the job queued it.
+     */
+    private void sendReminder(Map<String, String> event) {
+        Optional<UserEntity> user = customerRecords.findByUserId(event.getOrDefault("customerId", ""));
+        if (user.isEmpty() || !"0".equals(user.get().getStatus())) return;
+        String email = user.get().getEmailAddress();
+        if (email == null || email.isBlank()) return;
+        Optional<StylerEntity> styler = stylerRecords.findByStylerId(event.getOrDefault("stylerId", ""));
+        String zoneSuffix = VendorZoneResolver.timeSuffixForStyler(
+                styler.map(StylerEntity::getTimeZone).orElse(null),
+                styler.map(StylerEntity::getProvince).orElse(null));
+        String stylistName = styler.map(StylerEntity::getBusinessName).filter(n -> !n.isBlank())
+                .orElseGet(() -> styler.map(StylerEntity::getFirstname).orElse(""));
+        Map<String, String> values = BookingReminderMail.values(user.get().getFirstname(),
+                service(event).map(SubServiceEntity::getName).orElse(""), stylistName,
+                event.get("appointmentDate"), displayArrivalTime(event.get("arrivalTime")), zoneSuffix,
+                event.get("location"), event.get("bookingsUrl"));
+        boolean homeVisit = "HOME".equals(event.get("visitType"));
+        String subject = BookingReminderMail.defaultSubject(values);
+        String body = BookingReminderMail.defaultHtml(values, homeVisit);
+        if (siteContentService != null) {
+            try {
+                var rendered = siteContentService.renderEmail(BookingReminderMail.TEMPLATE, values);
+                if (rendered.isPresent() && !rendered.get().subject.isBlank() && !rendered.get().html.isBlank()) {
+                    subject = rendered.get().subject;
+                    body = BookingReminderMail.completeTemplate(rendered.get().html, values, homeVisit);
+                }
+            } catch (RuntimeException ex) {
+                LOG.warning("Published email template unavailable; using built-in wording");
+            }
+        }
+        emailConfig.sendSimpleMail(email, subject, body);
     }
 
     private String bookingTemplate(String eventType) {

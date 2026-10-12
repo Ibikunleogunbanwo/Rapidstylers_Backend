@@ -39,6 +39,25 @@ public class OutboxEventService {
         outboxEventRepo.save(event);
     }
 
+    /**
+     * Emits the customer's BOOKING_REMINDER email, in the same transaction
+     * that claimed the booking's reminder_sent_at. {@code extra} carries what
+     * the scan already resolved (location, bookings link).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void bookingReminder(BookAppointmentEntity appointment, Map<String, String> extra) {
+        Map<String, Object> payload = appointmentPayload(appointment, "Reminder",
+                "Your appointment is coming up", "", "", "");
+        if (extra != null) payload.putAll(extra);
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(OutboxEventType.BOOKING_REMINDER);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("APPOINTMENT");
+        event.setAggregateId(nullSafe(appointment.getAppointmentId()));
+        event.setPayload(toJson(payload));
+        outboxEventRepo.save(event);
+    }
+
     /** Emits a PAYMENT_SUCCEEDED event so both parties receive a payment receipt by email. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void paymentSucceeded(BookAppointmentEntity appointment) {

@@ -108,6 +108,10 @@ public class BookAppointmentEntity implements Serializable {
     @Column(name = "promo_discount_cents")
     private Long promoDiscountCents;
 
+    /** When the day-before reminder was claimed (UTC). Null until then; set once, by BookingReminderService. */
+    @Column(name = "reminder_sent_at")
+    private LocalDateTime reminderSentAt;
+
     public BookAppointmentEntity() {
     }
 

@@ -126,8 +126,9 @@ public class NotificationService {
     /**
      * Puts the customer's side of a booking event in their in-app inbox, next
      * to the email. Never blocks the booking: a failure here is only logged.
+     * Public for the booking reminder job, which writes its own inbox entry.
      */
-    void recordBookingInApp(BookAppointmentEntity appointment, String headline, String detail){
+    public void recordBookingInApp(BookAppointmentEntity appointment, String headline, String detail){
         if(notificationRepo == null || appointment == null || appointment.getUserId() == null) return;
         try{
             String when = appointment.getAppointmentDate() == null || appointment.getAppointmentDate().isBlank() ? ""
