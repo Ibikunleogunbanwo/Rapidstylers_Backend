@@ -24,9 +24,10 @@ public class CorsConfig {
     private String allowedOrigins;
 
     /**
-     * Extra origins that may only post the newsletter sign-up form. The demo site
-     * (demo.rapidstylers.ca) sends its newsletter form to the live API so the
-     * address lands on the real mailing list; it gets no other live route.
+     * Extra origins that may only post the newsletter sign-up form and the
+     * anonymous visit count. The demo site (demo.rapidstylers.ca) sends both to
+     * the live API so sign-ups land on the real mailing list and ad visitors
+     * show in the sign-up funnel; it gets no other live route.
      */
     @Value("${app.cors.newsletter-origins:https://demo.rapidstylers.ca}")
     private String newsletterOrigins;
@@ -49,6 +50,7 @@ public class CorsConfig {
         newsletter.setAllowedOrigins(newsletterAllowed);
         newsletter.setAllowedMethods(List.of("POST", "OPTIONS"));
         source.registerCorsConfiguration("/rapid_stylers/newsletter_subscribe", newsletter);
+        source.registerCorsConfiguration("/rapid_stylers/funnel_visit", newsletter);
         source.registerCorsConfiguration("/**", config);
         return source;
     }

@@ -58,6 +58,9 @@ class SecurityConfigTest {
         MockHttpServletResponse newsletter = preflight(filter, "/rapid_stylers/newsletter_subscribe", "https://demo.rapidstylers.ca");
         assertEquals("https://demo.rapidstylers.ca", newsletter.getHeader("Access-Control-Allow-Origin"));
 
+        MockHttpServletResponse visit = preflight(filter, "/rapid_stylers/funnel_visit", "https://demo.rapidstylers.ca");
+        assertEquals("https://demo.rapidstylers.ca", visit.getHeader("Access-Control-Allow-Origin"));
+
         MockHttpServletResponse signUp = preflight(filter, "/rapid_stylers/user_sign_up", "https://demo.rapidstylers.ca");
         assertNull(signUp.getHeader("Access-Control-Allow-Origin"));
 
