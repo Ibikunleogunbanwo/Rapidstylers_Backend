@@ -7,6 +7,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -22,6 +23,14 @@ public class CorsConfig {
     @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:9090,https://rapidstylers.ca,https://www.rapidstylers.ca}")
     private String allowedOrigins;
 
+    /**
+     * Extra origins that may only post the newsletter sign-up form. The demo site
+     * (demo.rapidstylers.ca) sends its newsletter form to the live API so the
+     * address lands on the real mailing list; it gets no other live route.
+     */
+    @Value("${app.cors.newsletter-origins:https://demo.rapidstylers.ca}")
+    private String newsletterOrigins;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -33,12 +42,26 @@ public class CorsConfig {
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "x-api-key", "X-Step-Up-Password"));
         config.setExposedHeaders(List.of("Authorization"));
         config.setMaxAge(3600L);
+        // First match wins, so the narrower newsletter rule goes before "/**".
+        CorsConfiguration newsletter = new CorsConfiguration(config);
+        List<String> newsletterAllowed = new ArrayList<>(parseAllowedOrigins());
+        parse(newsletterOrigins).stream().filter(o -> !newsletterAllowed.contains(o)).forEach(newsletterAllowed::add);
+        newsletter.setAllowedOrigins(newsletterAllowed);
+        newsletter.setAllowedMethods(List.of("POST", "OPTIONS"));
+        source.registerCorsConfiguration("/rapid_stylers/newsletter_subscribe", newsletter);
         source.registerCorsConfiguration("/**", config);
         return source;
     }
 
     private List<String> parseAllowedOrigins() {
-        return Arrays.stream(allowedOrigins.split(","))
+        return parse(allowedOrigins);
+    }
+
+    private static List<String> parse(String origins) {
+        if (origins == null) {
+            return List.of();
+        }
+        return Arrays.stream(origins.split(","))
                 .map(String::trim)
                 .filter(origin -> !origin.isBlank())
                 .collect(Collectors.toList());

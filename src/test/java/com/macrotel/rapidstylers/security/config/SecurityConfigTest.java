@@ -13,6 +13,7 @@ import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class SecurityConfigTest {
 
@@ -45,5 +46,32 @@ class SecurityConfigTest {
 
         assertEquals("https://rapidstylers.ca", response.getHeader("Access-Control-Allow-Origin"));
         assertFalse(response.containsHeader("Access-Control-Allow-Credentials"));
+    }
+
+    @Test
+    void demoSiteMayPostOnlyTheNewsletterFormToTheLiveApi() throws ServletException, IOException {
+        CorsConfig corsConfig = new CorsConfig();
+        ReflectionTestUtils.setField(corsConfig, "allowedOrigins", "https://rapidstylers.ca,https://www.rapidstylers.ca");
+        ReflectionTestUtils.setField(corsConfig, "newsletterOrigins", "https://demo.rapidstylers.ca");
+        CorsFilter filter = new CorsFilter(corsConfig.corsConfigurationSource());
+
+        MockHttpServletResponse newsletter = preflight(filter, "/rapid_stylers/newsletter_subscribe", "https://demo.rapidstylers.ca");
+        assertEquals("https://demo.rapidstylers.ca", newsletter.getHeader("Access-Control-Allow-Origin"));
+
+        MockHttpServletResponse signUp = preflight(filter, "/rapid_stylers/user_sign_up", "https://demo.rapidstylers.ca");
+        assertNull(signUp.getHeader("Access-Control-Allow-Origin"));
+
+        MockHttpServletResponse live = preflight(filter, "/rapid_stylers/newsletter_subscribe", "https://www.rapidstylers.ca");
+        assertEquals("https://www.rapidstylers.ca", live.getHeader("Access-Control-Allow-Origin"));
+    }
+
+    private static MockHttpServletResponse preflight(CorsFilter filter, String path, String origin) throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", path);
+        request.addHeader("Origin", origin);
+        request.addHeader("Access-Control-Request-Method", "POST");
+        request.addHeader("Access-Control-Request-Headers", "content-type,x-api-key");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response;
     }
 }
