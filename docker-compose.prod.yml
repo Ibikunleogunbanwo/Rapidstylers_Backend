@@ -152,7 +152,7 @@ services:
       # stylist per service type so public search is never all-empty on a
       # fresh/wiped database. Default off; real stylists are never touched.
       APP_DEMO_SEED: ${APP_DEMO_SEED:-false}
-      # The live app is never the read-only showroom; only app-demo sets true.
+      # The live app never inherits the demo's read-only switch.
       APP_DEMO_READ_ONLY: "false"
       # Where the demo's banner and refusals send visitors.
       APP_DEMO_LIVE_URL: ${APP_DEMO_LIVE_URL:-https://rapidstylers.ca}
@@ -271,10 +271,13 @@ services:
       <<: *app-env
       DB_URL: jdbc:mysql://mysql:3306/${DEMO_DB_NAME:-rapid_stylers}
       SPRING_REDIS_DATABASE: "1"
-      APP_DEMO_READ_ONLY: "true"
+      # Set DEMO_READ_ONLY=false temporarily for UI payment QA; true closes it again.
+      APP_DEMO_READ_ONLY: ${DEMO_READ_ONLY:-true}
       APP_DEMO_SEED: "false"
       APP_ENV: demo
       CORS_ALLOWED_ORIGINS: ${DEMO_CORS_ALLOWED_ORIGINS:-https://demo.rapidstylers.ca}
+      NEWSLETTER_API_URL: https://api-demo.rapidstylers.ca
+      NEWSLETTER_SITE_URL: https://demo.rapidstylers.ca
       # Must differ from JWT_SECRET. Left empty, the demo app refuses to start
       # (JwtUtil's boot guard), so a missing value can never fall back to the live one.
       JWT_SECRET: ${DEMO_JWT_SECRET:-}
@@ -283,6 +286,10 @@ services:
       KAFKA_NOTIFICATIONS_GROUP_ID: rapidstylers-demo-notifications
       # Test keys only: the single legacy key and every live key are blanked.
       STRIPE_MODE: test
+      # Each Stripe endpoint has its own signing secret. Keep QA delivery separate
+      # from the live API's test endpoints so events reach the demo database.
+      STRIPE_TEST_WEBHOOK_SECRET: ${DEMO_STRIPE_TEST_WEBHOOK_SECRET:-${STRIPE_TEST_WEBHOOK_SECRET:-}}
+      STRIPE_TEST_CONNECT_WEBHOOK_SECRET: ${DEMO_STRIPE_TEST_CONNECT_WEBHOOK_SECRET:-${STRIPE_TEST_CONNECT_WEBHOOK_SECRET:-}}
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""
       STRIPE_CONNECT_WEBHOOK_SECRET: ""
