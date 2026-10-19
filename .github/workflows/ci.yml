@@ -27,6 +27,15 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=12
+      redis-cache-tests:
+        image: redis:7-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=12
     steps:
       - uses: actions/checkout@v5
 
@@ -36,8 +45,8 @@ jobs:
           java-version: '17'
           cache: maven
 
-      # Redis and Kafka are not started in CI: the services fail closed with
-      # in-memory fallbacks, and the test profile disables the Kafka consumers.
+      # Cache consistency tests use a dedicated Redis on 6381. Other tests keep
+      # their default Redis fallback behavior; Kafka consumers stay disabled.
       #
       # ./mvn21 is the single source of truth for JDK selection (local + CI):
       # it validates the setup-java JDK (17) and fails loudly if it ever drifts
@@ -47,6 +56,7 @@ jobs:
           DB_URL: jdbc:mysql://127.0.0.1:3306/rapid_stylers
           DB_USERNAME: root
           DB_PASSWORD: root
+          REDIS_CACHE_TEST_PORT: '6381'
         run: ./mvn21 -B test
 
   gitleaks:

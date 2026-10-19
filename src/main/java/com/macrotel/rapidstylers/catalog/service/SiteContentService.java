@@ -48,7 +48,7 @@ public class SiteContentService {
         String kind = SiteContentRules.kindOf(key);
         if (kind == null || SiteContentRules.EMAIL.equals(kind)) return notFound();
         String body = cached(CACHE_PREFIX + key, () -> contentRepo.findByContentKey(key)
-                .map(SiteContentEntity::getPublishedBody).orElse(""));
+                .map(SiteContentEntity::getPublishedBody).orElse(null));
         if (body == null || body.isEmpty()) return notFound();
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("key", key);
@@ -238,7 +238,7 @@ public class SiteContentService {
     }
 
     private String cached(String cacheKey, java.util.function.Supplier<String> loader) {
-        return readCacheService == null ? loader.get() : readCacheService.getOrLoad(cacheKey, CACHE_TTL, Duration.ZERO, loader);
+        return readCacheService == null ? loader.get() : readCacheService.getOrLoad(cacheKey, CACHE_TTL, Duration.ofMinutes(2), loader);
     }
 
     private void evict(String key) {

@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.service.CacheLoadUnavailableException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.auth.entity.OTPEntity;
 import com.macrotel.rapidstylers.auth.service.AccountIds;
@@ -462,7 +463,9 @@ public class StylerService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(cachedSubServices(stylerId));
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -596,11 +599,11 @@ public class StylerService {
         try{
             // Bounded catalog keys — cheap and read on every page load.
             readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_SERVICES,
-                    ReadCacheService.CATALOG_TTL, null, catalogService::loadCatalogServices);
+                    ReadCacheService.CATALOG_TTL, ReadCacheService.CATALOG_JITTER, catalogService::loadCatalogServices);
             readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_IDENTIFICATIONS,
-                    ReadCacheService.CATALOG_TTL, null, catalogService::loadCatalogIdentifications);
+                    ReadCacheService.CATALOG_TTL, ReadCacheService.CATALOG_JITTER, catalogService::loadCatalogIdentifications);
             readCacheService.getOrLoad(ReadCacheService.KEY_CATALOG_BLOGS,
-                    ReadCacheService.BLOG_TTL, null, catalogService::loadCatalogBlogs);
+                    ReadCacheService.BLOG_TTL, ReadCacheService.BLOG_JITTER, catalogService::loadCatalogBlogs);
 
             // Bounded set of approved stylists, most active first. We cannot know
             // prior cross-restart hit frequency (counters reset on boot), so we warm
@@ -729,7 +732,9 @@ public class StylerService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(stylerInformationMap);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;

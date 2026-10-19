@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.service.CacheLoadUnavailableException;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
@@ -187,7 +188,9 @@ public class AvailabilityService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(cachedAvailabilitySlots(stylerId));
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -276,7 +279,9 @@ public class AvailabilityService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(cachedExceptionSlots(stylerId));
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;

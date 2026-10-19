@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.common.web;
 
+import com.macrotel.rapidstylers.common.service.CacheLoadUnavailableException;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -122,6 +123,13 @@ public class GlobalExceptionHandler {
 
     // Code that already chose its answer (the Resend webhook's 401/400/503)
     // keeps it; without this the catch-all below turned it into a 500.
+    @ExceptionHandler(CacheLoadUnavailableException.class)
+    public ResponseEntity<BaseResponse> handleCacheOverload(CacheLoadUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "2")
+                .body(clientError("503", ex.getMessage()));
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<BaseResponse> handleResponseStatus(ResponseStatusException ex) {
         String message = ex.getReason() != null ? ex.getReason() : ex.getStatus().getReasonPhrase();

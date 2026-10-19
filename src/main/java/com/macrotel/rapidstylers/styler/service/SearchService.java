@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.service.CacheLoadUnavailableException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
@@ -72,7 +73,9 @@ public class SearchService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -93,7 +96,9 @@ public class SearchService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -123,7 +128,9 @@ public class SearchService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -196,7 +203,9 @@ public class SearchService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(cityResult == null ? EMPTY_DATA : cityResult);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -230,7 +239,9 @@ public class SearchService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -380,7 +391,9 @@ public class SearchService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;

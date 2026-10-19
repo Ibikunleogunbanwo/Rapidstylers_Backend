@@ -6,11 +6,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +27,10 @@ import java.util.logging.Logger;
 import javax.annotation.PreDestroy;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.support.NullValue;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Read-through cache for public read paths.
@@ -30,8 +39,11 @@ import org.springframework.stereotype.Service;
  *  - Redis hit  → return the cached value.
  *  - Redis miss → per-key single-flight: concurrent misses on the same key share
  *    exactly one loader invocation, then the result is stored with a TTL plus a
- *    random jitter (probabilistic early expiration) so entries never expire in a
- *    synchronized wave.
+ *    random positive jitter so entries do not expire in a
+ *    synchronized wave. A Redis generation fences loads across invalidation;
+ *    the final comparison and cache write are one atomic Lua operation.
+ *  - Writes → invalidate after transaction commit; rollback keeps cached data.
+ *    Transactional reads bypass the cache to avoid publishing a DB snapshot.
  *  - Degradation → any Redis failure (connection, serialization, ...) falls back
  *    to running the loader directly; the cache is a speed-up, never a dependency.
  *
@@ -40,6 +52,23 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class ReadCacheService {
+
+    // A database-wide generation also fences prefix invalidation of absent keys.
+    // UUIDs avoid reusing an old generation after a Redis flush/restart.
+    private static final String GENERATION_KEY = "rapidstylers:read-cache:generation";
+    static final DefaultRedisScript<String> GENERATION = new DefaultRedisScript<>(
+            "local g = redis.call('GET', KEYS[1]); "
+            + "if not g then g = ARGV[1]; redis.call('SET', KEYS[1], g); end; return g", String.class);
+    static final DefaultRedisScript<Long> STORE = new DefaultRedisScript<>(
+            "if redis.call('GET', KEYS[2]) ~= ARGV[1] then return 0 end; "
+            + "redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]); return 1", Long.class);
+    static final DefaultRedisScript<Long> INVALIDATE = new DefaultRedisScript<>(
+            "redis.call('SET', KEYS[1], ARGV[1]); local n = 0; "
+            + "for i = 2, #KEYS do n = n + redis.call('DEL', KEYS[i]); end; return n", Long.class);
+    static final DefaultRedisScript<Long> INVALIDATE_PREFIX = new DefaultRedisScript<>(
+            "redis.call('SET', KEYS[1], ARGV[1]); "
+            + "local keys = redis.call('KEYS', cjson.decode(ARGV[2]) .. '*'); local n = 0; "
+            + "for _, k in ipairs(keys) do if k ~= KEYS[1] then n = n + redis.call('DEL', k); end; end; return n", Long.class);
 
     private static final Logger LOG = Logger.getLogger(ReadCacheService.class.getName());
 
@@ -61,9 +90,13 @@ public class ReadCacheService {
     public static final String KEY_CATALOG_BLOGS = "catalog:blogs";
     public static final String KEY_CATALOG_BLOG = "catalog:blog:";
 
-    // TTLs and jitter windows (probabilistic early expiration).
+    // TTLs and positive jitter windows spread cache expiration.
+    private static final Duration NOT_FOUND_TTL = Duration.ofSeconds(30);
+    private static final Duration NOT_FOUND_JITTER = Duration.ofSeconds(5);
     public static final Duration CATALOG_TTL = Duration.ofMinutes(60);
     public static final Duration BLOG_TTL = Duration.ofMinutes(30);
+    public static final Duration CATALOG_JITTER = Duration.ofMinutes(10);
+    public static final Duration BLOG_JITTER = Duration.ofMinutes(5);
     public static final Duration DTO_TTL = Duration.ofMinutes(10);
     public static final Duration DTO_JITTER = Duration.ofMinutes(2);
     public static final Duration SEARCH_LIST_TTL = Duration.ofMinutes(5);
@@ -84,6 +117,11 @@ public class ReadCacheService {
     static final int LOADER_THREADS = 8;
     private static final String LOADER_THREAD_PREFIX = "read-cache-load-";
     private final ExecutorService loaders = newLoaderPool();
+    private final Semaphore loadPermits = new Semaphore(LOADER_THREADS);
+    private final ThreadLocal<Boolean> loading = ThreadLocal.withInitial(() -> false);
+    private final AtomicLong invalidationSequence = new AtomicLong();
+    private final AtomicLong rejectedLoads = new AtomicLong();
+    private final AtomicLong timedOutWaiters = new AtomicLong();
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final Map<String, CompletableFuture<Object>> inFlight = new ConcurrentHashMap<>();
@@ -106,7 +144,7 @@ public class ReadCacheService {
     private static ExecutorService newLoaderPool() {
         AtomicInteger counter = new AtomicInteger();
         ThreadPoolExecutor pool = new ThreadPoolExecutor(LOADER_THREADS, LOADER_THREADS, 60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(), runnable -> {
+                new ArrayBlockingQueue<>(64), runnable -> {
                     Thread thread = new Thread(runnable, LOADER_THREAD_PREFIX + counter.incrementAndGet());
                     thread.setDaemon(true);
                     return thread;
@@ -122,100 +160,147 @@ public class ReadCacheService {
 
     /**
      * Cache-aside read with single-flight on the miss path.
-     * Returns null only when the loader returns null (never cached).
+     * Confirmed null results use a short-lived typed marker; loader exceptions are never cached.
      */
     @SuppressWarnings("unchecked")
     public <T> T getOrLoad(String key, Duration ttl, Duration jitter, Supplier<T> loader) {
+        // Keep transactions on their caller's thread and outside the shared cache,
+        // but subject them to the same DB concurrency budget as ordinary misses.
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            return loadBounded(loader);
+        }
+        String generation = null;
+        long localSequence = invalidationSequence.get();
         try {
+            generation = redisTemplate.execute(GENERATION, Collections.singletonList(GENERATION_KEY),
+                    UUID.randomUUID().toString());
+            if (generation == null) throw new IllegalStateException("Redis returned no cache generation");
             Object cached = redisTemplate.opsForValue().get(key);
             if (cached != null) {
                 record(key, true);
-                return (T) cached;
+                return cached instanceof NullValue ? null : (T) cached;
             }
         } catch (Exception ex) {
             logDegradation(cacheName(key), ex, "read");
+            generation = null;
         }
         record(key, false);
-        if (Thread.currentThread().getName().startsWith(LOADER_THREAD_PREFIX)) {
-            // A load that needs another cached part (a search list building its
-            // stylist cards) runs that part right here. Handing it to the pool
-            // and waiting could leave every loader thread waiting on work that
-            // has no free thread to run on.
-            T value = countLoad(loader).get();
-            if (value != null) {
-                store(key, ttl, jitter, value);
+        final String snapshot = generation;
+        if (loading.get()) {
+            // Nested cache parts load inline under the outer load's permit.
+            // Enqueuing them could deadlock all workers waiting on their own pool.
+            return loadAndStore(key, ttl, jitter, loader, snapshot);
+        }
+        String flightKey = (snapshot == null ? "unavailable:" + localSequence : snapshot) + "\0" + key;
+        CompletableFuture<Object> created = new CompletableFuture<>();
+        CompletableFuture<Object> existing = inFlight.putIfAbsent(flightKey, created);
+        CompletableFuture<Object> future = existing == null ? created : existing;
+        if (existing == null) {
+            try {
+                loaders.execute(() -> {
+                    try {
+                        created.complete(loadAndStore(key, ttl, jitter, loader, snapshot));
+                    } catch (Throwable ex) {
+                        created.completeExceptionally(ex);
+                    } finally {
+                        // Only the owner may remove this flight. Publish it before
+                        // starting work so even an immediate completion cleans up.
+                        inFlight.remove(flightKey, created);
+                    }
+                });
+            } catch (RejectedExecutionException ex) {
+                rejectedLoads.incrementAndGet();
+                created.completeExceptionally(new CacheLoadUnavailableException());
+                inFlight.remove(flightKey, created);
             }
-            return value;
         }
         try {
-            CompletableFuture<Object> future = inFlight.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> {
-                try {
-                    T value = countLoad(loader).get();
-                    if (value != null) {
-                        store(key, ttl, jitter, value);
-                    }
-                    return value;
-                } finally {
-                    inFlight.remove(k);
-                }
-            }, loaders));
-            try {
-                return (T) future.get(singleFlightTimeoutSeconds, TimeUnit.SECONDS);
-            } catch (TimeoutException te) {
-                // The shared flight is still running. Never start a second loader here
-                // — that would double DB load and defeat the whole point of single-
-                // flight. Drop our inFlight entry (so a truly-stuck flight can be
-                // replaced by a fresh one) and keep waiting, still bounded, for the
-                // in-flight loader to finish instead of running it again.
-                inFlight.remove(key);
-                return (T) future.get(singleFlightTimeoutSeconds, TimeUnit.SECONDS);
-            }
+            return (T) future.get(singleFlightTimeoutSeconds * 2, TimeUnit.SECONDS);
+        } catch (TimeoutException ex) {
+            // The loader keeps its permit and flight until it really finishes.
+            // A timed-out caller must never start another database query.
+            timedOutWaiters.incrementAndGet();
+            throw new CacheLoadUnavailableException();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new CacheLoadUnavailableException();
         } catch (ExecutionException ex) {
-            // The shared flight failed — retry once with a direct load.
-            inFlight.remove(key);
-        } catch (Exception ex) {
-            // Second timeout, interrupt or cancellation: the in-flight loader is
-            // stuck. Fall back to a direct load. Only one caller per key does this
-            // (the entry was removed above), so the herd is still bounded.
-            inFlight.remove(key);
+            if (ex.getCause() instanceof RuntimeException) throw (RuntimeException) ex.getCause();
+            throw new IllegalStateException("Cache load failed", ex.getCause());
         }
-        T value = countLoad(loader).get();
-        if (value != null) {
-            store(key, ttl, jitter, value);
+    }
+
+    private <T> T loadAndStore(String key, Duration ttl, Duration jitter, Supplier<T> loader, String generation) {
+        T value = loadBounded(loader);
+        // An outage fallback never publishes a value without a Redis generation.
+        if (generation != null) {
+            if (value == null) {
+                // Spring's typed marker is supported by the JSON serializer and
+                // cannot be confused with legitimate strings, maps, or empty lists.
+                store(key, NOT_FOUND_TTL, NOT_FOUND_JITTER, NullValue.INSTANCE, generation);
+            } else {
+                store(key, ttl, jitter, value, generation);
+            }
         }
         return value;
     }
 
-    /** Best-effort delete of cache keys (used by write paths). Never throws. */
-    public void evict(String... keys) {
-        if (keys == null) {
-            return;
+    private <T> T loadBounded(Supplier<T> loader) {
+        if (loading.get()) return countLoad(loader).get();
+        if (!loadPermits.tryAcquire()) {
+            rejectedLoads.incrementAndGet();
+            throw new CacheLoadUnavailableException();
         }
-        for (String key : keys) {
-            if (key != null) {
-                try {
-                    redisTemplate.delete(key);
-                    totalEvictions.incrementAndGet();
-                } catch (Exception ex) {
-                    logDegradation(cacheName(key), ex, "evict");
-                }
-            }
+        loading.set(true);
+        try {
+            return countLoad(loader).get();
+        } finally {
+            loading.remove();
+            loadPermits.release();
         }
     }
 
-    /** Best-effort delete of every key starting with {@code prefix} (rare admin-wide changes). Never throws. */
-    public void evictPrefix(String prefix) {
-        if (prefix == null || prefix.isEmpty()) {
-            return;
-        }
-        try {
-            java.util.Set<String> keys = redisTemplate.keys(prefix + "*");
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
-                totalEvictions.addAndGet(keys.size());
+    /** Invalidate only once the database commit is visible; rollback leaves cache intact. */
+    public void evict(String... keys) {
+        if (keys == null) return;
+        List<String> targets = new ArrayList<>();
+        targets.add(GENERATION_KEY);
+        for (String key : keys) if (key != null) targets.add(key);
+        if (targets.size() == 1) return;
+        afterCommit(() -> {
+            invalidationSequence.incrementAndGet();
+            try {
+                redisTemplate.execute(INVALIDATE, targets, UUID.randomUUID().toString());
+                totalEvictions.addAndGet(targets.size() - 1);
+            } catch (Exception ex) {
+                logDegradation("read-cache", ex, "evict");
             }
-        } catch (Exception ex) {
-            logDegradation(cacheName(prefix), ex, "evict");
+        });
+    }
+
+    /** Prefix eviction also fences loaders whose values are not yet in Redis. */
+    public void evictPrefix(String prefix) {
+        if (prefix == null || prefix.isEmpty()) return;
+        afterCommit(() -> {
+            invalidationSequence.incrementAndGet();
+            try {
+                Long removed = redisTemplate.execute(INVALIDATE_PREFIX,
+                        Collections.singletonList(GENERATION_KEY), UUID.randomUUID().toString(), prefix);
+                if (removed != null) totalEvictions.addAndGet(removed);
+            } catch (Exception ex) {
+                logDegradation(cacheName(prefix), ex, "evict");
+            }
+        });
+    }
+
+    private void afterCommit(Runnable invalidation) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+                && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { invalidation.run(); }
+            });
+        } else {
+            invalidation.run();
         }
     }
 
@@ -252,6 +337,10 @@ public class ReadCacheService {
         stats.put("loads", totalLoads.get());
         stats.put("evictions", totalEvictions.get());
         stats.put("degradations", totalDegradations.get());
+        stats.put("rejectedLoads", rejectedLoads.get());
+        stats.put("timedOutWaiters", timedOutWaiters.get());
+        stats.put("activeLoads", (long) LOADER_THREADS - loadPermits.availablePermits());
+        stats.put("queuedLoads", (long) ((ThreadPoolExecutor) loaders).getQueue().size());
         stats.put("overallHitRate", Math.round(hitRate * 10000.0) / 10000.0);
         stats.put("keysTracked", (long) perKey.size());
         stats.put("keysDroppedAtCap", keysDroppedAtCap.get());
@@ -291,13 +380,17 @@ public class ReadCacheService {
         return loader;
     }
 
-    private void store(String key, Duration ttl, Duration jitter, Object value) {
+    private void store(String key, Duration ttl, Duration jitter, Object value, String generation) {
         try {
             Duration effective = ttl == null ? Duration.ofMinutes(5) : ttl;
             if (jitter != null && jitter.toMillis() > 0) {
                 effective = effective.plusMillis(ThreadLocalRandom.current().nextLong(0, jitter.toMillis() + 1));
             }
-            redisTemplate.opsForValue().set(key, value, effective);
+            // The comparison and SET must be atomic across API instances. Arguments
+            // use this template's JSON serializer: values keep their existing format,
+            // UUIDs are JSON strings, and the TTL is a numeric Long (not a string).
+            redisTemplate.execute(STORE, Arrays.asList(key, GENERATION_KEY),
+                    generation, value, effective.toMillis());
         } catch (Exception ex) {
             logDegradation(cacheName(key), ex, "write");
         }

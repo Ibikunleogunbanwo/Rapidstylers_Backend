@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.service.CacheLoadUnavailableException;
 import com.macrotel.rapidstylers.common.service.DTOService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -152,7 +153,9 @@ public class PortfolioService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(cachedPortfolio(stylerId));
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;

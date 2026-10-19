@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.engagement.service;
 
+import com.macrotel.rapidstylers.common.service.CacheLoadUnavailableException;
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.service.AppointmentRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
@@ -230,7 +231,9 @@ public class ReviewService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(cachedReviews(stylerId));
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -259,7 +262,9 @@ public class ReviewService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(data);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning("Own reviews failed: " + ex.getMessage());
             return Responses.errorResponse(response, "Could not load reviews");
         }

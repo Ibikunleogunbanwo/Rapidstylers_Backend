@@ -42,6 +42,30 @@ class BlogDraftTest {
         when(blogPostRepo.save(any(BlogPostEntity.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @org.junit.jupiter.params.provider.ValueSource(strings = {" ", "0", "-1", "abc", "1.5", "1e3", "9223372036854775808", "111111111111111111111111"})
+    void invalidPublicBlogIdsNeverReachTheCacheOrDatabase(String id) {
+        assertEquals("400", catalogService.singleBlogPost(id).getStatusCode());
+        verifyNoInteractions(cache, blogPostRepo);
+    }
+
+    @Test void equivalentBlogIdsUseOneCanonicalCacheKey() {
+        catalogService.singleBlogPost("0001");
+        catalogService.singleBlogPost(" 1 ");
+        verify(cache, times(2)).getOrLoad(org.mockito.ArgumentMatchers.eq("catalog:blog:1"), any(), any(), any());
+        verify(blogPostRepo, times(2)).findById(1L);
+    }
+
+    @Test void createEvictsAPreviouslyMissingBlogId() {
+        assertEquals("400", catalogService.singleBlogPost("42").getStatusCode());
+        when(blogPostRepo.save(any(BlogPostEntity.class))).thenAnswer(call -> {
+            BlogPostEntity post = call.getArgument(0); post.setId(42L); return post;
+        });
+        assertEquals("200", catalogService.createBlogPost(article("PUBLISHED")).getStatusCode());
+        verify(cache).evict(ReadCacheService.KEY_CATALOG_BLOG + "42");
+    }
+
     private static BlogPostData article(String status) {
         BlogPostData data = new BlogPostData();
         data.setTitle("Summer looks");
@@ -101,6 +125,13 @@ class BlogDraftTest {
 
         assertEquals("400", catalogService.singleBlogPost("2").getStatusCode());
         assertEquals("200", catalogService.singleBlogPost("1").getStatusCode());
+    }
+
+    @Test void deletingAnArticleByAnAliasClearsItsCanonicalCacheKey() {
+        when(blogPostRepo.findById(1L)).thenReturn(Optional.of(post(1, "PUBLISHED")));
+        assertEquals("200", catalogService.deleteBlogPost("0001").getStatusCode());
+        verify(cache).evict(ReadCacheService.KEY_CATALOG_BLOGS,
+                ReadCacheService.KEY_CATALOG_BLOG + "0001", ReadCacheService.KEY_CATALOG_BLOG + "1");
     }
 
     @Test

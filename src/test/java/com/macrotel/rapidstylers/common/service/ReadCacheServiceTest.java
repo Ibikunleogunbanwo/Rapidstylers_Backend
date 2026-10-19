@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -19,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atMostOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -42,8 +42,13 @@ class ReadCacheServiceTest {
         redisTemplate = mock(RedisTemplate.class);
         ops = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(ops);
+        when(redisTemplate.execute(eq(ReadCacheService.GENERATION),
+                org.mockito.ArgumentMatchers.anyList(), anyString())).thenReturn("unit-test-generation");
         cache = new ReadCacheService(redisTemplate);
     }
+
+    @AfterEach
+    void stopLoaders() { cache.shutdown(); }
 
     @Test
     void hitReturnsCachedValueWithoutInvokingLoader() {
@@ -57,7 +62,7 @@ class ReadCacheServiceTest {
 
         assertEquals("cached", result);
         assertEquals(0, loads.get());
-        verify(ops, never()).set(anyString(), any(), any(Duration.class));
+        verify(redisTemplate, never()).execute(eq(ReadCacheService.STORE), org.mockito.ArgumentMatchers.anyList(), anyString(), any(), org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
@@ -69,21 +74,25 @@ class ReadCacheServiceTest {
         Object result = cache.getOrLoad("k", ttl, jitter, () -> "loaded");
 
         assertEquals("loaded", result);
-        org.mockito.ArgumentCaptor<Duration> captor =
-                org.mockito.ArgumentCaptor.forClass(Duration.class);
-        verify(ops).set(eq("k"), eq("loaded"), captor.capture());
-        Duration stored = captor.getValue();
+        org.mockito.ArgumentCaptor<Long> captor = org.mockito.ArgumentCaptor.forClass(Long.class);
+        verify(redisTemplate).execute(eq(ReadCacheService.STORE),
+                org.mockito.ArgumentMatchers.argThat(keys -> keys.get(0).equals("k")),
+                eq("unit-test-generation"), eq("loaded"), captor.capture());
+        Duration stored = Duration.ofMillis(captor.getValue());
         assertTrue(stored.compareTo(ttl) >= 0, "stored TTL must not be below base TTL");
         assertTrue(stored.compareTo(ttl.plus(jitter)) <= 0, "stored TTL must not exceed base + jitter");
     }
 
     @Test
-    void nullLoaderResultIsNotCached() {
+    void confirmedNullUsesAShortLivedTypedMarker() {
         when(ops.get("k")).thenReturn(null);
 
         assertNull(cache.getOrLoad("k", Duration.ofMinutes(1), null, () -> null));
 
-        verify(ops, never()).set(anyString(), any(), any(Duration.class));
+        org.mockito.ArgumentCaptor<Long> expiry = org.mockito.ArgumentCaptor.forClass(Long.class);
+        verify(redisTemplate).execute(eq(ReadCacheService.STORE), org.mockito.ArgumentMatchers.anyList(),
+                eq("unit-test-generation"), eq(org.springframework.cache.support.NullValue.INSTANCE), expiry.capture());
+        assertTrue(expiry.getValue() >= 30_000L && expiry.getValue() <= 35_000L);
     }
 
     @Test
@@ -101,7 +110,9 @@ class ReadCacheServiceTest {
         String[] threads = outer.split("\\|");
         assertTrue(threads[0].startsWith("read-cache-load-"), threads[0]);
         assertEquals(threads[0], threads[1]);
-        verify(ops).set(eq("inner"), eq(threads[1]), any(Duration.class));
+        verify(redisTemplate).execute(eq(ReadCacheService.STORE),
+                org.mockito.ArgumentMatchers.argThat(keys -> keys.get(0).equals("inner")),
+                eq("unit-test-generation"), eq(threads[1]), org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
@@ -177,15 +188,16 @@ class ReadCacheServiceTest {
     void evictDeletesEveryProvidedKey() {
         cache.evict("a", "b", null);
 
-        verify((RedisTemplate) redisTemplate).delete("a");
-        verify((RedisTemplate) redisTemplate).delete("b");
-        verify((RedisTemplate) redisTemplate, atMostOnce()).delete(null);
+        verify(redisTemplate).execute(eq(ReadCacheService.INVALIDATE),
+                org.mockito.ArgumentMatchers.argThat(keys -> keys.size() == 3
+                        && keys.get(1).equals("a") && keys.get(2).equals("b")), anyString());
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     @Test
     void evictSwallowsRedisFailures() {
-        when(((RedisTemplate) redisTemplate).delete(anyString())).thenThrow(new RuntimeException("redis down"));
+        when(redisTemplate.execute(eq(ReadCacheService.INVALIDATE),
+                org.mockito.ArgumentMatchers.anyList(), anyString())).thenThrow(new RuntimeException("redis down"));
 
         cache.evict("a"); // must not throw
     }
@@ -233,7 +245,8 @@ class ReadCacheServiceTest {
     @Test
     void redisWriteFailureIncrementsDegradationCounter() {
         when(ops.get(anyString())).thenReturn(null);
-        org.mockito.Mockito.doThrow(new RuntimeException("redis full")).when(ops).set(anyString(), any(), any(Duration.class));
+        when(redisTemplate.execute(eq(ReadCacheService.STORE), org.mockito.ArgumentMatchers.anyList(),
+                anyString(), any(), org.mockito.ArgumentMatchers.anyLong())).thenThrow(new RuntimeException("redis full"));
 
         cache.getOrLoad("styler:availability:GS5816", Duration.ofMinutes(1), null, () -> "loaded");
 
@@ -242,7 +255,8 @@ class ReadCacheServiceTest {
 
     @Test
     void redisEvictFailureIncrementsDegradationCounter() {
-        org.mockito.Mockito.doThrow(new RuntimeException("redis down")).when(((RedisTemplate) redisTemplate)).delete(anyString());
+        when(redisTemplate.execute(eq(ReadCacheService.INVALIDATE), org.mockito.ArgumentMatchers.anyList(),
+                anyString())).thenThrow(new RuntimeException("redis down"));
 
         cache.evict("styler:portfolio:GS5816");
         cache.evict("catalog:services");

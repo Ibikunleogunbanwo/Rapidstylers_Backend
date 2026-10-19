@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.catalog.service;
 
+import com.macrotel.rapidstylers.common.service.CacheLoadUnavailableException;
 import com.macrotel.rapidstylers.catalog.entity.BlogPostEntity;
 import com.macrotel.rapidstylers.catalog.entity.IdentificationEntity;
 import com.macrotel.rapidstylers.catalog.entity.ServiceEntity;
@@ -11,6 +12,7 @@ import com.macrotel.rapidstylers.catalog.repo.IdentificationRepo;
 import com.macrotel.rapidstylers.catalog.repo.ServiceRepo;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
+import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.media.service.ImageReclaimService;
 import java.util.*;
@@ -66,13 +68,15 @@ public class CatalogService {
         BaseResponse response = new BaseResponse(true);
         try{
             List<Object> result = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_IDENTIFICATIONS, ReadCacheService.CATALOG_TTL, null,
+                    ReadCacheService.KEY_CATALOG_IDENTIFICATIONS, ReadCacheService.CATALOG_TTL, ReadCacheService.CATALOG_JITTER,
                     this::loadCatalogIdentifications);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -165,13 +169,15 @@ public class CatalogService {
         BaseResponse response = new BaseResponse(true);
         try{
             List<Object> result = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_SERVICES, ReadCacheService.CATALOG_TTL, null,
+                    ReadCacheService.KEY_CATALOG_SERVICES, ReadCacheService.CATALOG_TTL, ReadCacheService.CATALOG_JITTER,
                     this::loadCatalogServices);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -255,13 +261,15 @@ public class CatalogService {
         BaseResponse response = new BaseResponse(true);
         try{
             List<Object> result = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.BLOG_TTL, null,
+                    ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.BLOG_TTL, ReadCacheService.BLOG_JITTER,
                     this::loadCatalogBlogs);
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(result);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -269,11 +277,22 @@ public class CatalogService {
 
     public BaseResponse singleBlogPost(String id){
         BaseResponse response = new BaseResponse(true);
+        // Reject malformed IDs before allocating a cache key or querying MySQL.
+        // Normalize leading zeros/whitespace so equivalent IDs share one entry.
+        final long blogId;
+        try {
+            String normalized = id == null ? "" : id.trim();
+            if (!normalized.matches("[0-9]{1,19}")) throw new NumberFormatException();
+            blogId = Long.parseLong(normalized);
+            if (blogId <= 0) throw new NumberFormatException();
+        } catch (NumberFormatException ex) {
+            return Responses.errorResponse(response, "A valid positive blog ID is required");
+        }
         try{
             Map<String, String> postMap = readCacheService.getOrLoad(
-                    ReadCacheService.KEY_CATALOG_BLOG + id, ReadCacheService.BLOG_TTL, null,
+                    ReadCacheService.KEY_CATALOG_BLOG + blogId, ReadCacheService.BLOG_TTL, ReadCacheService.BLOG_JITTER,
                     () -> {
-                        Optional<BlogPostEntity> post = blogPostRepo.findById(Long.parseLong(id));
+                        Optional<BlogPostEntity> post = blogPostRepo.findById(blogId);
                         // A draft is not on the site: the same answer as no article at all.
                         if(post.isEmpty() || !post.get().isPublished()) return null;
                         BlogPostEntity blogPost = post.get();
@@ -297,7 +316,9 @@ public class CatalogService {
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(postMap);
         }
-        catch (Exception ex){
+        catch (CacheLoadUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex){
             LOG.warning(ex.getMessage());
         }
         return response;
@@ -506,7 +527,8 @@ public class CatalogService {
             BlogPostEntity deletedPost = getPost.get();
             String coverImageUrl = deletedPost.getImageUrl();
             blogPostRepo.delete(deletedPost);
-            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + id);
+            evict(ReadCacheService.KEY_CATALOG_BLOGS, ReadCacheService.KEY_CATALOG_BLOG + id,
+                    ReadCacheService.KEY_CATALOG_BLOG + deletedPost.getId());
             // The cover is only kept if some other article still uses the same URL.
             imageReclaimService.reclaimIfUnreferenced(coverImageUrl);
             response.setStatusCode(SUCCESS_STATUS_CODE);
