@@ -216,6 +216,14 @@ public class DemoContentInitializer implements CommandLineRunner {
     @Value("${app.demo.showroom-extra-ids:DS5713}")
     private String showroomExtraIds = "DS5713";
 
+    /** Optional so the seeder still runs (and tests construct it) without Redis wiring. */
+    private com.macrotel.rapidstylers.common.service.ReadCacheService readCacheService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setReadCacheService(com.macrotel.rapidstylers.common.service.ReadCacheService readCacheService) {
+        this.readCacheService = readCacheService;
+    }
+
     /** Seeded clients for this run; null until a profile actually needs history. */
     private List<UserEntity> demoClientCache;
 
@@ -324,6 +332,14 @@ public class DemoContentInitializer implements CommandLineRunner {
             // Always logged on an enabled run, so the operator can see it worked.
             log.info("Demo seed refresh done: {} profile(s) updated, {} review(s) reworded, {} availability slot(s) written",
                     refreshedProfiles, rewrittenReviews, createdSlots);
+            // The seeder writes straight to the tables, so cached profile cards,
+            // reviews, hours and search lists would keep showing the old rows
+            // for up to their TTL. Drop them so the refresh shows at once.
+            if (readCacheService != null && (refreshedProfiles + rewrittenReviews + createdSlots
+                    + createdStylists + createdServices + seededReviews + filledAddresses) > 0) {
+                readCacheService.evictPrefix("styler:");
+                readCacheService.evictPrefix("search:");
+            }
             if (filledAddresses > 0) {
                 log.info("Filled in a demo street address for {} sample stylist(s) that had none", filledAddresses);
             }

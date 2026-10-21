@@ -449,6 +449,23 @@ class DemoContentInitializerTest {
     }
 
     @Test
+    void aRefreshThatChangesRowsDropsTheCachedProfilesAndSearchLists() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(4, "Hairstylist")));
+        when(stylers.findByServiceTypeId("4")).thenReturn(List.of());
+        DemoContentInitializer seeder = init(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty());
+        com.macrotel.rapidstylers.common.service.ReadCacheService cache =
+                mock(com.macrotel.rapidstylers.common.service.ReadCacheService.class);
+        seeder.setReadCacheService(cache);
+
+        seeder.run();
+
+        verify(cache).evictPrefix("styler:");
+        verify(cache).evictPrefix("search:");
+    }
+
+    @Test
     void locationsAreDistinctAndSpreadAcrossTheCity() {
         Set<String> addresses = new HashSet<>();
         for (DemoSeedContent.DemoLocation location : DemoSeedContent.LOCATIONS) {
