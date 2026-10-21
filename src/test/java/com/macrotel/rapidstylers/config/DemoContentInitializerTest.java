@@ -213,6 +213,235 @@ class DemoContentInitializerTest {
     }
 
     @Test
+    void fictionalProfilesAreDistinctAndLegacyRefreshPreservesAccountData() {
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        ServiceEntity type = serviceType(1, "Nail Technician");
+        StylerEntity first = initializer.demoStylerFor(type, 1);
+        StylerEntity second = initializer.demoStylerFor(type, 2);
+        assertNotEquals("Demo", first.getFirstname());
+        assertNotEquals(first.getBusinessName(), second.getBusinessName());
+        assertTrue(first.getDescription().contains("Fictional demo profile"));
+        first.setFirstname("Demo");
+        first.setLastname("Nail Technician");
+        first.setBusinessName("Demo Nail Technician Studio 1");
+        String id = first.getStylerId();
+        String email = first.getEmailAddress();
+        String password = first.getPassword();
+        String address = first.getBusinessAddress();
+        assertTrue(initializer.refreshDemoIdentity(first, type));
+        assertEquals(id, first.getStylerId());
+        assertEquals(email, first.getEmailAddress());
+        assertEquals(password, first.getPassword());
+        assertEquals(address, first.getBusinessAddress());
+        assertFalse(initializer.refreshDemoIdentity(first, type));
+        second.setStylerId("REAL123");
+        second.setFirstname("Demo");
+        second.setBusinessName("Demo custom business");
+        assertFalse(initializer.refreshDemoIdentity(second, type));
+    }
+
+    @Test
+    void eachDemoCategoryHasFiveDistinctStablePhotosAndKeepsUploads() {
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        for (String category : List.of("Barber", "Eyelash Technician", "Makeup Artist", "Nail Technician", "Hairstylist")) {
+            Set<String> photos = new HashSet<>();
+            for (int ordinal = 1; ordinal <= 5; ordinal++) {
+                StylerEntity demo = initializer.demoStylerFor(serviceType(1, category), ordinal);
+                assertNotNull(demo.getProfileImageUrl());
+                photos.add(demo.getProfileImageUrl());
+                String original = demo.getProfileImageUrl();
+                assertFalse(initializer.refreshDemoPhoto(demo, serviceType(1, category)));
+                assertEquals(original, demo.getProfileImageUrl());
+                demo.setProfileImageUrl(null);
+                assertTrue(initializer.refreshDemoPhoto(demo, serviceType(1, category)));
+                assertEquals(original, demo.getProfileImageUrl());
+                demo.setProfileImageUrl("https://example.com/qa-upload.jpg");
+                assertFalse(initializer.refreshDemoPhoto(demo, serviceType(1, category)));
+            }
+            assertEquals(5, photos.size(), category);
+        }
+        StylerEntity qa = approvedStyler("1");
+        qa.setStylerId("QA123");
+        qa.setEmailAddress("qa@example.com");
+        assertFalse(initializer.refreshDemoPhoto(qa, serviceType(1, "Barber")));
+    }
+
+    @Test
+    void supersededSeedSampleCanRefreshWithoutOverwritingAnUpload() {
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        ServiceEntity type = serviceType(1, "Nail Technician");
+        StylerEntity demo = initializer.demoStylerFor(type, 1);
+        demo.setProfileImageUrl("/images/gallery/g-nails-1.jpg");
+        assertTrue(initializer.refreshDemoPhoto(demo, type));
+        assertEquals("/images/demo/nails-1.webp", demo.getProfileImageUrl());
+        demo.setProfileImageUrl("https://example.com/upload.jpg");
+        assertFalse(initializer.refreshDemoPhoto(demo, type));
+        assertEquals("https://example.com/upload.jpg", demo.getProfileImageUrl());
+    }
+
+    @Test
+    void seededSchedulesCoverEveryDayWithBroadVariedHoursAndPreserveCustomShifts() {
+        AvailabilityRepo availability = mock(AvailabilityRepo.class);
+        List<AvailabilityEntity> stored = new ArrayList<>();
+        AvailabilityEntity custom = new AvailabilityEntity();
+        custom.setStylerId("DEMO1234"); custom.setDayOfWeek("1");
+        custom.setStartTime("11:00"); custom.setEndTime("21:00"); stored.add(custom);
+        AvailabilityEntity legacy = new AvailabilityEntity();
+        legacy.setStylerId("DEMO1234"); legacy.setDayOfWeek("2");
+        legacy.setStartTime("10:00"); legacy.setEndTime("17:00"); stored.add(legacy);
+        when(availability.findByStylerId("DEMO1234")).thenReturn(stored);
+        when(availability.saveAll(any())).thenAnswer(invocation -> {
+            List<AvailabilityEntity> rows = invocation.getArgument(0);
+            for (AvailabilityEntity row : rows) if (!stored.contains(row)) stored.add(row);
+            return rows;
+        });
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availability);
+        StylerEntity demo = initializer.demoStylerFor(serviceType(1, "Nail Technician"), 1);
+        demo.setStylerId("DEMO1234");
+        assertEquals(6, initializer.seedAvailability(demo));
+        assertEquals(7, stored.size());
+        assertEquals(Set.of("0", "1", "2", "3", "4", "5", "6"), stored.stream().map(AvailabilityEntity::getDayOfWeek).collect(java.util.stream.Collectors.toSet()));
+        assertEquals("11:00", custom.getStartTime()); assertEquals("21:00", custom.getEndTime());
+        assertTrue(stored.stream().allMatch(row -> java.time.Duration.between(java.time.LocalTime.parse(row.getStartTime()), java.time.LocalTime.parse(row.getEndTime())).toHours() >= 8));
+        assertTrue(stored.stream().map(AvailabilityEntity::getStartTime).distinct().count() > 1);
+        assertEquals(0, initializer.seedAvailability(demo));
+        StylerEntity qa = approvedStyler("1"); qa.setStylerId("DS1234");
+        assertEquals(0, initializer.seedAvailability(qa));
+    }
+
+    @Test
+    void makeupSeedUsesMakeupServicesInsteadOfHairServices() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        when(services.findAll()).thenReturn(List.of(serviceType(5, "Makeup Artist")));
+        when(stylers.findByServiceTypeId("5")).thenReturn(List.of());
+        SubServiceRepo subs = subsAlwaysMissing();
+        init(services, stylers, subs, availabilityAlwaysEmpty()).run();
+        ArgumentCaptor<SubServiceEntity> saved = ArgumentCaptor.forClass(SubServiceEntity.class);
+        verify(subs, times(25)).save(saved.capture());
+        assertTrue(saved.getAllValues().stream().allMatch(row -> row.getName().toLowerCase().contains("makeup")));
+    }
+
+    @Test
+    void locationsAreDistinctAndSpreadAcrossTheCity() {
+        Set<String> addresses = new HashSet<>();
+        for (DemoSeedContent.DemoLocation location : DemoSeedContent.LOCATIONS) {
+            assertTrue(addresses.add(location.address()));
+            // Inside Calgary's city limits.
+            assertTrue(location.latitude() > 50.84 && location.latitude() < 51.21, location.address());
+            assertTrue(location.longitude() > -114.32 && location.longitude() < -113.86, location.address());
+        }
+        assertEquals(25, addresses.size());
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        for (long type = 1; type <= 5; type++) {
+            Set<String> quadrants = new HashSet<>();
+            for (int ordinal = 1; ordinal <= 5; ordinal++) {
+                String address = initializer.demoStylerFor(serviceType(type, "Barber"), ordinal).getBusinessAddress();
+                quadrants.add(address.substring(address.lastIndexOf(' ') + 1));
+            }
+            // Each category reaches at least NW, NE, SW and SE.
+            assertTrue(quadrants.containsAll(Set.of("NW", "NE", "SW", "SE")), "type " + type + " " + quadrants);
+        }
+    }
+
+    @Test
+    void legacyDowntownPinMovesToItsOwnAddressButCustomAddressesStay() {
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        ServiceEntity type = serviceType(2, "Eyelash Technician");
+        StylerEntity legacy = initializer.demoStylerFor(type, 3);
+        legacy.setBusinessAddress("Suite 210, 102 8 Ave SW");
+        legacy.setLatitude(51.0447);
+        legacy.setLongitude(-114.0719);
+        legacy.setTimeZone(null);
+        assertTrue(initializer.refreshDemoLocation(legacy, type));
+        assertEquals(DemoContentInitializer.locationFor(type, 3).address(), legacy.getBusinessAddress());
+        assertNotEquals(51.0447, legacy.getLatitude());
+        assertEquals("America/Edmonton", legacy.getTimeZone());
+        assertFalse(initializer.refreshDemoLocation(legacy, type), "a second run changes nothing");
+
+        legacy.setBusinessAddress("Suite 300, 1 Operator Edit St SW");
+        assertFalse(initializer.refreshDemoLocation(legacy, type));
+        assertEquals("Suite 300, 1 Operator Edit St SW", legacy.getBusinessAddress());
+
+        StylerEntity qa = approvedStyler("2");
+        qa.setStylerId("DS1234");
+        qa.setBusinessAddress("Suite 210, 102 8 Ave SW");
+        assertFalse(initializer.refreshDemoLocation(qa, type));
+    }
+
+    @Test
+    void legacyMakeupHairServicesAreRenamedInPlaceSoBookingsStayValid() {
+        SubServiceRepo subs = mock(SubServiceRepo.class);
+        List<SubServiceEntity> rows = new ArrayList<>();
+        for (String name : List.of("Silk press", "Blowout", "Day makeup", "My custom look")) {
+            SubServiceEntity row = new SubServiceEntity();
+            row.setId((long) rows.size() + 1);
+            row.setStylerId("DEMO5555");
+            row.setName(name);
+            rows.add(row);
+        }
+        when(subs.findByStylerId("DEMO5555")).thenReturn(rows);
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subs, availabilityAlwaysEmpty());
+        StylerEntity artist = approvedStyler("5");
+        artist.setStylerId("DEMO5555");
+
+        // Silk press would become Day makeup, which exists, so it is skipped; Blowout becomes Bridal makeup.
+        assertEquals(1, initializer.retargetMakeupCatalogue(artist, serviceType(5, "Makeup Artist")));
+        assertEquals("Silk press", rows.get(0).getName());
+        assertEquals("Bridal makeup", rows.get(1).getName());
+        assertEquals(2L, rows.get(1).getId());
+        assertEquals("My custom look", rows.get(3).getName());
+        assertEquals(0, initializer.retargetMakeupCatalogue(artist, serviceType(1, "Nail Technician")));
+    }
+
+    @Test
+    void oldSeededReviewTextIsRewrittenWithoutTouchingScoresOrRealReviews() {
+        ReviewRepo reviews = mock(ReviewRepo.class);
+        ReviewEntity seeded = new ReviewEntity();
+        seeded.setBookingId("DEMOB4321-3");
+        seeded.setRatingScore(4);
+        seeded.setCreatedAt("01 02, 2026 20:05:00");
+        seeded.setMessage("Really happy with the result. Not a five only because parking downtown cost me fifteen minutes.");
+        ReviewEntity real = new ReviewEntity();
+        real.setBookingId("BK100");
+        real.setRatingScore(5);
+        real.setMessage("Booked late and still got her full attention. Nothing felt rushed and the finish held up for weeks.");
+        when(reviews.findByStylerId("DEMO4321")).thenReturn(List.of(seeded, real));
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(),
+                availabilityAlwaysEmpty(), appointmentsEchoingSave(), reviews, usersEchoingSave());
+        StylerEntity barber = approvedStyler("3");
+        barber.setStylerId("DEMO4321");
+        barber.setFirstname("Marcus");
+
+        assertEquals(1, initializer.refreshSeededReviews(barber, serviceType(3, "Barber")));
+        assertFalse(DemoSeedContent.LEGACY_REVIEW_MESSAGES.contains(seeded.getMessage()));
+        assertFalse(seeded.getMessage().contains("downtown"));
+        assertEquals(4, seeded.getRatingScore());
+        assertEquals("01 02, 2026 20:05:00", seeded.getCreatedAt());
+        assertTrue(real.getMessage().contains("her full attention"), "a real review is never rewritten");
+        assertEquals(0, initializer.refreshSeededReviews(barber, serviceType(3, "Barber")));
+    }
+
+    @Test
+    void reviewTextIsGenderNeutralNamesTheProfessionalAndFitsTheColumn() {
+        for (String category : List.of("nail", "lash", "barber", "makeup", "hair")) {
+            for (int rating = 3; rating <= 5; rating++) {
+                for (int key = 0; key < 40; key++) {
+                    String named = DemoSeedContent.reviewMessage(category, rating, key, "Kwame");
+                    String unnamed = DemoSeedContent.reviewMessage(category, rating, key, null);
+                    for (String text : List.of(named, unnamed)) {
+                        String padded = " " + text.toLowerCase() + " ";
+                        assertFalse(padded.matches(".*\\b(she|her|he|him|his)\\b.*"), text);
+                        assertFalse(text.contains("%s"), text);
+                        assertFalse(text.contains("—"), text);
+                        assertTrue(text.length() <= 255, text);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void aPartiallyFilledTypeIsOnlyToppedUp() {
         ServiceRepo services = mock(ServiceRepo.class);
         StylerRepo stylers = mock(StylerRepo.class);
@@ -225,9 +454,9 @@ class DemoContentInitializerTest {
         verify(stylers, times(3)).save(saved.capture());
         // business names continue the count: Studio 3, 4, 5 — never a duplicate "Studio 1"
         List<String> names = saved.getAllValues().stream().map(StylerEntity::getBusinessName).toList();
-        assertTrue(names.contains("Demo Nail Technician Studio 3"));
-        assertTrue(names.contains("Demo Nail Technician Studio 5"));
-        assertFalse(names.contains("Demo Nail Technician Studio 1"));
+        assertTrue(names.contains("Clover Nail Technician by Amara"));
+        assertTrue(names.contains("Aspen Nail Technician by Jade"));
+        assertFalse(names.contains("Willow Nail Technician by Nia"));
     }
 
     @Test
@@ -250,7 +479,7 @@ class DemoContentInitializerTest {
         // 5 stylists x 2 weekly windows each (saved as one two-slot batch per stylist)
         ArgumentCaptor<List<AvailabilityEntity>> savedSlots = ArgumentCaptor.forClass(List.class);
         verify(availability, times(5)).saveAll(savedSlots.capture());
-        assertTrue(savedSlots.getAllValues().stream().allMatch(slots -> slots.size() == 2));
+        assertTrue(savedSlots.getAllValues().stream().allMatch(slots -> slots.size() == 7));
     }
 
     @Test
@@ -283,7 +512,7 @@ class DemoContentInitializerTest {
 
         init(services, stylers, subs, availability).run();
 
-        // The legacy demo row is backfilled (2 services + 2 slots)...
+        // The legacy demo row is backfilled (2 services + a 7-day week)...
         ArgumentCaptor<SubServiceEntity> savedServices = ArgumentCaptor.forClass(SubServiceEntity.class);
         verify(subs, times(2)).save(savedServices.capture());
         ArgumentCaptor<List<AvailabilityEntity>> savedSlots = ArgumentCaptor.forClass(List.class);
@@ -330,10 +559,16 @@ class DemoContentInitializerTest {
 
         ArgumentCaptor<StylerEntity> saved = ArgumentCaptor.forClass(StylerEntity.class);
         verify(stylers, times(5)).save(saved.capture());
+        Set<String> addresses = new HashSet<>();
         for (StylerEntity demo : saved.getAllValues()) {
             assertTrue(demo.getBusinessAddress() != null && !demo.getBusinessAddress().isEmpty());
-            // The address stays put on a restart, so a saved booking never moves.
-            assertEquals(demo.getBusinessAddress(), DemoContentInitializer.demoAddressFor(demo.getStylerId()));
+            assertTrue(addresses.add(demo.getBusinessAddress()), "each professional needs their own address");
+            DemoSeedContent.DemoLocation location = java.util.Arrays.stream(DemoSeedContent.LOCATIONS)
+                    .filter(l -> l.address().equals(demo.getBusinessAddress())).findFirst().orElseThrow();
+            // The map pin matches the street address, not one shared downtown point.
+            assertEquals(location.latitude(), demo.getLatitude());
+            assertEquals(location.longitude(), demo.getLongitude());
+            assertEquals("America/Edmonton", demo.getTimeZone());
         }
     }
 

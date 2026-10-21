@@ -273,7 +273,8 @@ services:
       SPRING_REDIS_DATABASE: "1"
       # Set DEMO_READ_ONLY=false temporarily for UI payment QA; true closes it again.
       APP_DEMO_READ_ONLY: ${DEMO_READ_ONLY:-true}
-      APP_DEMO_SEED: "false"
+      # One-time seed/legacy identity refresh on the demo database only.
+      APP_DEMO_SEED: ${DEMO_SEED:-false}
       APP_ENV: demo
       CORS_ALLOWED_ORIGINS: ${DEMO_CORS_ALLOWED_ORIGINS:-https://demo.rapidstylers.ca}
       NEWSLETTER_API_URL: https://api-demo.rapidstylers.ca

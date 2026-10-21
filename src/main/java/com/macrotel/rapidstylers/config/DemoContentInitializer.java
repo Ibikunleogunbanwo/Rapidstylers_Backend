@@ -132,30 +132,6 @@ public class DemoContentInitializer implements CommandLineRunner {
         {38, 44, 18}   // mixed record, still worth booking
     };
 
-    /** Written from a client's side, about the appointment rather than the marketing. */
-    private static final String[] DEMO_REVIEWS_FIVE = {
-        "Booked late and still got her full attention. Nothing felt rushed and the finish held up for weeks.",
-        "She asked what I actually wanted before touching anything, then said honestly what would work and what would not.",
-        "Second visit. Same care as the first, and she remembered exactly how I like it finished.",
-        "Calm space, no upselling, and I left with something I can actually keep up at home.",
-        "Walked in with a photo and a bad experience from another place. She fixed it and explained every step.",
-        "Ran a little over because she was fixing something nobody else had noticed. Worth the extra ten minutes.",
-        "My daughter is picky about everything and she left happy. That is the whole review.",
-        "First time I have booked the next appointment before leaving instead of thinking about it for a week."
-    };
-
-    private static final String[] DEMO_REVIEWS_FOUR = {
-        "Really happy with the result. Not a five only because parking downtown cost me fifteen minutes.",
-        "Good work at a fair price. We started about ten minutes late, which she warned me about by text.",
-        "She clearly knows the craft and took her time. I would have liked a bit more guidance on aftercare.",
-        "Solid visit start to finish. The space is small, so it gets warm in the afternoon."
-    };
-
-    private static final String[] DEMO_REVIEWS_THREE = {
-        "The work was good, but we ran well past the time I booked, so I was late getting back to work.",
-        "Neat work and friendly, though I asked for a shorter finish and it came out longer than we agreed."
-    };
-
     /** "MM dd, yyyy HH:mm:ss" — the format every other row in the app is stamped with. */
     private static final DateTimeFormatter DEMO_TIMESTAMP = DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss");
 
@@ -178,35 +154,13 @@ public class DemoContentInitializer implements CommandLineRunner {
         new String[]{"Blowout", "65.00", "60"},
         new String[]{"Day makeup", "75.00", "60"},
         new String[]{"Bridal makeup", "150.00", "120"},
+        new String[]{"Soft glam makeup", "95.00", "75"},
+        new String[]{"Event makeup", "110.00", "90"},
+        new String[]{"Makeup lesson", "90.00", "90"},
         new String[]{"Braids", "120.00", "180"},
         new String[]{"Loc retwist", "80.00", "90"},
         new String[]{"Natural hair styling", "90.00", "90"}
     );
-
-    /**
-     * Where the sample professionals practise. Real Calgary commercial blocks
-     * with invented suites, so a booking that says "visit the stylist" can name
-     * a place. Picked per row from the row's own id, so a restart leaves every
-     * address exactly where it was rather than shuffling them.
-     */
-    static final String[] DEMO_ADDRESSES = {
-        "Suite 210, 102 8 Ave SW",
-        "Unit 4, 1414 8 St SW",
-        "Suite 320, 1100 1 St SE",
-        "Unit 12, 3510 17 Ave SW",
-        "Suite 200, 1301 16 Ave NW",
-        "Unit 8, 404 10 St NW",
-        "Suite 410, 888 3 St SW",
-        "Unit 3, 1935 37 St SW",
-        "Suite 150, 6005 3 St SW",
-        "Unit 20, 4800 16 Ave NW",
-        "Suite 220, 222 7 St SW",
-        "Unit 14, 2116 33 Ave SW",
-        "Suite 305, 924 17 Ave SW",
-        "Unit 9, 5009 16 Ave NW",
-        "Suite 180, 110 9 Ave SW",
-        "Unit 6, 1010 1 Ave NE"
-    };
 
     /**
      * The scores for one profile's reviews: a believable mix, deterministic per
@@ -299,7 +253,7 @@ public class DemoContentInitializer implements CommandLineRunner {
                     createdStylists++;
                     createdServices += seedCatalogue(demo, serviceType);
                     createdSlots += seedAvailability(demo);
-                    History history = seedHistory(demo);
+                    History history = seedHistory(demo, serviceType);
                     seededAppointments += history.appointments();
                     seededReviews += history.reviews();
                 }
@@ -309,6 +263,14 @@ public class DemoContentInitializer implements CommandLineRunner {
                 // professional's profile is never touched by this seeder.
                 for (StylerEntity legacy : approved) {
                     if (legacy.getStylerId() != null && legacy.getStylerId().startsWith("DEMO")) {
+                        boolean identityChanged = refreshDemoIdentity(legacy, serviceType);
+                        boolean photoChanged = refreshDemoPhoto(legacy, serviceType);
+                        boolean locationChanged = refreshDemoLocation(legacy, serviceType);
+                        if (identityChanged || photoChanged || locationChanged) stylerRepo.save(legacy);
+                        // A makeup artist seeded before makeup had its own menu was
+                        // given hair services; rename those in place so existing
+                        // bookings keep pointing at a valid service.
+                        retargetMakeupCatalogue(legacy, serviceType);
                         createdServices += seedCatalogue(legacy, serviceType);
                         createdSlots += seedAvailability(legacy);
                         // Rows seeded before addresses existed would keep showing
@@ -317,7 +279,8 @@ public class DemoContentInitializer implements CommandLineRunner {
                         // Same idea for the history: a sample profile with no
                         // reviews reads as an abandoned listing rather than a
                         // professional anyone has hired.
-                        History history = seedHistory(legacy);
+                        refreshSeededReviews(legacy, serviceType);
+                        History history = seedHistory(legacy, serviceType);
                         seededAppointments += history.appointments();
                         seededReviews += history.reviews();
                     }
@@ -346,11 +309,10 @@ public class DemoContentInitializer implements CommandLineRunner {
     StylerEntity demoStylerFor(ServiceEntity serviceType, int ordinal) {
         String name = serviceType.getServiceName() == null ? "Professional" : serviceType.getServiceName();
         StylerEntity demo = new StylerEntity();
-        demo.setFirstname("Demo");
-        demo.setLastname(name);
-        demo.setBusinessName("Demo " + name + " Studio " + ordinal);
+        applyDemoIdentity(demo, serviceType, ordinal);
         demo.setEmailAddress("demo." + name.toLowerCase().replaceAll("[^a-z0-9]+", "") + ordinal
                 + "@" + DEMO_EMAIL_DOMAIN);
+        demo.setProfileImageUrl(demoPhotoFor(serviceType, ordinal));
         demo.setPassword(UNMATCHABLE_PASSWORD_HASH);
         demo.setServiceTypeId(String.valueOf(serviceType.getId()));
         demo.setCountry("Canada");
@@ -359,19 +321,14 @@ public class DemoContentInitializer implements CommandLineRunner {
         // vendor's zone like real rows do.
         demo.setTimeZone("America/Edmonton");
         demo.setCity("Calgary");
-        // Downtown Calgary coordinates: with them, the seeded rows also answer
-        // nearby searches, not just category tabs. Relevant only when the
-        // operator enables APP_DEMO_SEED.
-        demo.setLatitude(51.0447);
-        demo.setLongitude(-114.0719);
-        demo.setDescription("Sample professional so this category always shows a full row. "
-                + "Book a real professional for an actual appointment.");
         demo.setInsertedDt(String.valueOf(LocalDate.now()));
         demo.setStatus("0");
         demo.setIsOnline("0"); // the app's "Online" flag (0 = online)
         String stylerId = mintDemoStylerId();
         demo.setStylerId(stylerId);
-        demo.setBusinessAddress(demoAddressFor(stylerId));
+        // Each profile gets its own spot in the city, so nearby search and
+        // travel fees behave like a real spread-out marketplace.
+        applyLocation(demo, locationFor(serviceType, ordinal));
         demo.setVerificationStatus("APPROVED");
         // Completed-profile mimicry: public search shows only bookable
         // professionals (approved + Connect COMPLETE when payments are live),
@@ -382,14 +339,146 @@ public class DemoContentInitializer implements CommandLineRunner {
         return demo;
     }
 
+    private static final String[][] PROFESSIONAL_NAMES = {
+        {"Nia", "Campbell"}, {"Priya", "Mehta"}, {"Amara", "Cole"},
+        {"Sophie", "Laurent"}, {"Jade", "Williams"}, {"Marcus", "Bennett"},
+        {"Daniel", "Reyes"}, {"Kwame", "Mensah"}, {"Ethan", "Brooks"},
+        {"Andre", "Clarke"}, {"Zara", "Ahmed"}, {"Chloe", "Martin"},
+        {"Imani", "Reed"}, {"Leila", "Hassan"}, {"Naomi", "Chen"},
+        {"Aisha", "Okafor"}, {"Maya", "Patel"}, {"Elena", "Rossi"},
+        {"Simone", "James"}, {"Tessa", "Nguyen"}, {"Olivia", "Park"},
+        {"Gabrielle", "Dubois"}, {"Farah", "Ali"}, {"Keisha", "Morgan"},
+        {"Isabelle", "Tran"}
+    };
+    private static final String[] STUDIO_NAMES = {"Willow", "Juniper", "Clover", "Sage", "Aspen"};
+    private static final String[] APPROACHES = {
+        "A relaxed appointment with time to talk through your preferred look and daily routine.",
+        "Thoughtful preparation, careful finishing and practical aftercare tips for your next visit.",
+        "Personal appointments shaped around your style, with a consultation before getting started.",
+        "An unhurried service with attention to detail, comfort and a finish that suits you.",
+        "A welcoming space to explore a fresh look or maintain a style you already love."
+    };
+
+    private void applyDemoIdentity(StylerEntity styler, ServiceEntity type, int ordinal) {
+        String category = type.getServiceName() == null ? "Beauty" : type.getServiceName();
+        int slot = Math.floorMod(ordinal - 1, SHOWROOM_PER_TYPE);
+        int categoryIndex = Math.floorMod(type.getId() == null ? 0 : type.getId().intValue() - 1, 5);
+        String[] name = PROFESSIONAL_NAMES[categoryIndex * SHOWROOM_PER_TYPE + slot];
+        styler.setFirstname(name[0]);
+        styler.setLastname(name[1]);
+        styler.setBusinessName(STUDIO_NAMES[slot] + " " + category + " by " + name[0]);
+        styler.setDescription("I'm " + name[0] + ", a Calgary-based " + category.toLowerCase(java.util.Locale.ROOT)
+                + " professional. " + APPROACHES[slot]
+                + " Browse my service menu for appointment lengths and pricing. "
+                + "Fictional demo profile for exploring RapidStylers; not a real business.");
+    }
+
+    /** Refresh only untouched legacy seed identities, never customer-created accounts. */
+    boolean refreshDemoIdentity(StylerEntity styler, ServiceEntity type) {
+        if (styler.getStylerId() == null || !styler.getStylerId().startsWith("DEMO")
+                || styler.getEmailAddress() == null
+                || !styler.getEmailAddress().endsWith("@" + DEMO_EMAIL_DOMAIN)
+                || !"Demo".equals(styler.getFirstname())
+                || styler.getBusinessName() == null || !styler.getBusinessName().startsWith("Demo ")) return false;
+        String business = styler.getBusinessName();
+        int ordinal;
+        try { ordinal = Integer.parseInt(business.substring(business.lastIndexOf(' ') + 1)); }
+        catch (NumberFormatException ex) { ordinal = Math.floorMod(styler.getStylerId().hashCode(), SHOWROOM_PER_TYPE) + 1; }
+        applyDemoIdentity(styler, type, ordinal);
+        return true;
+    }
+
+    /** Relative static URLs work on both frontend hosts; samples are not uploaded portfolios. */
+    private String demoPhotoFor(ServiceEntity type, int ordinal) {
+        String category = type.getServiceName() == null ? "" : type.getServiceName().toLowerCase(java.util.Locale.ROOT);
+        String[] photos;
+        if (category.contains("nail")) photos = new String[]{"demo/nails-1.webp", "demo/nails-2.webp", "gallery/g-nails-6.jpg", "demo/nails-3.webp", "demo/nails-4.webp"};
+        else if (category.contains("lash")) photos = new String[]{"demo/lashes-1.webp", "demo/lashes-2.webp", "demo/lashes-3.webp", "demo/lashes-4.webp", "demo/lashes-5.webp"};
+        else if (category.contains("barber")) photos = new String[]{"gallery/g-buzz-cut-1.jpg", "gallery/g-buzz-cut-2.jpg", "gallery/g-buzz-cut-3.jpg", "demo/barber-4.webp", "demo/barber-5.webp"};
+        else if (category.contains("makeup")) photos = new String[]{"gallery/g-makeup-1.jpg", "gallery/g-makeup-2.jpg", "gallery/g-makeup-3.jpg", "demo/makeup-4.webp", "demo/makeup-5.webp"};
+        else photos = new String[]{"gallery/g-natural-hair-4.jpg", "gallery/g-natural-hair-2.jpg", "gallery/g-natural-hair-3.jpg", "gallery/g-locs-2.jpg", "gallery/g-braids-5.jpg"};
+        return "/images/" + photos[Math.floorMod(ordinal - 1, photos.length)];
+    }
+
+    boolean refreshDemoPhoto(StylerEntity styler, ServiceEntity type) {
+        if (styler.getStylerId() == null || !styler.getStylerId().startsWith("DEMO")
+                || styler.getEmailAddress() == null || !styler.getEmailAddress().endsWith("@" + DEMO_EMAIL_DOMAIN)) return false;
+        String currentPhoto = styler.getProfileImageUrl();
+        boolean supersededSample = List.of("/images/gallery/g-nails-1.jpg", "/images/gallery/g-nails-3.jpg",
+                "/images/gallery/g-nails-2.jpg", "/images/gallery/g-nails-5.jpg",
+                "/images/gallery/g-lashes-2.jpg", "/images/gallery/g-lashes-4.jpg", "/images/gallery/g-lashes-5.jpg",
+                "/images/gallery/g-natural-hair-1.jpg").contains(currentPhoto == null ? "" : currentPhoto);
+        if (currentPhoto != null && !currentPhoto.isBlank() && !supersededSample) return false;
+        styler.setProfileImageUrl(demoPhotoFor(type, seedOrdinal(styler)));
+        return true;
+    }
+
+    /** True only for rows this seeder created: DEMO id and the seed-only email domain. */
+    private static boolean isSeedOwned(StylerEntity styler) {
+        return styler.getStylerId() != null && styler.getStylerId().startsWith("DEMO")
+                && styler.getEmailAddress() != null && styler.getEmailAddress().endsWith("@" + DEMO_EMAIL_DOMAIN);
+    }
+
+    /** The seed position (1-5) recorded in a seeded email such as demo.barber3@...; id-based if absent. */
+    private static int seedOrdinal(StylerEntity styler) {
+        String local = styler.getEmailAddress() == null ? "" : styler.getEmailAddress().split("@", 2)[0];
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d+)$").matcher(local);
+        if (matcher.find()) {
+            try { return Integer.parseInt(matcher.group(1)); }
+            catch (NumberFormatException ignored) { /* Older malformed seeds keep a stable ID-based sample. */ }
+        }
+        return Math.floorMod(String.valueOf(styler.getStylerId()).hashCode(), SHOWROOM_PER_TYPE) + 1;
+    }
+
+    /** One spot per category and seed position, so the five in a category sit in different parts of the city. */
+    static DemoSeedContent.DemoLocation locationFor(ServiceEntity type, int ordinal) {
+        int slot = Math.floorMod(ordinal - 1, SHOWROOM_PER_TYPE);
+        int categoryIndex = Math.floorMod(type.getId() == null ? 0 : type.getId().intValue() - 1, 5);
+        return DemoSeedContent.LOCATIONS[categoryIndex * SHOWROOM_PER_TYPE + slot];
+    }
+
+    private static void applyLocation(StylerEntity styler, DemoSeedContent.DemoLocation location) {
+        styler.setBusinessAddress(location.address());
+        styler.setLatitude(location.latitude());
+        styler.setLongitude(location.longitude());
+    }
+
     /**
-     * The sample address for a row, chosen from its id. Deterministic on
-     * purpose: the same row keeps the same address across restarts, so a
-     * customer who saved a booking never finds it moved.
+     * Moves a seeded profile off the old shared downtown pin onto its own
+     * address and map point, and makes sure it reads Calgary hours. Only
+     * touches seed-owned rows whose address is blank or still one the earlier
+     * seeder handed out, so an operator's own edit is never overwritten.
      */
-    static String demoAddressFor(String stylerId) {
+    boolean refreshDemoLocation(StylerEntity styler, ServiceEntity type) {
+        if (!isSeedOwned(styler)) return false;
+        boolean changed = false;
+        if (!"America/Edmonton".equals(styler.getTimeZone())) {
+            styler.setTimeZone("America/Edmonton");
+            changed = true;
+        }
+        String current = styler.getBusinessAddress();
+        boolean seedAddress = current == null || current.isBlank() || DemoSeedContent.LEGACY_ADDRESSES.contains(current);
+        if (!seedAddress) return changed;
+        DemoSeedContent.DemoLocation target = locationFor(type, seedOrdinal(styler));
+        if (target.address().equals(current)
+                && Double.valueOf(target.latitude()).equals(styler.getLatitude())
+                && Double.valueOf(target.longitude()).equals(styler.getLongitude())) return changed;
+        applyLocation(styler, target);
+        return true;
+    }
+
+    /**
+     * Fallback spot for a DEMO row that carries no seed email to place it by,
+     * chosen from its id. Deterministic on purpose: the same row keeps the same
+     * address across restarts, so a customer who saved a booking never finds it moved.
+     */
+    static DemoSeedContent.DemoLocation demoLocationFor(String stylerId) {
         String key = stylerId == null ? "" : stylerId;
-        return DEMO_ADDRESSES[Math.floorMod(key.hashCode(), DEMO_ADDRESSES.length)];
+        return DemoSeedContent.LOCATIONS[Math.floorMod(key.hashCode(), DemoSeedContent.LOCATIONS.length)];
+    }
+
+    static String demoAddressFor(String stylerId) {
+        return demoLocationFor(stylerId).address();
     }
 
     /**
@@ -402,7 +491,7 @@ public class DemoContentInitializer implements CommandLineRunner {
         if (existing != null && !existing.trim().isEmpty()) {
             return 0;
         }
-        styler.setBusinessAddress(demoAddressFor(styler.getStylerId()));
+        applyLocation(styler, demoLocationFor(styler.getStylerId()));
         stylerRepo.save(styler);
         return 1;
     }
@@ -431,7 +520,7 @@ public class DemoContentInitializer implements CommandLineRunner {
      * reputation. Idempotent: a row that already has any appointment or review is
      * left completely alone, so real history is never added to or rewritten.</p>
      */
-    private History seedHistory(StylerEntity styler) {
+    private History seedHistory(StylerEntity styler, ServiceEntity serviceType) {
         String stylerId = styler.getStylerId();
         if (stylerId == null) {
             return History.NONE;
@@ -468,7 +557,7 @@ public class DemoContentInitializer implements CommandLineRunner {
             bookAppointmentRepo.save(appointment);
 
             if (i >= unreviewed) {
-                reviewRepo.save(reviewFor(styler, client, appointment, date, seed + i, scores[i - unreviewed]));
+                reviewRepo.save(reviewFor(styler, serviceType, client, appointment, date, seed + i, scores[i - unreviewed]));
                 reviews++;
             }
         }
@@ -516,7 +605,7 @@ public class DemoContentInitializer implements CommandLineRunner {
     }
 
     /** The review a client left after that visit. */
-    private ReviewEntity reviewFor(StylerEntity styler, UserEntity client,
+    private ReviewEntity reviewFor(StylerEntity styler, ServiceEntity serviceType, UserEntity client,
                                    BookAppointmentEntity appointment, LocalDate date, int key, int rating) {
         ReviewEntity review = new ReviewEntity();
         review.setStylerId(styler.getStylerId());
@@ -525,17 +614,38 @@ public class DemoContentInitializer implements CommandLineRunner {
         // Full name, the way createStylerReview records a real reviewer.
         review.setUserName((client.getFirstname() + " " + client.getLastname()).trim());
         review.setRatingScore(rating);
-        review.setMessage(reviewMessage(rating, key));
+        review.setMessage(DemoSeedContent.reviewMessage(
+                DemoSeedContent.categoryOf(serviceType.getServiceName()), rating, key, styler.getFirstname()));
         review.setModerationStatus("APPROVED");
         review.setCreatedAt(date.plusDays(1L + Math.floorMod(key, 3)).atTime(20, 5).format(DEMO_TIMESTAMP));
         return review;
     }
 
-    private String reviewMessage(int rating, int key) {
-        String[] pool = rating >= 5 ? DEMO_REVIEWS_FIVE
-                : rating == 4 ? DEMO_REVIEWS_FOUR
-                : DEMO_REVIEWS_THREE;
-        return pool[Math.floorMod(key, pool.length)];
+    /**
+     * Rewrites seeded reviews that still carry the earlier seeder's text, which
+     * assumed every professional was a woman working downtown. Keeps the score,
+     * dates, reviewer and booking; only the words change. Real reviews, and
+     * seeded ones already rewritten, never match and are left alone.
+     */
+    int refreshSeededReviews(StylerEntity styler, ServiceEntity serviceType) {
+        String stylerId = styler.getStylerId();
+        if (stylerId == null || !stylerId.startsWith("DEMO")) return 0;
+        int seed = Math.floorMod(stylerId.hashCode(), 10_000);
+        String category = DemoSeedContent.categoryOf(serviceType.getServiceName());
+        int rewritten = 0;
+        for (ReviewEntity review : reviewRepo.findByStylerId(stylerId)) {
+            String bookingId = review.getBookingId();
+            if (bookingId == null || !bookingId.startsWith("DEMOB")
+                    || !DemoSeedContent.LEGACY_REVIEW_MESSAGES.contains(review.getMessage())) continue;
+            int index;
+            try { index = Integer.parseInt(bookingId.substring(bookingId.lastIndexOf('-') + 1)); }
+            catch (NumberFormatException ex) { index = Math.floorMod(bookingId.hashCode(), 100); }
+            review.setMessage(DemoSeedContent.reviewMessage(category, review.getRatingScore(), seed + index,
+                    styler.getFirstname()));
+            reviewRepo.save(review);
+            rewritten++;
+        }
+        return rewritten;
     }
 
     /**
@@ -614,6 +724,38 @@ public class DemoContentInitializer implements CommandLineRunner {
         return created;
     }
 
+    /**
+     * Renames the hair services an earlier seed gave a makeup artist into makeup
+     * services, in place: same row and id, so every booking and review that
+     * points at it stays valid. Skips a rename that would duplicate a service
+     * the profile already has. Only for DEMO rows in a makeup category.
+     */
+    int retargetMakeupCatalogue(StylerEntity styler, ServiceEntity serviceType) {
+        String stylerId = styler.getStylerId();
+        if (stylerId == null || !stylerId.startsWith("DEMO")
+                || !"makeup".equals(catalogueKeyFor(serviceType.getServiceName()))) return 0;
+        List<SubServiceEntity> rows = subServiceRepo.findByStylerId(stylerId);
+        if (rows == null || rows.isEmpty()) return 0;
+        List<String> hairNames = DEMO_SERVICES.stream().filter(e -> matches("hairstylist", e[0])).map(e -> e[0]).toList();
+        List<String[]> makeup = DEMO_SERVICES.stream().filter(e -> matches("makeup", e[0])).toList();
+        java.util.Set<String> names = new java.util.HashSet<>();
+        rows.forEach(row -> names.add(row.getName()));
+        int renamed = 0;
+        for (SubServiceEntity row : rows) {
+            int index = hairNames.indexOf(row.getName());
+            if (index < 0) continue;
+            String[] target = makeup.get(index % makeup.size());
+            if (names.contains(target[0])) continue;
+            names.add(target[0]);
+            row.setName(target[0]);
+            row.setPrice(target[1]);
+            row.setDurationMinutes(Integer.valueOf(target[2]));
+            subServiceRepo.save(row);
+            renamed++;
+        }
+        return renamed;
+    }
+
     /** Picks which catalogue words apply by matching the type name's words. */
     private String catalogueKeyFor(String serviceTypeName) {
         String name = String.valueOf(serviceTypeName == null ? "" : serviceTypeName).toLowerCase();
@@ -634,6 +776,7 @@ public class DemoContentInitializer implements CommandLineRunner {
         switch (catalogueKey) {
             case "nail":  return lower.contains("manicure") || lower.contains("pedicure");
             case "lash":  return lower.contains("lash");
+            case "makeup": return lower.contains("makeup");
             case "barber": case "buzz": case "fade": case "clipper":
                           return lower.contains("fade") || lower.contains("beard") || lower.contains("haircut");
             default:      return lower.contains("press") || lower.contains("blowout")
@@ -643,29 +786,47 @@ public class DemoContentInitializer implements CommandLineRunner {
     }
 
     /**
-     * Gives a fresh demo stylist two weekly windows (Tue 10:00-17:00,
-     * Sat 09:00-16:00) so the booking modal shows open days. Idempotent via the
-     * per-styler read before insert.
+     * Opens a demo stylist's calendar Monday to Sunday with broad hours that
+     * differ from one stylist to the next (see {@link DemoSeedContent#hoursFor}).
+     * Only fills days that have no hours yet, and widens the two short windows
+     * the earlier seeder wrote (Tue 10-5, Sat 9-4); any other shift, such as one
+     * set up for QA, is kept exactly as it is. Bookings are untouched. DEMO rows
+     * only, and idempotent: a fully open week writes nothing.
      */
-    private int seedAvailability(StylerEntity styler) {
-        if (!availabilityRepo.findByStylerId(styler.getStylerId()).isEmpty()) {
+    int seedAvailability(StylerEntity styler) {
+        String stylerId = styler.getStylerId();
+        if (stylerId == null || !stylerId.startsWith("DEMO")) {
             return 0;
         }
+        List<AvailabilityEntity> changed = new ArrayList<>();
+        java.util.Set<String> coveredDays = new java.util.HashSet<>();
+        for (AvailabilityEntity row : availabilityRepo.findByStylerId(stylerId)) {
+            String day = row.getDayOfWeek();
+            if (day == null) continue;
+            coveredDays.add(day);
+            if (DemoSeedContent.isLegacySeedWindow(day, row.getStartTime(), row.getEndTime())) {
+                String[] hours = DemoSeedContent.hoursFor(stylerId, Integer.parseInt(day));
+                row.setStartTime(hours[0]);
+                row.setEndTime(hours[1]);
+                changed.add(row);
+            }
+        }
         String today = String.valueOf(LocalDate.now());
-        AvailabilityEntity tuesday = new AvailabilityEntity();
-        tuesday.setStylerId(styler.getStylerId());
-        tuesday.setDayOfWeek("2");
-        tuesday.setStartTime("10:00");
-        tuesday.setEndTime("17:00");
-        tuesday.setCreatedAt(today);
-        AvailabilityEntity saturday = new AvailabilityEntity();
-        saturday.setStylerId(styler.getStylerId());
-        saturday.setDayOfWeek("6");
-        saturday.setStartTime("09:00");
-        saturday.setEndTime("16:00");
-        saturday.setCreatedAt(today);
-        availabilityRepo.saveAll(List.of(tuesday, saturday));
-        return 2;
+        for (int day = 0; day <= 6; day++) {
+            if (coveredDays.contains(String.valueOf(day))) continue;
+            String[] hours = DemoSeedContent.hoursFor(stylerId, day);
+            AvailabilityEntity slot = new AvailabilityEntity();
+            slot.setStylerId(stylerId);
+            slot.setDayOfWeek(String.valueOf(day));
+            slot.setStartTime(hours[0]);
+            slot.setEndTime(hours[1]);
+            slot.setCreatedAt(today);
+            changed.add(slot);
+        }
+        if (!changed.isEmpty()) {
+            availabilityRepo.saveAll(changed);
+        }
+        return changed.size();
     }
 
     /** DEMO + 4 random digits — same shape/length as organic DS-prefixed ids, but greppable as seed data. */
