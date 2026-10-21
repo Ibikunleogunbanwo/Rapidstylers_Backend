@@ -241,15 +241,24 @@ public class DemoContentInitializer implements CommandLineRunner {
             int filledAddresses = 0;
             int seededAppointments = 0;
             int seededReviews = 0;
+            int refreshedProfiles = 0;
+            int rewrittenReviews = 0;
             for (ServiceEntity serviceType : serviceTypes) {
                 String typeId = String.valueOf(serviceType.getId());
                 List<StylerEntity> approved = stylerRepo.findByServiceTypeId(typeId).stream()
                         .filter(s -> "APPROVED".equals(s.getVerificationStatus()))
                         .toList();
+                // Every seeded row in a category gets its own seat (1-5), so no two
+                // sample professionals share a name, photo or address.
+                java.util.Map<String, Integer> seats = assignSeats(approved);
+                java.util.Deque<Integer> freeSeats = freeSeats(seats);
+                // Real professionals in the category stand in for the lowest
+                // free seats, so new rows continue the count instead of reusing it.
+                for (int skip = approved.size() - seats.size(); skip > 0 && !freeSeats.isEmpty(); skip--) freeSeats.poll();
                 int missing = SHOWROOM_PER_TYPE - approved.size();
                 for (int i = 0; i < missing; i++) {
-                    StylerEntity demo = stylerRepo.save(
-                            demoStylerFor(serviceType, approved.size() + i + 1));
+                    int seat = freeSeats.isEmpty() ? approved.size() + i + 1 : freeSeats.poll();
+                    StylerEntity demo = stylerRepo.save(demoStylerFor(serviceType, seat));
                     createdStylists++;
                     createdServices += seedCatalogue(demo, serviceType);
                     createdSlots += seedAvailability(demo);
@@ -263,10 +272,15 @@ public class DemoContentInitializer implements CommandLineRunner {
                 // professional's profile is never touched by this seeder.
                 for (StylerEntity legacy : approved) {
                     if (legacy.getStylerId() != null && legacy.getStylerId().startsWith("DEMO")) {
-                        boolean identityChanged = refreshDemoIdentity(legacy, serviceType);
-                        boolean photoChanged = refreshDemoPhoto(legacy, serviceType);
-                        boolean locationChanged = refreshDemoLocation(legacy, serviceType);
-                        if (identityChanged || photoChanged || locationChanged) stylerRepo.save(legacy);
+                        Integer seat = seats.get(legacy.getStylerId());
+                        int ordinal = seat == null ? legacyOrdinal(legacy) : seat;
+                        boolean identityChanged = refreshDemoIdentity(legacy, serviceType, ordinal);
+                        boolean photoChanged = refreshDemoPhoto(legacy, serviceType, ordinal);
+                        boolean locationChanged = refreshDemoLocation(legacy, serviceType, ordinal);
+                        if (identityChanged || photoChanged || locationChanged) {
+                            stylerRepo.save(legacy);
+                            refreshedProfiles++;
+                        }
                         // A makeup artist seeded before makeup had its own menu was
                         // given hair services; rename those in place so existing
                         // bookings keep pointing at a valid service.
@@ -279,13 +293,16 @@ public class DemoContentInitializer implements CommandLineRunner {
                         // Same idea for the history: a sample profile with no
                         // reviews reads as an abandoned listing rather than a
                         // professional anyone has hired.
-                        refreshSeededReviews(legacy, serviceType);
+                        rewrittenReviews += refreshSeededReviews(legacy, serviceType);
                         History history = seedHistory(legacy, serviceType);
                         seededAppointments += history.appointments();
                         seededReviews += history.reviews();
                     }
                 }
             }
+            // Always logged on an enabled run, so the operator can see it worked.
+            log.info("Demo seed refresh done: {} profile(s) updated, {} review(s) reworded, {} availability slot(s) written",
+                    refreshedProfiles, rewrittenReviews, createdSlots);
             if (filledAddresses > 0) {
                 log.info("Filled in a demo street address for {} sample stylist(s) that had none", filledAddresses);
             }
@@ -375,24 +392,100 @@ public class DemoContentInitializer implements CommandLineRunner {
         styler.setDescription(bio.length() <= DESCRIPTION_MAX ? bio : bio.substring(0, DESCRIPTION_MAX));
     }
 
-    /** Refresh only untouched legacy seed identities, never customer-created accounts. */
+    /** Refresh only untouched seed identities, never customer-created accounts. */
     boolean refreshDemoIdentity(StylerEntity styler, ServiceEntity type) {
-        if (styler.getStylerId() == null || !styler.getStylerId().startsWith("DEMO")
-                || styler.getEmailAddress() == null
-                || !styler.getEmailAddress().endsWith("@" + DEMO_EMAIL_DOMAIN)
-                || !"Demo".equals(styler.getFirstname())
-                || styler.getBusinessName() == null || !styler.getBusinessName().startsWith("Demo ")) return false;
-        String business = styler.getBusinessName();
-        int ordinal;
-        try { ordinal = Integer.parseInt(business.substring(business.lastIndexOf(' ') + 1)); }
-        catch (NumberFormatException ex) { ordinal = Math.floorMod(styler.getStylerId().hashCode(), SHOWROOM_PER_TYPE) + 1; }
+        return refreshDemoIdentity(styler, type, legacyOrdinal(styler));
+    }
+
+    /**
+     * Puts a seed-owned profile on the identity for its seat. Only when the
+     * current identity is one this seeder wrote (the old "Demo ..." names or a
+     * generated "Studio Category by Name"), so an operator's rename is kept.
+     */
+    boolean refreshDemoIdentity(StylerEntity styler, ServiceEntity type, int ordinal) {
+        if (!isSeedOwned(styler) || !hasSeedIdentity(styler)) return false;
+        StylerEntity target = new StylerEntity();
+        applyDemoIdentity(target, type, ordinal);
+        if (java.util.Objects.equals(target.getFirstname(), styler.getFirstname())
+                && java.util.Objects.equals(target.getLastname(), styler.getLastname())
+                && java.util.Objects.equals(target.getBusinessName(), styler.getBusinessName())
+                && java.util.Objects.equals(target.getDescription(), styler.getDescription())) return false;
         applyDemoIdentity(styler, type, ordinal);
         return true;
     }
 
+    private static boolean hasSeedIdentity(StylerEntity styler) {
+        String business = styler.getBusinessName();
+        if (business == null) return false;
+        if ("Demo".equals(styler.getFirstname()) && business.startsWith("Demo ")) return true;
+        return studioSeat(business) > 0 && business.contains(" by ");
+    }
+
+    /** 1-5 when the business name starts with one of the seeded studio names, else 0. */
+    private static int studioSeat(String businessName) {
+        if (businessName == null) return 0;
+        for (int k = 0; k < STUDIO_NAMES.length; k++) {
+            if (businessName.startsWith(STUDIO_NAMES[k] + " ")) return k + 1;
+        }
+        return 0;
+    }
+
+    /** The seat a row claims today: its studio name, the number on an old "Demo ... Studio N" name, or its email. */
+    private static int legacyOrdinal(StylerEntity styler) {
+        String business = styler.getBusinessName();
+        int studio = studioSeat(business);
+        if (studio > 0 && business.contains(" by ")) return studio;
+        if (business != null && business.startsWith("Demo ")) {
+            try { return Integer.parseInt(business.substring(business.lastIndexOf(' ') + 1)); }
+            catch (NumberFormatException ignored) { /* fall through to the email */ }
+        }
+        return seedOrdinal(styler);
+    }
+
+    /**
+     * Gives each seed-owned row in a category its own seat. A row keeps the seat
+     * it already claims when no earlier row (by id) holds it; clashing rows move
+     * to the lowest free seat. That is what stops two profiles in one category
+     * sharing a name, photo and address.
+     */
+    java.util.Map<String, Integer> assignSeats(List<StylerEntity> approved) {
+        List<StylerEntity> owned = approved.stream()
+                .filter(DemoContentInitializer::isSeedOwned)
+                .sorted(java.util.Comparator.comparing(StylerEntity::getStylerId))
+                .toList();
+        java.util.Map<String, Integer> seats = new java.util.LinkedHashMap<>();
+        java.util.Set<Integer> taken = new java.util.HashSet<>();
+        List<StylerEntity> clashing = new ArrayList<>();
+        for (StylerEntity row : owned) {
+            int seat = Math.floorMod(legacyOrdinal(row) - 1, SHOWROOM_PER_TYPE) + 1;
+            if (taken.add(seat)) seats.put(row.getStylerId(), seat);
+            else clashing.add(row);
+        }
+        for (StylerEntity row : clashing) {
+            int seat = 1;
+            while (taken.contains(seat) && seat <= SHOWROOM_PER_TYPE) seat++;
+            if (seat > SHOWROOM_PER_TYPE) seat = Math.floorMod(seats.size(), SHOWROOM_PER_TYPE) + 1;
+            taken.add(seat);
+            seats.put(row.getStylerId(), seat);
+        }
+        return seats;
+    }
+
+    private static java.util.Deque<Integer> freeSeats(java.util.Map<String, Integer> seats) {
+        java.util.Deque<Integer> free = new java.util.ArrayDeque<>();
+        for (int seat = 1; seat <= SHOWROOM_PER_TYPE; seat++) {
+            if (!seats.containsValue(seat)) free.add(seat);
+        }
+        return free;
+    }
+
     /** Relative static URLs work on both frontend hosts; samples are not uploaded portfolios. */
     private String demoPhotoFor(ServiceEntity type, int ordinal) {
-        String category = type.getServiceName() == null ? "" : type.getServiceName().toLowerCase(java.util.Locale.ROOT);
+        return demoPhotoFor(type.getServiceName(), ordinal);
+    }
+
+    private static String demoPhotoFor(String serviceName, int ordinal) {
+        String category = serviceName == null ? "" : serviceName.toLowerCase(java.util.Locale.ROOT);
         String[] photos;
         if (category.contains("nail")) photos = new String[]{"demo/nails-1.webp", "demo/nails-2.webp", "gallery/g-nails-6.jpg", "demo/nails-3.webp", "demo/nails-4.webp"};
         else if (category.contains("lash")) photos = new String[]{"demo/lashes-1.webp", "demo/lashes-2.webp", "demo/lashes-3.webp", "demo/lashes-4.webp", "demo/lashes-5.webp"};
@@ -402,16 +495,32 @@ public class DemoContentInitializer implements CommandLineRunner {
         return "/images/" + photos[Math.floorMod(ordinal - 1, photos.length)];
     }
 
-    boolean refreshDemoPhoto(StylerEntity styler, ServiceEntity type) {
-        if (styler.getStylerId() == null || !styler.getStylerId().startsWith("DEMO")
-                || styler.getEmailAddress() == null || !styler.getEmailAddress().endsWith("@" + DEMO_EMAIL_DOMAIN)) return false;
-        String currentPhoto = styler.getProfileImageUrl();
-        boolean supersededSample = List.of("/images/gallery/g-nails-1.jpg", "/images/gallery/g-nails-3.jpg",
-                "/images/gallery/g-nails-2.jpg", "/images/gallery/g-nails-5.jpg",
+    /** Every sample photo this seeder hands out, across all categories. */
+    private static final java.util.Set<String> SEED_PHOTOS = seedPhotos();
+
+    private static java.util.Set<String> seedPhotos() {
+        java.util.Set<String> photos = new java.util.HashSet<>(List.of("/images/gallery/g-nails-1.jpg",
+                "/images/gallery/g-nails-3.jpg", "/images/gallery/g-nails-2.jpg", "/images/gallery/g-nails-5.jpg",
                 "/images/gallery/g-lashes-2.jpg", "/images/gallery/g-lashes-4.jpg", "/images/gallery/g-lashes-5.jpg",
-                "/images/gallery/g-natural-hair-1.jpg").contains(currentPhoto == null ? "" : currentPhoto);
-        if (currentPhoto != null && !currentPhoto.isBlank() && !supersededSample) return false;
-        styler.setProfileImageUrl(demoPhotoFor(type, seedOrdinal(styler)));
+                "/images/gallery/g-natural-hair-1.jpg"));
+        for (String category : List.of("nail", "lash", "barber", "makeup", "hair")) {
+            for (int ordinal = 1; ordinal <= SHOWROOM_PER_TYPE; ordinal++) photos.add(demoPhotoFor(category, ordinal));
+        }
+        return java.util.Set.copyOf(photos);
+    }
+
+    boolean refreshDemoPhoto(StylerEntity styler, ServiceEntity type) {
+        return refreshDemoPhoto(styler, type, seedOrdinal(styler));
+    }
+
+    /** Sets the seat's sample photo when the current one is empty or another seeded sample; uploads are kept. */
+    boolean refreshDemoPhoto(StylerEntity styler, ServiceEntity type, int ordinal) {
+        if (!isSeedOwned(styler)) return false;
+        String currentPhoto = styler.getProfileImageUrl();
+        boolean seedPhoto = currentPhoto == null || currentPhoto.isBlank() || SEED_PHOTOS.contains(currentPhoto);
+        String target = demoPhotoFor(type, ordinal);
+        if (!seedPhoto || target.equals(currentPhoto)) return false;
+        styler.setProfileImageUrl(target);
         return true;
     }
 
@@ -452,6 +561,10 @@ public class DemoContentInitializer implements CommandLineRunner {
      * seeder handed out, so an operator's own edit is never overwritten.
      */
     boolean refreshDemoLocation(StylerEntity styler, ServiceEntity type) {
+        return refreshDemoLocation(styler, type, seedOrdinal(styler));
+    }
+
+    boolean refreshDemoLocation(StylerEntity styler, ServiceEntity type, int ordinal) {
         if (!isSeedOwned(styler)) return false;
         boolean changed = false;
         if (!"America/Edmonton".equals(styler.getTimeZone())) {
@@ -459,9 +572,10 @@ public class DemoContentInitializer implements CommandLineRunner {
             changed = true;
         }
         String current = styler.getBusinessAddress();
-        boolean seedAddress = current == null || current.isBlank() || DemoSeedContent.LEGACY_ADDRESSES.contains(current);
+        boolean seedAddress = current == null || current.isBlank() || DemoSeedContent.LEGACY_ADDRESSES.contains(current)
+                || java.util.Arrays.stream(DemoSeedContent.LOCATIONS).anyMatch(l -> l.address().equals(current));
         if (!seedAddress) return changed;
-        DemoSeedContent.DemoLocation target = locationFor(type, seedOrdinal(styler));
+        DemoSeedContent.DemoLocation target = locationFor(type, ordinal);
         if (target.address().equals(current)
                 && Double.valueOf(target.latitude()).equals(styler.getLatitude())
                 && Double.valueOf(target.longitude()).equals(styler.getLongitude())) return changed;
@@ -638,12 +752,14 @@ public class DemoContentInitializer implements CommandLineRunner {
         for (ReviewEntity review : reviewRepo.findByStylerId(stylerId)) {
             String bookingId = review.getBookingId();
             if (bookingId == null || !bookingId.startsWith("DEMOB")
-                    || !DemoSeedContent.LEGACY_REVIEW_MESSAGES.contains(review.getMessage())) continue;
+                    || !DemoSeedContent.isSeedReviewText(review.getMessage())) continue;
             int index;
             try { index = Integer.parseInt(bookingId.substring(bookingId.lastIndexOf('-') + 1)); }
             catch (NumberFormatException ex) { index = Math.floorMod(bookingId.hashCode(), 100); }
-            review.setMessage(DemoSeedContent.reviewMessage(category, review.getRatingScore(), seed + index,
-                    styler.getFirstname()));
+            String message = DemoSeedContent.reviewMessage(category, review.getRatingScore(), seed + index,
+                    styler.getFirstname());
+            if (message.equals(review.getMessage())) continue;
+            review.setMessage(message);
             reviewRepo.save(review);
             rewritten++;
         }

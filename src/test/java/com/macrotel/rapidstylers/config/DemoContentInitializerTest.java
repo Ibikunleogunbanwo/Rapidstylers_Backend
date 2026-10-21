@@ -340,6 +340,68 @@ class DemoContentInitializerTest {
     }
 
     @Test
+    void duplicateSeededProfilesInACategoryAreSplitOntoTheirOwnSeats() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        ServiceEntity barber = serviceType(3, "Barber");
+        when(services.findAll()).thenReturn(List.of(barber));
+        DemoContentInitializer seeder = init(services, stylers, subsAlwaysMissing(), availabilityAlwaysEmpty());
+        // What the live demo held: two rows both seeded as seat 5 ("Naomi").
+        List<StylerEntity> rows = new ArrayList<>();
+        int[] claimed = {5, 5, 4, 2, 3};
+        String[] ids = {"DEMO1495", "DEMO2103", "DEMO1846", "DEMO5009", "DEMO5874"};
+        for (int i = 0; i < ids.length; i++) {
+            StylerEntity row = seeder.demoStylerFor(barber, claimed[i]);
+            row.setStylerId(ids[i]);
+            rows.add(row);
+        }
+        StylerEntity operatorEdited = rows.get(2);
+        operatorEdited.setBusinessName("Fresh Cuts YYC");
+        when(stylers.findByServiceTypeId("3")).thenReturn(rows);
+
+        seeder.run();
+
+        Set<String> names = new HashSet<>();
+        Set<String> photos = new HashSet<>();
+        Set<String> addresses = new HashSet<>();
+        for (StylerEntity row : rows) {
+            names.add(row.getFirstname());
+            photos.add(row.getProfileImageUrl());
+            addresses.add(row.getBusinessAddress());
+        }
+        assertEquals(5, names.size(), names.toString());
+        assertEquals(5, photos.size(), photos.toString());
+        assertEquals(5, addresses.size(), addresses.toString());
+        // The earlier row by id keeps its seat; only the clash moves.
+        assertEquals("Aspen Barber by Naomi", rows.get(0).getBusinessName());
+        assertNotEquals("Aspen Barber by Naomi", rows.get(1).getBusinessName());
+        assertEquals("Fresh Cuts YYC", operatorEdited.getBusinessName(), "an operator's rename is kept");
+    }
+
+    @Test
+    void seededReviewsFollowARenamedProfileButRealReviewsDoNot() {
+        assertTrue(DemoSeedContent.isSeedReviewText(DemoSeedContent.reviewMessage("barber", 5, 3, "Naomi")));
+        assertTrue(DemoSeedContent.isSeedReviewText(DemoSeedContent.reviewMessage("hair", 4, 1, null)));
+        assertFalse(DemoSeedContent.isSeedReviewText("Loved my cut, will be back next month!"));
+        ReviewRepo reviews = mock(ReviewRepo.class);
+        ReviewEntity seeded = new ReviewEntity();
+        seeded.setBookingId("DEMOB2103-0");
+        seeded.setRatingScore(5);
+        String key = "DEMO2103";
+        int seed = Math.floorMod(key.hashCode(), 10_000);
+        seeded.setMessage(DemoSeedContent.reviewMessage("barber", 5, seed, "Naomi"));
+        when(reviews.findByStylerId(key)).thenReturn(List.of(seeded));
+        DemoContentInitializer seeder = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(),
+                availabilityAlwaysEmpty(), appointmentsEchoingSave(), reviews, usersEchoingSave());
+        StylerEntity renamed = approvedStyler("3");
+        renamed.setStylerId(key);
+        renamed.setFirstname("Andre");
+        seeder.refreshSeededReviews(renamed, serviceType(3, "Barber"));
+        assertEquals(DemoSeedContent.reviewMessage("barber", 5, seed, "Andre"), seeded.getMessage());
+        assertFalse(seeded.getMessage().contains("Naomi"));
+    }
+
+    @Test
     void locationsAreDistinctAndSpreadAcrossTheCity() {
         Set<String> addresses = new HashSet<>();
         for (DemoSeedContent.DemoLocation location : DemoSeedContent.LOCATIONS) {

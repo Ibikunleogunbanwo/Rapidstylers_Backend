@@ -234,6 +234,38 @@ final class DemoSeedContent {
         "Neat work and friendly, though I asked for a shorter finish and it came out longer than we agreed."
     );
 
+    /** Every template, as a pattern where the name slot matches any name. */
+    private static final List<java.util.regex.Pattern> SEED_REVIEW_PATTERNS = seedReviewPatterns();
+
+    private static List<java.util.regex.Pattern> seedReviewPatterns() {
+        List<java.util.regex.Pattern> patterns = new ArrayList<>();
+        for (String[][] pool : List.of(NAIL, LASH, BARBER, MAKEUP, HAIR, GENERAL)) {
+            for (String[] tier : pool) {
+                for (String line : tier) {
+                    StringBuilder regex = new StringBuilder();
+                    String[] parts = line.split("%s", -1);
+                    for (int i = 0; i < parts.length; i++) {
+                        if (i > 0) regex.append("[^.,!?]{1,60}");
+                        regex.append(java.util.regex.Pattern.quote(parts[i]));
+                    }
+                    patterns.add(java.util.regex.Pattern.compile(regex.toString()));
+                }
+            }
+        }
+        return List.copyOf(patterns);
+    }
+
+    /**
+     * True for text this seeder wrote, old or current, whatever name it used.
+     * Lets a renamed sample profile's reviews follow the new name while a real
+     * review is never touched.
+     */
+    static boolean isSeedReviewText(String message) {
+        if (message == null) return false;
+        if (LEGACY_REVIEW_MESSAGES.contains(message)) return true;
+        return SEED_REVIEW_PATTERNS.stream().anyMatch(p -> p.matcher(message).matches());
+    }
+
     /** The short category word used to pick reviews: nail, lash, barber, makeup or hair. */
     static String categoryOf(String serviceTypeName) {
         String name = serviceTypeName == null ? "" : serviceTypeName.toLowerCase(Locale.ROOT);
