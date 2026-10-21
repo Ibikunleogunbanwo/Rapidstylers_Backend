@@ -394,11 +394,13 @@ public class DemoContentInitializer implements CommandLineRunner {
     }
 
     private static final String[][] PROFESSIONAL_NAMES = {
+        // Rows follow CATEGORY_ORDER: nail, lash, barber, hair, makeup.
         {"Nia", "Campbell"}, {"Priya", "Mehta"}, {"Amara", "Cole"},
-        {"Sophie", "Laurent"}, {"Jade", "Williams"}, {"Marcus", "Bennett"},
-        {"Daniel", "Reyes"}, {"Kwame", "Mensah"}, {"Ethan", "Brooks"},
-        {"Andre", "Clarke"}, {"Zara", "Ahmed"}, {"Chloe", "Martin"},
-        {"Imani", "Reed"}, {"Leila", "Hassan"}, {"Naomi", "Chen"},
+        {"Sophie", "Laurent"}, {"Jade", "Williams"},
+        {"Zara", "Ahmed"}, {"Chloe", "Martin"}, {"Imani", "Reed"},
+        {"Leila", "Hassan"}, {"Naomi", "Chen"},
+        {"Marcus", "Bennett"}, {"Daniel", "Reyes"}, {"Kwame", "Mensah"},
+        {"Ethan", "Brooks"}, {"Andre", "Clarke"},
         {"Aisha", "Okafor"}, {"Maya", "Patel"}, {"Elena", "Rossi"},
         {"Simone", "James"}, {"Tessa", "Nguyen"}, {"Olivia", "Park"},
         {"Gabrielle", "Dubois"}, {"Farah", "Ali"}, {"Keisha", "Morgan"},
@@ -418,8 +420,7 @@ public class DemoContentInitializer implements CommandLineRunner {
     private void applyDemoIdentity(StylerEntity styler, ServiceEntity type, int ordinal) {
         String category = type.getServiceName() == null ? "Beauty" : type.getServiceName();
         int slot = Math.floorMod(ordinal - 1, SHOWROOM_PER_TYPE);
-        int categoryIndex = Math.floorMod(type.getId() == null ? 0 : type.getId().intValue() - 1, 5);
-        String[] name = PROFESSIONAL_NAMES[categoryIndex * SHOWROOM_PER_TYPE + slot];
+        String[] name = PROFESSIONAL_NAMES[categoryIndex(type) * SHOWROOM_PER_TYPE + slot];
         styler.setFirstname(name[0]);
         styler.setLastname(name[1]);
         styler.setBusinessName(STUDIO_NAMES[slot] + " " + category + " by " + name[0]);
@@ -525,9 +526,12 @@ public class DemoContentInitializer implements CommandLineRunner {
         String category = serviceName == null ? "" : serviceName.toLowerCase(java.util.Locale.ROOT);
         String[] photos;
         if (category.contains("nail")) photos = new String[]{"demo/nails-1.webp", "demo/nails-2.webp", "gallery/g-nails-6.jpg", "demo/nails-3.webp", "demo/nails-4.webp"};
-        else if (category.contains("lash")) photos = new String[]{"demo/lashes-1.webp", "demo/lashes-2.webp", "demo/lashes-3.webp", "demo/lashes-4.webp", "demo/lashes-5.webp"};
-        else if (category.contains("barber")) photos = new String[]{"gallery/g-buzz-cut-1.jpg", "gallery/g-buzz-cut-2.jpg", "gallery/g-buzz-cut-3.jpg", "demo/barber-4.webp", "demo/barber-5.webp"};
-        else if (category.contains("makeup")) photos = new String[]{"gallery/g-makeup-1.jpg", "gallery/g-makeup-2.jpg", "gallery/g-makeup-3.jpg", "demo/makeup-4.webp", "demo/makeup-5.webp"};
+        // Five visibly different people and scenes per category: no two shots
+        // from the same series, and none of the inspiration photos the
+        // homepage already shows.
+        else if (category.contains("lash")) photos = new String[]{"demo/lashes-1.webp", "demo/lashes-2.webp", "inspiration/lashes-3.jpg", "demo/lashes-4.webp", "demo/lashes-5.webp"};
+        else if (category.contains("barber")) photos = new String[]{"gallery/g-buzz-cut-1.jpg", "gallery/g-buzz-cut-2.jpg", "gallery/g-buzz-cut-3.jpg", "demo/barber-4.webp", "inspiration/high-top-3.jpg"};
+        else if (category.contains("makeup")) photos = new String[]{"gallery/g-makeup-1.jpg", "inspiration/makeup-2.jpg", "inspiration/makeup-3.jpg", "demo/makeup-4.webp", "demo/makeup-5.webp"};
         else photos = new String[]{"gallery/g-natural-hair-4.jpg", "gallery/g-natural-hair-2.jpg", "gallery/g-natural-hair-3.jpg", "gallery/g-locs-2.jpg", "gallery/g-braids-5.jpg"};
         return "/images/" + photos[Math.floorMod(ordinal - 1, photos.length)];
     }
@@ -539,7 +543,10 @@ public class DemoContentInitializer implements CommandLineRunner {
         java.util.Set<String> photos = new java.util.HashSet<>(List.of("/images/gallery/g-nails-1.jpg",
                 "/images/gallery/g-nails-3.jpg", "/images/gallery/g-nails-2.jpg", "/images/gallery/g-nails-5.jpg",
                 "/images/gallery/g-lashes-2.jpg", "/images/gallery/g-lashes-4.jpg", "/images/gallery/g-lashes-5.jpg",
-                "/images/gallery/g-natural-hair-1.jpg"));
+                "/images/gallery/g-natural-hair-1.jpg",
+                // Retired because they read as repeats of a neighbour.
+                "/images/demo/lashes-3.webp", "/images/demo/barber-5.webp",
+                "/images/gallery/g-makeup-2.jpg", "/images/gallery/g-makeup-3.jpg"));
         for (String category : List.of("nail", "lash", "barber", "makeup", "hair")) {
             for (int ordinal = 1; ordinal <= SHOWROOM_PER_TYPE; ordinal++) photos.add(demoPhotoFor(category, ordinal));
         }
@@ -600,8 +607,18 @@ public class DemoContentInitializer implements CommandLineRunner {
     /** One spot per category and seed position, so the five in a category sit in different parts of the city. */
     static DemoSeedContent.DemoLocation locationFor(ServiceEntity type, int ordinal) {
         int slot = Math.floorMod(ordinal - 1, SHOWROOM_PER_TYPE);
-        int categoryIndex = Math.floorMod(type.getId() == null ? 0 : type.getId().intValue() - 1, 5);
-        return DemoSeedContent.LOCATIONS[categoryIndex * SHOWROOM_PER_TYPE + slot];
+        return DemoSeedContent.LOCATIONS[categoryIndex(type) * SHOWROOM_PER_TYPE + slot];
+    }
+
+    private static final List<String> CATEGORY_ORDER = List.of("nail", "lash", "barber", "hair", "makeup");
+
+    /**
+     * Which block of names and addresses a category uses, decided by what the
+     * category is rather than its database id, so barbers always get the
+     * barber names whatever order the types were created in.
+     */
+    private static int categoryIndex(ServiceEntity type) {
+        return CATEGORY_ORDER.indexOf(DemoSeedContent.categoryOf(type.getServiceName()));
     }
 
     private static void applyLocation(StylerEntity styler, DemoSeedContent.DemoLocation location) {

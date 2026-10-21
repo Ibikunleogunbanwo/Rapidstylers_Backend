@@ -373,8 +373,8 @@ class DemoContentInitializerTest {
         assertEquals(5, photos.size(), photos.toString());
         assertEquals(5, addresses.size(), addresses.toString());
         // The earlier row by id keeps its seat; only the clash moves.
-        assertEquals("Aspen Barber by Naomi", rows.get(0).getBusinessName());
-        assertNotEquals("Aspen Barber by Naomi", rows.get(1).getBusinessName());
+        assertEquals("Aspen Barber by Andre", rows.get(0).getBusinessName());
+        assertNotEquals("Aspen Barber by Andre", rows.get(1).getBusinessName());
         assertEquals("Fresh Cuts YYC", operatorEdited.getBusinessName(), "an operator's rename is kept");
     }
 
@@ -463,6 +463,18 @@ class DemoContentInitializerTest {
 
         verify(cache).evictPrefix("styler:");
         verify(cache).evictPrefix("search:");
+    }
+
+    @Test
+    void namesFollowTheCategoryNotTheDatabaseId() {
+        DemoContentInitializer seeder = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        Set<String> barberNames = new HashSet<>();
+        for (int ordinal = 1; ordinal <= 5; ordinal++) {
+            barberNames.add(seeder.demoStylerFor(serviceType(9, "Barber"), ordinal).getFirstname());
+            assertEquals(seeder.demoStylerFor(serviceType(3, "Barber"), ordinal).getFirstname(),
+                    seeder.demoStylerFor(serviceType(9, "Barber"), ordinal).getFirstname());
+        }
+        assertEquals(Set.of("Marcus", "Daniel", "Kwame", "Ethan", "Andre"), barberNames);
     }
 
     @Test
