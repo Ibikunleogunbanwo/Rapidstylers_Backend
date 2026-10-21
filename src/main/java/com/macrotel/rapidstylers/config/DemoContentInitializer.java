@@ -212,6 +212,10 @@ public class DemoContentInitializer implements CommandLineRunner {
     @Value("${app.demo.seed:false}")
     private String demoSeed;
 
+    /** Hand-registered demo-database profiles to dress like the seeded ones (comma-separated ids). */
+    @Value("${app.demo.showroom-extra-ids:DS5713}")
+    private String showroomExtraIds = "DS5713";
+
     /** Seeded clients for this run; null until a profile actually needs history. */
     private List<UserEntity> demoClientCache;
 
@@ -297,6 +301,23 @@ public class DemoContentInitializer implements CommandLineRunner {
                         History history = seedHistory(legacy, serviceType);
                         seededAppointments += history.appointments();
                         seededReviews += history.reviews();
+                    } else if (isShowroomPlaceholder(legacy)) {
+                        // A hand-registered "Demo ..." profile: dress it like the
+                        // others, but no invented history on a real login.
+                        Integer seat = seats.get(legacy.getStylerId());
+                        int ordinal = seat == null ? legacyOrdinal(legacy) : seat;
+                        boolean identityChanged = refreshDemoIdentity(legacy, serviceType, ordinal);
+                        boolean photoChanged = refreshDemoPhoto(legacy, serviceType, ordinal);
+                        boolean zoneChanged = !"America/Edmonton".equals(legacy.getTimeZone());
+                        if (zoneChanged) legacy.setTimeZone("America/Edmonton");
+                        if (identityChanged || photoChanged || zoneChanged) {
+                            stylerRepo.save(legacy);
+                            refreshedProfiles++;
+                        }
+                        if (subServiceRepo.findByStylerId(legacy.getStylerId()).isEmpty()) {
+                            createdServices += seedCatalogue(legacy, serviceType);
+                        }
+                        createdSlots += seedAvailability(legacy);
                     }
                 }
             }
@@ -403,7 +424,7 @@ public class DemoContentInitializer implements CommandLineRunner {
      * generated "Studio Category by Name"), so an operator's rename is kept.
      */
     boolean refreshDemoIdentity(StylerEntity styler, ServiceEntity type, int ordinal) {
-        if (!isSeedOwned(styler) || !hasSeedIdentity(styler)) return false;
+        if (!isShowroomRow(styler) || !hasSeedIdentity(styler)) return false;
         StylerEntity target = new StylerEntity();
         applyDemoIdentity(target, type, ordinal);
         if (java.util.Objects.equals(target.getFirstname(), styler.getFirstname())
@@ -450,7 +471,7 @@ public class DemoContentInitializer implements CommandLineRunner {
      */
     java.util.Map<String, Integer> assignSeats(List<StylerEntity> approved) {
         List<StylerEntity> owned = approved.stream()
-                .filter(DemoContentInitializer::isSeedOwned)
+                .filter(this::isShowroomRow)
                 .sorted(java.util.Comparator.comparing(StylerEntity::getStylerId))
                 .toList();
         java.util.Map<String, Integer> seats = new java.util.LinkedHashMap<>();
@@ -515,13 +536,32 @@ public class DemoContentInitializer implements CommandLineRunner {
 
     /** Sets the seat's sample photo when the current one is empty or another seeded sample; uploads are kept. */
     boolean refreshDemoPhoto(StylerEntity styler, ServiceEntity type, int ordinal) {
-        if (!isSeedOwned(styler)) return false;
+        if (!isShowroomRow(styler)) return false;
         String currentPhoto = styler.getProfileImageUrl();
         boolean seedPhoto = currentPhoto == null || currentPhoto.isBlank() || SEED_PHOTOS.contains(currentPhoto);
         String target = demoPhotoFor(type, ordinal);
         if (!seedPhoto || target.equals(currentPhoto)) return false;
         styler.setProfileImageUrl(target);
         return true;
+    }
+
+    /**
+     * A hand-registered profile the owner asked to show like the seeded ones,
+     * listed by id in app.demo.showroom-extra-ids (for example the QA
+     * professional "Demo Beauty Co"). The refresh dresses it like the seeded
+     * rows (name, bio, photo, weekly hours) but never touches its login, email,
+     * address, payment setup or bookings. Only reachable when APP_DEMO_SEED is
+     * on, which the live site never sets.
+     */
+    boolean isShowroomPlaceholder(StylerEntity styler) {
+        String id = styler.getStylerId();
+        if (id == null || id.startsWith("DEMO") || showroomExtraIds == null) return false;
+        return java.util.Arrays.stream(showroomExtraIds.split(",")).map(String::trim).anyMatch(id::equals);
+    }
+
+    /** Seeded rows plus showroom placeholders: every profile the showroom refresh may dress. */
+    private boolean isShowroomRow(StylerEntity styler) {
+        return isSeedOwned(styler) || isShowroomPlaceholder(styler);
     }
 
     /** True only for rows this seeder created: DEMO id and the seed-only email domain. */
@@ -913,7 +953,7 @@ public class DemoContentInitializer implements CommandLineRunner {
      */
     int seedAvailability(StylerEntity styler) {
         String stylerId = styler.getStylerId();
-        if (stylerId == null || !stylerId.startsWith("DEMO")) {
+        if (stylerId == null || !(stylerId.startsWith("DEMO") || isShowroomPlaceholder(styler))) {
             return 0;
         }
         List<AvailabilityEntity> changed = new ArrayList<>();

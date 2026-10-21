@@ -402,6 +402,53 @@ class DemoContentInitializerTest {
     }
 
     @Test
+    void aHandRegisteredDemoProfileIsDressedButKeepsItsAccount() {
+        ServiceRepo services = mock(ServiceRepo.class);
+        StylerRepo stylers = mock(StylerRepo.class);
+        ServiceEntity nails = serviceType(1, "Nail Technician");
+        when(services.findAll()).thenReturn(List.of(nails));
+        AvailabilityRepo availability = availabilityAlwaysEmpty();
+        BookAppointmentRepo appointments = appointmentsEchoingSave();
+        DemoContentInitializer seeder = init(services, stylers, subsAlwaysMissing(), availability,
+                appointments, reviewsEchoingSave(), usersEchoingSave());
+        List<StylerEntity> rows = new ArrayList<>();
+        int[] seats = {2, 3, 4, 5};
+        for (int i = 0; i < seats.length; i++) {
+            StylerEntity row = seeder.demoStylerFor(nails, seats[i]);
+            row.setStylerId("DEMO900" + i);
+            rows.add(row);
+        }
+        StylerEntity qa = approvedStyler("1");
+        qa.setStylerId("DS5713");
+        qa.setFirstname("Demo");
+        qa.setLastname("Account");
+        qa.setBusinessName("Demo Beauty Co");
+        qa.setEmailAddress("qa.pro@example.com");
+        qa.setPassword("$2a$10$realhash");
+        qa.setBusinessAddress("700 2 St SW");
+        qa.setStripeConnectAccountId("acct_test123");
+        rows.add(qa);
+        when(stylers.findByServiceTypeId("1")).thenReturn(rows);
+
+        seeder.run();
+
+        assertEquals("Willow Nail Technician by Nia", qa.getBusinessName(), "takes the one free seat");
+        assertEquals("Nia", qa.getFirstname());
+        assertNotNull(qa.getProfileImageUrl());
+        assertEquals("America/Edmonton", qa.getTimeZone());
+        // The account itself is untouched.
+        assertEquals("qa.pro@example.com", qa.getEmailAddress());
+        assertEquals("$2a$10$realhash", qa.getPassword());
+        assertEquals("700 2 St SW", qa.getBusinessAddress());
+        assertEquals("acct_test123", qa.getStripeConnectAccountId());
+        // Open all week, and no invented history on a real login.
+        verify(availability, times(5)).saveAll(any());
+        verify(appointments, never()).save(org.mockito.ArgumentMatchers.argThat(a -> "DS5713".equals(a.getStylerId())));
+        // Already dressed: a second run leaves it alone.
+        assertFalse(seeder.refreshDemoIdentity(qa, nails, 1));
+    }
+
+    @Test
     void locationsAreDistinctAndSpreadAcrossTheCity() {
         Set<String> addresses = new HashSet<>();
         for (DemoSeedContent.DemoLocation location : DemoSeedContent.LOCATIONS) {
@@ -584,7 +631,7 @@ class DemoContentInitializerTest {
         StylerEntity legacy = approvedStyler("1");
         legacy.setStylerId("DEMO9999");
         StylerEntity real = approvedStyler("1");
-        real.setStylerId("DS5713");
+        real.setStylerId("DS4242");
         when(stylers.findByServiceTypeId("1")).thenReturn(List.of(legacy, real, approvedStyler("1"), approvedStyler("1"), approvedStyler("1")));
         SubServiceRepo subs = subsAlwaysMissing();
         AvailabilityRepo availability = availabilityAlwaysEmpty();
@@ -615,7 +662,7 @@ class DemoContentInitializerTest {
         demoWithAddress.setStylerId("DEMO4242");
         demoWithAddress.setBusinessAddress("Suite 300, 1 Real St SW");
         StylerEntity real = approvedStyler("1");
-        real.setStylerId("DS5713");
+        real.setStylerId("DS4242");
         real.setBusinessAddress("700 2 St SW");
         when(stylers.findByServiceTypeId("1")).thenReturn(List.of(
                 demoWithAddress, real, approvedStyler("1"), approvedStyler("1"), approvedStyler("1")));
@@ -964,13 +1011,13 @@ class DemoContentInitializerTest {
         StylerRepo stylers = mock(StylerRepo.class);
         when(services.findAll()).thenReturn(List.of(serviceType(3, "Barber")));
         StylerEntity real = approvedStyler("3");
-        real.setStylerId("DS5713");
+        real.setStylerId("DS4242");
         when(stylers.findByServiceTypeId("3")).thenReturn(List.of(real,
                 approvedStyler("3"), approvedStyler("3"), approvedStyler("3"), approvedStyler("3")));
         BookAppointmentRepo appointments = appointmentsEchoingSave();
         ReviewRepo reviews = reviewsEchoingSave();
 
-        init(services, stylers, existingCatalogue("DS5713", 2), availabilityAlwaysEmpty(),
+        init(services, stylers, existingCatalogue("DS4242", 2), availabilityAlwaysEmpty(),
                 appointments, reviews, usersEchoingSave()).run();
 
         verify(appointments, never()).save(any());
