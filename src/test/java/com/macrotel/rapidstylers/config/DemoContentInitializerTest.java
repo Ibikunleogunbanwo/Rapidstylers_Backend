@@ -323,6 +323,23 @@ class DemoContentInitializerTest {
     }
 
     @Test
+    void everySeededProfileFitsTheDatabaseColumns() {
+        DemoContentInitializer initializer = init(mock(ServiceRepo.class), mock(StylerRepo.class), subsAlwaysMissing(), availabilityAlwaysEmpty());
+        for (String category : List.of("Barber", "Eyelash Technician", "Makeup Artist", "Nail Technician", "Hairstylist")) {
+            for (long type = 1; type <= 5; type++) {
+                for (int ordinal = 1; ordinal <= 5; ordinal++) {
+                    StylerEntity demo = initializer.demoStylerFor(serviceType(type, category), ordinal);
+                    // Every one of these columns is varchar(255) in the live schema.
+                    for (String value : List.of(demo.getDescription(), demo.getBusinessName(), demo.getBusinessAddress(),
+                            demo.getEmailAddress(), demo.getProfileImageUrl())) {
+                        assertTrue(value.length() <= 255, value.length() + ": " + value);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void locationsAreDistinctAndSpreadAcrossTheCity() {
         Set<String> addresses = new HashSet<>();
         for (DemoSeedContent.DemoLocation location : DemoSeedContent.LOCATIONS) {

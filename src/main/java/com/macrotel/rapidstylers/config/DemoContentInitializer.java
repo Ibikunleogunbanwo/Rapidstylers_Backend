@@ -350,6 +350,8 @@ public class DemoContentInitializer implements CommandLineRunner {
         {"Gabrielle", "Dubois"}, {"Farah", "Ali"}, {"Keisha", "Morgan"},
         {"Isabelle", "Tran"}
     };
+    /** Width of the stylers.description column. */
+    static final int DESCRIPTION_MAX = 255;
     private static final String[] STUDIO_NAMES = {"Willow", "Juniper", "Clover", "Sage", "Aspen"};
     private static final String[] APPROACHES = {
         "A relaxed appointment with time to talk through your preferred look and daily routine.",
@@ -367,10 +369,10 @@ public class DemoContentInitializer implements CommandLineRunner {
         styler.setFirstname(name[0]);
         styler.setLastname(name[1]);
         styler.setBusinessName(STUDIO_NAMES[slot] + " " + category + " by " + name[0]);
-        styler.setDescription("I'm " + name[0] + ", a Calgary-based " + category.toLowerCase(java.util.Locale.ROOT)
-                + " professional. " + APPROACHES[slot]
-                + " Browse my service menu for appointment lengths and pricing. "
-                + "Fictional demo profile for exploring RapidStylers; not a real business.");
+        // stylers.description is varchar(255); a longer bio fails the whole seed run.
+        String bio = "I'm " + name[0] + ", a Calgary " + category.toLowerCase(java.util.Locale.ROOT) + ". "
+                + APPROACHES[slot] + " Fictional demo profile, not a real business.";
+        styler.setDescription(bio.length() <= DESCRIPTION_MAX ? bio : bio.substring(0, DESCRIPTION_MAX));
     }
 
     /** Refresh only untouched legacy seed identities, never customer-created accounts. */
