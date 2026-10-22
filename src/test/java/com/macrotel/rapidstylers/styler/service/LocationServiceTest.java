@@ -65,4 +65,22 @@ class LocationServiceTest {
         assertEquals("", location.get("city"));
         assertEquals("Canada", location.get("country"));
     }
+
+    @org.junit.jupiter.api.Test
+    void proxiedLocationUsesProvinceNamesLikeCloudflare() {
+        String secret = "0123456789abcdef0123456789abcdef-proxy";
+        LocationService service = new LocationService();
+        service.frontendProxyTrust = new com.macrotel.rapidstylers.common.service.FrontendProxyTrust(secret);
+        org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.addHeader("X-RS-Proxy-Secret", secret);
+        request.addHeader("X-RS-Geo-Latitude", "51.05");
+        request.addHeader("X-RS-Geo-Longitude", "-114.08");
+        request.addHeader("X-RS-Geo-City", "Calgary");
+        request.addHeader("X-RS-Geo-Region", "AB");
+        request.addHeader("X-RS-Geo-Country", "CA");
+        java.util.Map<String, Object> location = service.detectLocation(request);
+        assertEquals("Alberta", location.get("province"));
+        assertEquals("Calgary", location.get("city"));
+        assertEquals("Canada", location.get("country"));
+    }
 }

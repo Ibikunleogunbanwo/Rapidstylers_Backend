@@ -70,9 +70,21 @@ public class LocationService {
         location.put("latitude", latitude);
         location.put("longitude", longitude);
         location.put("city", text(decode(trust.geoHeader(request, FrontendProxyTrust.GEO_CITY_HEADER))));
-        location.put("province", text(decode(trust.geoHeader(request, FrontendProxyTrust.GEO_REGION_HEADER))));
+        location.put("province", provinceName(text(decode(trust.geoHeader(request, FrontendProxyTrust.GEO_REGION_HEADER)))));
         location.put("country", countryName(trust.geoHeader(request, FrontendProxyTrust.GEO_COUNTRY_HEADER)));
         return location;
+    }
+
+    /** Vercel sends Canadian provinces as codes ("AB"); the rest of the app uses names, as Cloudflare does. */
+    private static final Map<String, String> PROVINCES = Map.ofEntries(
+            Map.entry("AB", "Alberta"), Map.entry("BC", "British Columbia"), Map.entry("MB", "Manitoba"),
+            Map.entry("NB", "New Brunswick"), Map.entry("NL", "Newfoundland and Labrador"),
+            Map.entry("NS", "Nova Scotia"), Map.entry("NT", "Northwest Territories"), Map.entry("NU", "Nunavut"),
+            Map.entry("ON", "Ontario"), Map.entry("PE", "Prince Edward Island"), Map.entry("QC", "Quebec"),
+            Map.entry("SK", "Saskatchewan"), Map.entry("YT", "Yukon"));
+
+    static String provinceName(String code) {
+        return PROVINCES.getOrDefault(code == null ? "" : code.trim().toUpperCase(Locale.ROOT), code);
     }
 
     /** Vercel URL-encodes city names (e.g. "St.%20Albert"). */
