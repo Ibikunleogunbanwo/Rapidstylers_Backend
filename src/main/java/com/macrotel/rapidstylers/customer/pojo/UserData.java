@@ -14,9 +14,16 @@ public class UserData {
     private String firstname;
     @Pattern(regexp = BLANK_OR + PERSON_NAME_REGEX, message = "Last " + PERSON_NAME_MESSAGE)
     private String lastname;
-    @NotEmpty(message = "Email Address cannot be empty")
     @Email(message = "Enter a valid email address")
     private String emailAddress;
+    /** Stands in for the address during sign-up (see SignupTokenService). */
+    private String signupToken;
+
+    @javax.validation.constraints.AssertTrue(message = "Email Address cannot be empty")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isEmailOrToken() {
+        return (emailAddress != null && !emailAddress.isBlank()) || (signupToken != null && !signupToken.isBlank());
+    }
     private String country;
     // The province.
     @Pattern(regexp = BLANK_OR + PROVINCE_REGEX, message = PROVINCE_MESSAGE)

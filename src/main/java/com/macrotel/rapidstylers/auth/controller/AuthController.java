@@ -8,6 +8,7 @@ import com.macrotel.rapidstylers.auth.service.AuthService;
 import com.macrotel.rapidstylers.auth.service.OtpService;
 import com.macrotel.rapidstylers.auth.service.RefreshTokenService;
 import com.macrotel.rapidstylers.auth.service.SessionActivityService;
+import com.macrotel.rapidstylers.auth.service.SignupTokenService;
 import com.macrotel.rapidstylers.common.service.RateLimiterService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -45,6 +46,34 @@ public class AuthController {
     TurnstileVerifier turnstileVerifier;
     @Autowired
     RateLimiterService rateLimiterService;
+    @Autowired
+    SignupTokenService signupTokenService;
+
+    /**
+     * The sign-up address, from the token when one is sent (the later sign-up
+     * steps), else from the address itself (step 1, and older clients). Empty
+     * when a token was sent but is invalid or expired.
+     */
+    private java.util.Optional<String> signupEmail(String emailAddress, String signupToken) {
+        if (signupToken != null && !signupToken.isBlank()) {
+            return signupTokenService.resolve(signupToken.trim());
+        }
+        return emailAddress == null || emailAddress.isBlank()
+                ? java.util.Optional.empty() : java.util.Optional.of(emailAddress.trim());
+    }
+
+    private static ResponseEntity<BaseResponse> signupSessionExpired() {
+        BaseResponse expired = new BaseResponse();
+        expired.setStatusCode(ERROR_STATUS_CODE);
+        expired.setMessage("Your sign-up session has expired. Please start again with your email address.");
+        expired.setData(EMPTY_DATA);
+        return new ResponseEntity<>(expired, HttpStatus.BAD_REQUEST);
+    }
+
+    /** Success data for the sign-up steps: a fresh token, never the address itself. */
+    private Map<String, String> signupTokenData(String email) {
+        return Map.of("signupToken", signupTokenService.issue(email));
+    }
 
     /**
      * Bot-protection gate shared by every sign-in endpoint. Returns null when
@@ -68,22 +97,45 @@ public class AuthController {
 
     @PostMapping("/generate_sign_up_otp_code")
     public ResponseEntity <BaseResponse> generateSignUpOtpCode(@Valid @RequestBody OTPData otpData){
+        java.util.Optional<String> email = signupEmail(otpData.getEmailAddress(), otpData.getSignupToken());
+        if (email.isEmpty()) {
+            return signupSessionExpired();
+        }
+        otpData.setEmailAddress(email.get());
         BaseResponse baseResponse = otpService.generateSignUpOtpCode(otpData);
+        // Same token whether or not an account exists, so step 1 stays enumeration-safe.
+        if (SUCCESS_STATUS_CODE.equals(baseResponse.getStatusCode())) {
+            baseResponse.setData(signupTokenData(email.get()));
+        }
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @PostMapping("/verify_otp_code")
     public ResponseEntity <BaseResponse> verifyOtpCode(@RequestBody Map<String, String> body){
-        String emailAddress = body.getOrDefault("emailAddress", "");
+        String signupToken = body.get("signupToken");
+        java.util.Optional<String> email = signupEmail(body.getOrDefault("emailAddress", ""), signupToken);
+        if (email.isEmpty() && signupToken != null && !signupToken.isBlank()) {
+            return signupSessionExpired();
+        }
+        String emailAddress = email.orElse("");
         String otpCode = body.getOrDefault("otpCode", "");
         BaseResponse baseResponse = otpService.verifyUserOTP(emailAddress, otpCode);
+        // Answer with a fresh token rather than echoing the address back.
+        if (SUCCESS_STATUS_CODE.equals(baseResponse.getStatusCode()) && !emailAddress.isBlank()) {
+            baseResponse.setData(signupTokenData(emailAddress));
+        }
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
     }
 
     @PostMapping("/create_user_account")
     public ResponseEntity <BaseResponse> createUserAccount(@Valid @RequestBody UserData userData){
+        java.util.Optional<String> email = signupEmail(userData.getEmailAddress(), userData.getSignupToken());
+        if (email.isEmpty()) {
+            return signupSessionExpired();
+        }
+        userData.setEmailAddress(email.get());
         BaseResponse baseResponse = authService.userSignUp(userData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
@@ -127,6 +179,13 @@ public class AuthController {
 
     @PostMapping("/generate_reset_password_token")
     public ResponseEntity <BaseResponse> resetPasswordToken(@Valid @RequestBody OTPData otpData){
+        if (otpData.getEmailAddress() == null || otpData.getEmailAddress().isBlank()) {
+            BaseResponse missing = new BaseResponse();
+            missing.setStatusCode(ERROR_STATUS_CODE);
+            missing.setMessage("Email Address cannot be empty");
+            missing.setData(EMPTY_DATA);
+            return new ResponseEntity<>(missing, HttpStatus.BAD_REQUEST);
+        }
         BaseResponse baseResponse = otpService.resetPasswordMessage(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
@@ -163,6 +222,13 @@ public class AuthController {
 
     @PostMapping("/styler_generate_otp")
     public ResponseEntity<BaseResponse> stylerGenerateOtp(@Valid @RequestBody OTPData otpData){
+        if (otpData.getEmailAddress() == null || otpData.getEmailAddress().isBlank()) {
+            BaseResponse missing = new BaseResponse();
+            missing.setStatusCode(ERROR_STATUS_CODE);
+            missing.setMessage("Email Address cannot be empty");
+            missing.setData(EMPTY_DATA);
+            return new ResponseEntity<>(missing, HttpStatus.BAD_REQUEST);
+        }
         BaseResponse baseResponse = otpService.stylerGenerateOtp(otpData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
