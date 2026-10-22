@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.common.service.FrontendProxyTrust;
 import java.util.*;
 import javax.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class LocationService {
 
+    /** Optional: set when the frontend API proxy is configured. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    FrontendProxyTrust frontendProxyTrust;
+
     static final String LATITUDE_HEADER = "cf-iplatitude";
     static final String LONGITUDE_HEADER = "cf-iplongitude";
     static final String CITY_HEADER = "cf-ipcity";
@@ -31,6 +36,9 @@ public class LocationService {
      * Falls back to Edmonton, AB if they are missing or unusable.
      */
     public Map<String, Object> detectLocation(HttpServletRequest request) {
+        if (frontendProxyTrust != null && frontendProxyTrust.isFromProxy(request)) {
+            return proxiedLocation(request);
+        }
         Double latitude = coordinate(request.getHeader(LATITUDE_HEADER), 90);
         Double longitude = coordinate(request.getHeader(LONGITUDE_HEADER), 180);
         if (latitude == null || longitude == null) {
@@ -44,6 +52,37 @@ public class LocationService {
         location.put("province", text(request.getHeader(REGION_HEADER)));
         location.put("country", countryName(request.getHeader(COUNTRY_HEADER)));
         return location;
+    }
+
+    /**
+     * Through the frontend proxy, Cloudflare's headers describe Vercel's data
+     * centre, so the visitor location comes from the proxy's own headers
+     * (Vercel's geolocation of the visitor).
+     */
+    private Map<String, Object> proxiedLocation(HttpServletRequest request) {
+        FrontendProxyTrust trust = frontendProxyTrust;
+        Double latitude = coordinate(trust.geoHeader(request, FrontendProxyTrust.GEO_LATITUDE_HEADER), 90);
+        Double longitude = coordinate(trust.geoHeader(request, FrontendProxyTrust.GEO_LONGITUDE_HEADER), 180);
+        if (latitude == null || longitude == null) {
+            return fallbackLocation();
+        }
+        Map<String, Object> location = new HashMap<>();
+        location.put("latitude", latitude);
+        location.put("longitude", longitude);
+        location.put("city", text(decode(trust.geoHeader(request, FrontendProxyTrust.GEO_CITY_HEADER))));
+        location.put("province", text(decode(trust.geoHeader(request, FrontendProxyTrust.GEO_REGION_HEADER))));
+        location.put("country", countryName(trust.geoHeader(request, FrontendProxyTrust.GEO_COUNTRY_HEADER)));
+        return location;
+    }
+
+    /** Vercel URL-encodes city names (e.g. "St.%20Albert"). */
+    private static String decode(String value) {
+        if (value == null) return null;
+        try {
+            return java.net.URLDecoder.decode(value, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            return value;
+        }
     }
 
     private static Double coordinate(String value, double limit) {

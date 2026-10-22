@@ -236,6 +236,9 @@ services:
       # (deploy/nginx/cloudflare-real-ip.conf) and puts the real client IP at the
       # right-hand end of X-Forwarded-For. One list, one place to update.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.18.0.1/32}
+      # Shared with the frontend's API proxy (Vercel env FRONTEND_PROXY_SECRET).
+      # Empty keeps proxy trust off; requests then resolve the IP as above.
+      FRONTEND_PROXY_SECRET: ${FRONTEND_PROXY_SECRET:-}
       # Server-side idle timeout per role (minutes), defaulting to the same
       # customer/styler/admin windows as application.properties.
       SESSION_IDLE_CUSTOMER_MINUTES: ${SESSION_IDLE_CUSTOMER_MINUTES:-60}
@@ -276,6 +279,7 @@ services:
       # One-time seed/legacy identity refresh on the demo database only.
       APP_DEMO_SEED: ${DEMO_SEED:-false}
       APP_ENV: demo
+      FRONTEND_PROXY_SECRET: ${DEMO_FRONTEND_PROXY_SECRET:-}
       CORS_ALLOWED_ORIGINS: ${DEMO_CORS_ALLOWED_ORIGINS:-https://demo.rapidstylers.ca}
       NEWSLETTER_API_URL: https://api-demo.rapidstylers.ca
       NEWSLETTER_SITE_URL: https://demo.rapidstylers.ca

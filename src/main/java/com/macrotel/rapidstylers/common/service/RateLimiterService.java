@@ -76,6 +76,10 @@ public class RateLimiterService {
     private final Map<String, MemoryBucket> memoryBuckets = new ConcurrentHashMap<>();
     private final AtomicLong memoryLastPruned = new AtomicLong(0L);
 
+    /** Optional: set when the frontend API proxy is configured. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    FrontendProxyTrust frontendProxyTrust;
+
     public RateLimiterService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
@@ -141,6 +145,12 @@ public class RateLimiterService {
                 return "unknown";
             }
             HttpServletRequest request = attrs.getRequest();
+            // A request relayed by our own frontend proxy arrives from Vercel;
+            // the visitor's IP is the one the signed proxy reports.
+            String proxied = frontendProxyTrust == null ? null : frontendProxyTrust.clientIp(request);
+            if (proxied != null) {
+                return proxied;
+            }
             String remote = request.getRemoteAddr();
             InetAddress peer = (remote == null || remote.isBlank()) ? null : InetAddress.getByName(remote);
             String forwarded = request.getHeader("X-Forwarded-For");

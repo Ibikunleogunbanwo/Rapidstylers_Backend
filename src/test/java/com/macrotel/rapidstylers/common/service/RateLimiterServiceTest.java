@@ -131,6 +131,21 @@ class RateLimiterServiceTest {
     }
 
     @Test
+    void theSignedFrontendProxyReportsTheVisitorIp() {
+        String secret = "0123456789abcdef0123456789abcdef-proxy";
+        rateLimiterService.frontendProxyTrust = new FrontendProxyTrust(secret);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRemoteAddr()).thenReturn("76.76.21.21");
+        when(request.getHeader(FrontendProxyTrust.SECRET_HEADER)).thenReturn(secret);
+        when(request.getHeader(FrontendProxyTrust.CLIENT_IP_HEADER)).thenReturn("203.0.113.9");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        assertEquals("203.0.113.9", rateLimiterService.clientIp());
+
+        when(request.getHeader(FrontendProxyTrust.SECRET_HEADER)).thenReturn("not-the-secret-not-the-secret-xx");
+        assertEquals("76.76.21.21", rateLimiterService.clientIp(), "without the secret the forwarded IP is ignored");
+    }
+
+    @Test
     void untrustedPeerIgnoresSpoofedXForwardedFor() {
         rateLimiterService.trustedProxies = RateLimiterService.parseTrustedProxies("");
 
