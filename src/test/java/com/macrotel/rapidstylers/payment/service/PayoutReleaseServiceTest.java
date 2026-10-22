@@ -51,7 +51,7 @@ class PayoutReleaseServiceTest {
         when(stripeService.isConfigured()).thenReturn(true);
         com.stripe.model.Transfer transfer = new com.stripe.model.Transfer();
         transfer.setId("tr_9");
-        doReturn(transfer).when(stripeService).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+        doReturn(transfer).when(stripeService).transferStylistShare(anyString(), anyLong(), anyString(), anyString(), anyString());
 
         PaymentService paymentService = new PaymentService();
         paymentService.refundRepo = refundRepo;
@@ -114,7 +114,7 @@ class PayoutReleaseServiceTest {
         payouts.releaseDuePayouts();
 
         // $125 less 12% ($15) is $110.
-        verify(stripeService).transferStylistShare("acct_1", 11000L, "APPT1", "payout_APPT1_11000");
+        verify(stripeService).transferStylistShare("acct_1", 11000L, "APPT1", "payout_APPT1_11000_charge", "pi_1");
         assertEquals("tr_9", appointment.getStripeTransferId());
         assertNull(appointment.getPayoutDueAt());
         assertEquals(1500L, appointment.getPlatformFeeCents());
@@ -131,7 +131,7 @@ class PayoutReleaseServiceTest {
         payouts.release(appointment);
 
         // $100 kept, less 12% ($12), is $88.
-        verify(stripeService).transferStylistShare("acct_1", 8800L, "APPT1", "payout_APPT1_8800");
+        verify(stripeService).transferStylistShare("acct_1", 8800L, "APPT1", "payout_APPT1_8800_charge", "pi_1");
     }
 
     @Test
@@ -143,7 +143,7 @@ class PayoutReleaseServiceTest {
         payouts.release(appointment);
 
         // The stylist gets $150 less 12% ($18) = $132; the platform kept $125, so its fee is -$7.
-        verify(stripeService).transferStylistShare("acct_1", 13200L, "APPT1", "payout_APPT1_13200");
+        verify(stripeService).transferStylistShare("acct_1", 13200L, "APPT1", "payout_APPT1_13200_charge", "pi_1");
         assertEquals(-700L, appointment.getPlatformFeeCents());
         assertEquals(13200L, appointment.getStylistShareCents());
     }
@@ -160,7 +160,7 @@ class PayoutReleaseServiceTest {
         payouts.release(appointment);
 
         // $100 kept is 80% of the charge, so 80% of the $25 discount: $120, less 12% ($14.40) = $105.60.
-        verify(stripeService).transferStylistShare("acct_1", 10560L, "APPT1", "payout_APPT1_10560");
+        verify(stripeService).transferStylistShare("acct_1", 10560L, "APPT1", "payout_APPT1_10560_charge", "pi_1");
     }
 
     @Test
@@ -189,7 +189,7 @@ class PayoutReleaseServiceTest {
 
         // Even if it is picked up, a disputed booking is not paid.
         payouts.release(appointment);
-        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -232,7 +232,7 @@ class PayoutReleaseServiceTest {
         assertEquals("Arrived late, half refunded", appointment.getServiceDisputeResolutionNote());
         assertNotNull(appointment.getServiceDisputeResolvedAt());
         // $75 kept, less 12% ($9), is $66.
-        verify(stripeService).transferStylistShare("acct_1", 6600L, "APPT1", "payout_APPT1_6600");
+        verify(stripeService).transferStylistShare("acct_1", 6600L, "APPT1", "payout_APPT1_6600_charge", "pi_1");
     }
 
     @Test
@@ -246,7 +246,7 @@ class PayoutReleaseServiceTest {
 
         assertEquals("RESOLVED", appointment.getServiceDisputeStatus());
         assertNull(appointment.getPayoutDueAt());
-        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString(), anyString());
     }
 
     // ── Stylists without a payout account ─────────────────────────────
@@ -270,7 +270,7 @@ class PayoutReleaseServiceTest {
         assertEquals("NO_PAYOUT_ACCOUNT", appointment.getPayoutHoldReason());
         assertNull(appointment.getPayoutDueAt());
         assertEquals(11000L, appointment.getStylistShareCents());
-        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString(), anyString());
         verify(emailConfig).sendSimpleMail(eq("chloe@example.com"), contains("earnings waiting"), anyString());
     }
 
@@ -294,7 +294,7 @@ class PayoutReleaseServiceTest {
         payouts.release(appointment);
 
         assertEquals("NO_PAYOUT_ACCOUNT", appointment.getPayoutHoldReason());
-        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -337,7 +337,7 @@ class PayoutReleaseServiceTest {
 
         assertEquals("200", response.getStatusCode());
         assertEquals("NO_PAYOUT_ACCOUNT", older.getPayoutHoldReason());
-        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString());
+        verify(stripeService, never()).transferStylistShare(anyString(), anyLong(), anyString(), anyString(), anyString());
     }
 
     @Test

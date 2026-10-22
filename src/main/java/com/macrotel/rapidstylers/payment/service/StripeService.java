@@ -241,6 +241,43 @@ public class StripeService {
         return transferStylistShare(connectAccountId, amountCents, appointmentId, null);
     }
 
+    /**
+     * Pays the stylist's share out of the customer's own charge (Stripe's
+     * source_transaction). Without it a transfer draws on the platform's
+     * available balance, which in Canada holds new charges for days, so the
+     * payout fails with "insufficient available funds" until they settle.
+     * Tied to the charge, the transfer goes through right away and its funds
+     * reach the stylist when the charge settles.
+     */
+    public Transfer transferStylistShare(String connectAccountId, long amountCents, String appointmentId,
+                                         String idempotencyKey, String paymentIntentId) throws StripeException {
+        String sourceCharge = chargeIdFor(paymentIntentId);
+        if (sourceCharge == null) {
+            return transferStylistShare(connectAccountId, amountCents, appointmentId, idempotencyKey);
+        }
+        if(connectAccountId == null || connectAccountId.isBlank() || amountCents <= 0){
+            return null;
+        }
+        RequestOptions tOpts = idempotencyKey != null && !idempotencyKey.isBlank()
+                ? RequestOptions.builder().setIdempotencyKey(idempotencyKey).build()
+                : RequestOptions.builder().build();
+        return Transfer.create(TransferCreateParams.builder()
+                .setAmount(amountCents)
+                .setCurrency(currency())
+                .setDestination(connectAccountId)
+                .setSourceTransaction(sourceCharge)
+                .putMetadata("appointmentId", appointmentId == null ? "" : appointmentId)
+                .putMetadata("platform", "rapidstylers")
+                .build(), tOpts);
+    }
+
+    /** The charge behind a payment intent, or null when there is none to tie a transfer to. */
+    String chargeIdFor(String paymentIntentId) throws StripeException {
+        if (paymentIntentId == null || paymentIntentId.isBlank()) return null;
+        PaymentIntent intent = PaymentIntent.retrieve(paymentIntentId);
+        return intent == null ? null : intent.getLatestCharge();
+    }
+
     public Transfer transferStylistShare(String connectAccountId, long amountCents, String appointmentId,
                                          String idempotencyKey) throws StripeException {
         if(connectAccountId == null || connectAccountId.isBlank() || amountCents <= 0){

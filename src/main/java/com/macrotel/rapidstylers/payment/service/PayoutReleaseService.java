@@ -135,9 +135,13 @@ public class PayoutReleaseService {
                 return false;
             }
             if (stylistShareCents > 0) {
+                // Drawn from the customer's own charge, so it never waits on the
+                // platform balance. The key names that, so a failure cached under
+                // an older balance-funded key cannot replay here.
                 com.stripe.model.Transfer transfer = stripeService.transferStylistShare(destination, stylistShareCents,
                         appointment.getAppointmentId(),
-                        "payout_" + appointment.getAppointmentId() + "_" + stylistShareCents);
+                        "payout_" + appointment.getAppointmentId() + "_" + stylistShareCents + "_charge",
+                        appointment.getPaymentIntentId());
                 if (transfer != null) {
                     appointment.setStripeTransferId(transfer.getId());
                 }
