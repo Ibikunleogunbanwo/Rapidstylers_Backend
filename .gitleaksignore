@@ -1,0 +1,2 @@
+# Test fixture flagged by generic-api-key: a dummy JWT secret in a unit test, not a credential.
+3ebc42dc16b95046f9ea00a407d4cffd4a4c7d98:src/test/java/com/macrotel/rapidstylers/auth/service/SignupTokenServiceTest.java:generic-api-key:16
