@@ -557,6 +557,35 @@ class BookingWorkflowTest {
     }
 
     @Test
+    void aTimeEarlierTodayOnTheProfessionalsClockCannotBeBooked() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("visitBarber");
+        data.setAppointmentDate("2030-08-24");
+        data.setArrivalTime("09:00");
+        UserEntity customer = new UserEntity();
+        customer.setUserId("CUSTOMER1");
+        StylerEntity calgary = approvedStyler();
+        calgary.setTimeZone("America/Edmonton");
+        when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
+        when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(calgary));
+        BookingService bookingService = services.bookingService();
+        // 10:00 AM in Calgary on the 24th (16:00 UTC): 9:00 has gone, 11:00 is still ahead.
+        bookingService.clock = java.time.Clock.fixed(java.time.Instant.parse("2030-08-24T16:00:00Z"), java.time.ZoneOffset.UTC);
+
+        BaseResponse response = bookingService.bookAppointment(data);
+
+        assertEquals("400", response.getStatusCode());
+        assertEquals("That time has already passed. Please pick a later time", response.getMessage());
+        assertFalse(bookingService.startHasPassed(calgary, LocalDate.parse("2030-08-24"), LocalTime.of(11, 0)));
+        // The same 10:00 AM Calgary moment is 9:00 AM in Vancouver, so 9:30 there is still ahead.
+        StylerEntity vancouver = approvedStyler();
+        vancouver.setTimeZone("America/Vancouver");
+        assertFalse(bookingService.startHasPassed(vancouver, LocalDate.parse("2030-08-24"), LocalTime.of(9, 30)));
+        assertTrue(bookingService.startHasPassed(vancouver, LocalDate.parse("2030-08-23"), LocalTime.of(23, 0)));
+        verify(appointmentRepo, never()).saveAndFlush(any());
+    }
+
+    @Test
     void bookingQueuesAppointmentNotificationInsteadOfSendingEmailSynchronously() {
         BookAppointmentData data = bookingData();
         data.setAppointmentDate(LocalDate.now().plusDays(1).toString());

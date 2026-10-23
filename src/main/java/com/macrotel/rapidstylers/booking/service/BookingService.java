@@ -108,6 +108,8 @@ public class BookingService {
     /** Custom quotes; null in unit tests that build this service by hand and never book one. */
     @Autowired(required = false)
     QuoteService quoteService;
+    /** Swapped in tests to stand at a chosen moment. */
+    java.time.Clock clock = java.time.Clock.systemUTC();
 
     /** Null-safe eviction — unit tests that build this service without a cache never break. */
     private void evict(String... keys){
@@ -182,7 +184,9 @@ public class BookingService {
         try{
             LocalDate appointmentDate = availabilityService.parseBookingDate(bookAppointmentData.getAppointmentDate());
             LocalTime appointmentStart = availabilityService.parseBookingTime(bookAppointmentData.getArrivalTime());
-            if(appointmentDate.isBefore(LocalDate.now(applicationZone()))){
+            // A day behind the app's own date can't be today anywhere in Canada; the
+            // exact check runs on the professional's clock once their row is read.
+            if(appointmentDate.isBefore(LocalDate.now(clockIn(applicationZone())).minusDays(1))){
                 return Responses.errorResponse(response, "Appointment date cannot be in the past");
             }
             // The marketplace exposes quarter-hour boundaries; reject unsupported API values too.
@@ -202,6 +206,14 @@ public class BookingService {
             }
             if(isStylerExist.isEmpty()){
                 return Responses.errorResponse(response, "Invalid Styler Id");
+            }
+            // The booked time is on the professional's clock, so "already passed"
+            // is judged in their zone: 9:00 AM in Calgary is gone at 9:05 Calgary
+            // time wherever the customer is.
+            if(startHasPassed(isStylerExist.get(), appointmentDate, appointmentStart)){
+                return Responses.errorResponse(response, appointmentDate.isBefore(LocalDate.now(clockIn(stylerZone(isStylerExist.get()))))
+                        ? "Appointment date cannot be in the past"
+                        : "That time has already passed. Please pick a later time");
             }
             // A twin request with the same key may have just booked while we waited
             // for the lock. Stop before touching the card; BookingRetries replays it.
@@ -616,6 +628,21 @@ public class BookingService {
         }
         // Unique(styler_id, date, slot_start) is the final database-level race guard.
         bookingSlotLockRepo.saveAllAndFlush(locks);
+    }
+
+    /** Null-safe: hand-wired test services may leave the clock unset. */
+    private java.time.Clock clockIn(ZoneId zone){
+        return (clock == null ? java.time.Clock.systemUTC() : clock).withZone(zone);
+    }
+
+    /** The professional's clock; a row that declares none runs on the app's zone, as the website assumes. */
+    private ZoneId stylerZone(StylerEntity styler){
+        ZoneId zone = com.macrotel.rapidstylers.styler.service.VendorZoneResolver.zoneForStyler(styler.getTimeZone(), styler.getProvince());
+        return zone == null ? applicationZone() : zone;
+    }
+
+    boolean startHasPassed(StylerEntity styler, LocalDate date, LocalTime start){
+        return LocalDateTime.of(date, start).isBefore(LocalDateTime.now(clockIn(stylerZone(styler))));
     }
 
     private ZoneId applicationZone(){
