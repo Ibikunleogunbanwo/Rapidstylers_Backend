@@ -512,6 +512,10 @@ class DemoContentInitializerTest {
         assertEquals(DemoContentInitializer.locationFor(type, 3).address(), legacy.getBusinessAddress());
         assertNotEquals(51.0447, legacy.getLatitude());
         assertEquals("America/Edmonton", legacy.getTimeZone());
+        assertEquals(legacy.getBusinessAddress(),
+                (legacy.getUnit() == null ? "" : legacy.getUnit() + ", ") + legacy.getStreetAddress(),
+                "the edit form's street and unit name the same place as the public address");
+        assertEquals("Calgary", legacy.getCity());
         assertFalse(initializer.refreshDemoLocation(legacy, type), "a second run changes nothing");
 
         legacy.setBusinessAddress("Suite 300, 1 Operator Edit St SW");

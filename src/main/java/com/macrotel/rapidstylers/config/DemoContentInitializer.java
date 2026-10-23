@@ -623,6 +623,16 @@ public class DemoContentInitializer implements CommandLineRunner {
 
     private static void applyLocation(StylerEntity styler, DemoSeedContent.DemoLocation location) {
         styler.setBusinessAddress(location.address());
+        // The edit form reads the structured fields, so they must name the same
+        // place as the one-line address or the stylist sees two addresses.
+        String[] parts = location.address().split(",\\s*", 2);
+        boolean hasUnit = parts.length == 2;
+        styler.setUnit(hasUnit ? parts[0] : null);
+        styler.setStreetAddress(hasUnit ? parts[1] : parts[0]);
+        styler.setCity("Calgary");
+        styler.setProvince("Alberta");
+        styler.setCountry("Canada");
+        styler.setPostalCode(null);
         styler.setLatitude(location.latitude());
         styler.setLongitude(location.longitude());
     }
@@ -650,6 +660,7 @@ public class DemoContentInitializer implements CommandLineRunner {
         if (!seedAddress) return changed;
         DemoSeedContent.DemoLocation target = locationFor(type, ordinal);
         if (target.address().equals(current)
+                && styler.getStreetAddress() != null && target.address().endsWith(styler.getStreetAddress())
                 && Double.valueOf(target.latitude()).equals(styler.getLatitude())
                 && Double.valueOf(target.longitude()).equals(styler.getLongitude())) return changed;
         applyLocation(styler, target);
