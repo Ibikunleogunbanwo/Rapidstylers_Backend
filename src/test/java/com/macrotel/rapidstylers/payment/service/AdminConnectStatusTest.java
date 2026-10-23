@@ -64,6 +64,19 @@ class AdminConnectStatusTest {
         assertEquals(null, rows.get(0).get("disabledReason"));
     }
 
+    @Test
+    void aCompleteFlagWithNoStripeAccountReadsAsNotStarted() {
+        // Seeded or imported profiles can carry COMPLETE without an account;
+        // the stylist must still be offered "Connect to get paid".
+        StylerEntity noAccount = styler("S9", "COMPLETE", null, "APPROVED");
+        when(stylerRepo.findByStylerId("S9")).thenReturn(java.util.Optional.of(noAccount));
+        services.bookAppointmentRepo = mock(com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo.class);
+
+        BaseResponse response = services.connectAccountService().getStylerConnectStatus("S9");
+
+        assertEquals("NOT_STARTED", ((Map<?, ?>) response.getData()).get("status"));
+    }
+
     private StylerEntity styler(String id, String connectStatus, String accountId, String verification) {
         StylerEntity styler = new StylerEntity();
         styler.setStylerId(id);

@@ -219,7 +219,11 @@ public class ConnectAccountService {
             StylerEntity styler = stylerOpt.get();
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("accountId", styler.getStripeConnectAccountId());
-            data.put("status", styler.getConnectOnboardingStatus() == null
+            // No Stripe account means nothing is set up, whatever an older flag
+            // says (seeded or imported profiles can carry COMPLETE with no account).
+            boolean hasAccount = styler.getStripeConnectAccountId() != null
+                    && !styler.getStripeConnectAccountId().isBlank();
+            data.put("status", !hasAccount || styler.getConnectOnboardingStatus() == null
                     ? "NOT_STARTED" : styler.getConnectOnboardingStatus());
             data.put("disabledReason", styler.getConnectDisabledReason());
             // Earnings kept back until payout setup is done, for a "finish setup" banner.
