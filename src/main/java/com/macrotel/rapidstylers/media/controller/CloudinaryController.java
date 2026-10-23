@@ -68,7 +68,7 @@ public class CloudinaryController {
     @Value("${cloudinary.api-secret:}")
     private String apiSecret;
 
-    @Value("${cloudinary.allowed-folder-prefixes:profile,id,store,portfolio}")
+    @Value("${cloudinary.allowed-folder-prefixes:profile,cover,id,store,portfolio}")
     private String allowedFolderPrefixes;
 
     @Value("${cloudinary.allowed-formats:jpg,jpeg,png,webp,gif}")

@@ -50,6 +50,24 @@ class CloudinaryControllerTest {
         assertEquals("rapid_stylers/profile", params.get("folder"));
     }
 
+    @Test
+    void everyFolderTheAppUploadsToIsAllowedByDefault() throws Exception {
+        // The stylist cover photo uploads to "cover"; leaving it out of the
+        // default list made every cover photo fail before reaching Cloudinary.
+        String properties = new String(java.nio.file.Files.readAllBytes(
+                java.nio.file.Path.of("src/main/resources/application.properties")));
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("cloudinary.allowed-folder-prefixes=\\$\\{CLOUDINARY_ALLOWED_FOLDER_PREFIXES:([^}]*)}")
+                .matcher(properties);
+        org.junit.jupiter.api.Assertions.assertTrue(m.find());
+        java.util.Set<String> defaults = java.util.Set.of(m.group(1).split(","));
+        for (String folder : java.util.List.of("profile", "cover", "portfolio", "id")) {
+            org.junit.jupiter.api.Assertions.assertTrue(defaults.contains(folder), folder + " missing from " + defaults);
+        }
+        ReflectionTestUtils.setField(controller, "allowedFolderPrefixes", m.group(1));
+        assertEquals(SUCCESS_STATUS_CODE, controller.getUploadSignature("cover").getBody().getStatusCode());
+    }
+
     /**
      * The point of audit check 16: the type limit has to be inside the
      * signature, because Cloudinary only enforces what was signed. This recomputes
