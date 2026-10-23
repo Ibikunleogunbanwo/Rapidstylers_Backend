@@ -50,5 +50,11 @@ public class BookAppointmentData {
     /** Optional promo code. The server alone works out whether it applies and what it takes off. */
     @Size(max = 40, message = "Promo code is too long")
     private String promoCode;
+    /**
+     * An accepted custom quote this booking pays for. The server takes the price
+     * and duration from the quote, never from the request.
+     */
+    @Size(max = 16, message = "Quote id is too long")
+    private String quoteRef;
 
 }

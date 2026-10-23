@@ -2,6 +2,7 @@ package com.macrotel.rapidstylers.booking.service;
 
 import com.macrotel.rapidstylers.booking.entity.BookAppointmentEntity;
 import com.macrotel.rapidstylers.booking.entity.BookingSlotLockEntity;
+import com.macrotel.rapidstylers.booking.entity.QuoteEntity;
 import com.macrotel.rapidstylers.booking.pojo.BookAppointmentData;
 import com.macrotel.rapidstylers.booking.repo.BookAppointmentRepo;
 import com.macrotel.rapidstylers.booking.repo.BookingSlotLockRepo;
@@ -104,6 +105,9 @@ public class BookingService {
     PaymentAuthorizationService paymentAuthorizationService;
     @Autowired
     GeocodingService geocodingService;
+    /** Custom quotes; null in unit tests that build this service by hand and never book one. */
+    @Autowired(required = false)
+    QuoteService quoteService;
 
     /** Null-safe eviction — unit tests that build this service without a cache never break. */
     private void evict(String... keys){
@@ -127,7 +131,18 @@ public class BookingService {
             if(subService.isEmpty()){
                 return Responses.errorResponse(response, "Invalid service for this stylist");
             }
-            TravelPricing pricing = calculateTravelPricing(bookAppointmentData, styler.get(), subService.get().getPrice());
+            TravelPricing pricing;
+            String quoteRef = bookAppointmentData.getQuoteRef();
+            if(quoteRef != null && !quoteRef.isBlank()){
+                if(quoteService == null || bookAppointmentData.getUserId() == null){
+                    return Responses.errorResponse(response, "Sign in to book this quote");
+                }
+                QuoteEntity quote = quoteService.forEstimate(quoteRef.trim(), bookAppointmentData.getUserId(), bookAppointmentData.getStylerId());
+                bookAppointmentData.setServiceTime(quote.getServiceTime());
+                pricing = calculateTravelPricing(bookAppointmentData, styler.get(), MoneyUtils.moneyCents(quote.getPriceCents()), 1);
+            } else {
+                pricing = calculateTravelPricing(bookAppointmentData, styler.get(), subService.get().getPrice());
+            }
             response.setStatusCode(SUCCESS_STATUS_CODE);
             response.setMessage(SUCCESS_MESSAGE);
             response.setData(pricing.toMap());
@@ -221,16 +236,32 @@ public class BookingService {
             String price;
             int durationMinutes;
             TravelPricing pricing;
+            QuoteEntity quote = null;
             try {
                 Optional<SubServiceEntity> subService = stylerRecords.findSubService(
                         bookAppointmentData.getStylerId(), Long.parseLong(subServiceId));
                 if(subService.isEmpty()){
                     return Responses.errorResponse(response, "Invalid service for this stylist");
                 }
-                // The client price and duration are never trusted.
-                price = subService.get().getPrice();
-                durationMinutes = serviceDuration(subService.get().getDurationMinutes());
-                pricing = calculateTravelPricing(bookAppointmentData, isStylerExist.get(), price);
+                String quoteRef = bookAppointmentData.getQuoteRef();
+                if(quoteRef != null && !quoteRef.isBlank()){
+                    if(quoteService == null){
+                        return Responses.errorResponse(response, "Quote not found");
+                    }
+                    // An agreed price for the whole job, in place of the listed one.
+                    quote = quoteService.forCheckout(quoteRef.trim(), bookAppointmentData.getUserId(), bookAppointmentData.getStylerId());
+                    bookAppointmentData.setSubServiceId(quote.getSubServiceId());
+                    bookAppointmentData.setNoOfPeople(String.valueOf(quote.getNoOfPeople()));
+                    bookAppointmentData.setServiceTime(quote.getServiceTime());
+                    price = MoneyUtils.moneyCents(quote.getPriceCents());
+                    durationMinutes = serviceDuration(quote.getDurationMinutes());
+                    pricing = calculateTravelPricing(bookAppointmentData, isStylerExist.get(), price, 1);
+                } else {
+                    // The client price and duration are never trusted.
+                    price = subService.get().getPrice();
+                    durationMinutes = serviceDuration(subService.get().getDurationMinutes());
+                    pricing = calculateTravelPricing(bookAppointmentData, isStylerExist.get(), price);
+                }
             } catch(NumberFormatException ex){
                 return Responses.errorResponse(response, "Invalid service for this stylist");
             }
@@ -290,6 +321,7 @@ public class BookingService {
                 chargeTotal = MoneyUtils.moneyCents(MoneyUtils.centsFromPrice(pricing.totalPrice) - promo.discountCents);
                 appointment.setPaymentAmount(chargeTotal);
             }
+            appointment.setQuoteRef(quote == null ? null : quote.getQuoteRef());
             appointment.setIdempotencyKey(idempotencyKey);
             appointment.setIdempotencyFingerprint(idempotencyKey == null ? null : fingerprint);
 
@@ -394,6 +426,9 @@ public class BookingService {
                 funnel(FunnelService.FIRST_BOOKING, "CUSTOMER", appointment.getUserId());
             }
             reserveBookingSlots(appointment, appointmentDate, appointmentStart, durationMinutes);
+            if(quote != null){
+                quoteService.markAccepted(quote, appointment.getAppointmentId());
+            }
             auditService.audit(bookAppointmentData.getUserId(), "CUSTOMER", "CREATE_BOOKING", "APPOINTMENT",
                     appointment.getAppointmentId(), "Booking request created");
 
@@ -432,7 +467,11 @@ public class BookingService {
     }
 
     private TravelPricing calculateTravelPricing(BookAppointmentData data, StylerEntity styler, String rawServicePrice){
-        int people = parsePeople(data.getNoOfPeople());
+        return calculateTravelPricing(data, styler, rawServicePrice, parsePeople(data.getNoOfPeople()));
+    }
+
+    /** {@code people} multiplies the service price; a quote's price already covers everyone, so it passes 1. */
+    private TravelPricing calculateTravelPricing(BookAppointmentData data, StylerEntity styler, String rawServicePrice, int people){
         BigDecimal serviceUnitPrice = MoneyUtils.amount(rawServicePrice);
         BigDecimal servicePrice = serviceUnitPrice.multiply(BigDecimal.valueOf(people)).setScale(2, RoundingMode.HALF_UP);
         double includedKm = styler.getIncludedTravelKm() == null ? 15.0 : styler.getIncludedTravelKm();

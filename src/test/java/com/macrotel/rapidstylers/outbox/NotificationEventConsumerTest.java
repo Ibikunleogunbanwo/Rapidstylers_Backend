@@ -371,4 +371,16 @@ class NotificationEventConsumerTest {
                 + "\"stylerDetail\":\"The client's payment has been received.\""
                 + "}";
     }
+
+    @org.junit.jupiter.api.Test
+    void aQuoteEmailEscapesThePeoplesOwnWordsAndPointsToTheRightPage() {
+        String body = NotificationEventConsumer.quoteBody(java.util.Map.of(
+                "headline", "New quote request",
+                "detail", "<script>alert(1)</script> braids",
+                "audience", "STYLIST"));
+        org.junit.jupiter.api.Assertions.assertFalse(body.contains("<script>"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("&lt;script&gt;"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("under Quotes"));
+        org.junit.jupiter.api.Assertions.assertEquals("RapidStylers - Quote update", NotificationEventConsumer.quoteSubject(" "));
+    }
 }

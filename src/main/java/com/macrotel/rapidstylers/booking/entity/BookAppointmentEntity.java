@@ -112,6 +112,10 @@ public class BookAppointmentEntity implements Serializable {
     @Column(name = "reminder_sent_at")
     private LocalDateTime reminderSentAt;
 
+    /** The custom quote this booking was made from, when its price was agreed in advance. */
+    @Column(name = "quote_ref", length = 16)
+    private String quoteRef;
+
     public BookAppointmentEntity() {
     }
 

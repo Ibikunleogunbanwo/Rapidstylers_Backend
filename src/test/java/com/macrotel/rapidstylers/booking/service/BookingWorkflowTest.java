@@ -441,6 +441,122 @@ class BookingWorkflowTest {
     }
 
     @Test
+    void aQuotedBookingChargesTheQuotedPriceForTheWholeGroupAndClosesTheQuote() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("visitBarber");
+        data.setNoOfPeople("4");
+        data.setQuoteRef("QABC1234");
+        UserEntity customer = new UserEntity();
+        customer.setUserId("CUSTOMER1");
+        when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
+        when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(approvedStyler()));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(60)));
+        when(appointmentRepo.findByUserIdAndStylerIdAndAppointmentDateValueAndAppointmentStartTimeAndStatusIn(
+                anyString(), anyString(), any(), any(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findDuplicateBooking(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDateValue(anyString(), any())).thenReturn(Collections.emptyList());
+        when(appointmentRepo.findByStylerIdAndAppointmentDate(anyString(), anyString())).thenReturn(Collections.emptyList());
+        when(availabilityRepo.findByStylerId(anyString())).thenReturn(Collections.emptyList());
+        when(availabilityExceptionRepo.findByStylerIdAndBlockedDate(anyString(), anyString())).thenReturn(Optional.empty());
+        when(appointmentRepo.saveAndFlush(any(BookAppointmentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        com.macrotel.rapidstylers.booking.entity.QuoteEntity quote = new com.macrotel.rapidstylers.booking.entity.QuoteEntity();
+        quote.setQuoteRef("QABC1234");
+        quote.setUserId("CUSTOMER1");
+        quote.setStylerId("STYLER1");
+        quote.setSubServiceId("1");
+        quote.setServiceTime("visitBarber");
+        quote.setNoOfPeople(4);
+        quote.setStatus(com.macrotel.rapidstylers.booking.entity.QuoteEntity.QUOTED);
+        quote.setPriceCents(450_00L);
+        quote.setDurationMinutes(180);
+        quote.setValidUntil(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).plusDays(2));
+        QuoteService quotes = new QuoteService();
+        com.macrotel.rapidstylers.booking.repo.QuoteRepo quoteRepo = mock(com.macrotel.rapidstylers.booking.repo.QuoteRepo.class);
+        when(quoteRepo.findByQuoteRefForUpdate("QABC1234")).thenReturn(Optional.of(quote));
+        quotes.quoteRepo = quoteRepo;
+        BookingService bookingService = services.bookingService();
+        ReflectionTestUtils.setField(bookingService, "quoteService", quotes);
+
+        BaseResponse response = bookingService.bookAppointment(data);
+
+        assertEquals("200", response.getStatusCode(), response.getMessage());
+        verify(appointmentRepo).saveAndFlush(argThat(appointment ->
+                "450.00".equals(appointment.getServicePrice())
+                        && "450.00".equals(appointment.getPrice())
+                        && Integer.valueOf(180).equals(appointment.getDurationMinutes())
+                        && "QABC1234".equals(appointment.getQuoteRef())
+                        && "4".equals(appointment.getNoOfPeople())));
+        assertEquals(com.macrotel.rapidstylers.booking.entity.QuoteEntity.ACCEPTED, quote.getStatus());
+        assertNotNull(quote.getAppointmentId());
+    }
+
+    @Test
+    void theQuoteEstimatePricesTheWholeJobAtTheQuotedPrice() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("visitBarber");
+        data.setNoOfPeople("3");
+        data.setQuoteRef("QEST0001");
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(approvedStyler()));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(60)));
+        com.macrotel.rapidstylers.booking.entity.QuoteEntity quote = new com.macrotel.rapidstylers.booking.entity.QuoteEntity();
+        quote.setQuoteRef("QEST0001");
+        quote.setUserId("CUSTOMER1");
+        quote.setStylerId("STYLER1");
+        quote.setSubServiceId("1");
+        quote.setServiceTime("visitBarber");
+        quote.setNoOfPeople(3);
+        quote.setStatus(com.macrotel.rapidstylers.booking.entity.QuoteEntity.QUOTED);
+        quote.setPriceCents(300_00L);
+        quote.setDurationMinutes(120);
+        quote.setValidUntil(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).plusDays(1));
+        QuoteService quotes = new QuoteService();
+        quotes.quoteRepo = mock(com.macrotel.rapidstylers.booking.repo.QuoteRepo.class);
+        when(quotes.quoteRepo.findByQuoteRef("QEST0001")).thenReturn(Optional.of(quote));
+        BookingService bookingService = services.bookingService();
+        ReflectionTestUtils.setField(bookingService, "quoteService", quotes);
+
+        BaseResponse response = bookingService.estimateBooking(data);
+
+        assertEquals("200", response.getStatusCode(), response.getMessage());
+        assertEquals("300.00", ((Map<?, ?>) response.getData()).get("totalPrice"));
+        data.setUserId("SOMEONE_ELSE");
+        assertEquals("400", bookingService.estimateBooking(data).getStatusCode());
+    }
+
+    @Test
+    void anExpiredQuoteCannotBeBooked() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("visitBarber");
+        data.setQuoteRef("QOLD0001");
+        UserEntity customer = new UserEntity();
+        customer.setUserId("CUSTOMER1");
+        when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
+        when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(approvedStyler()));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(service(60)));
+        com.macrotel.rapidstylers.booking.entity.QuoteEntity quote = new com.macrotel.rapidstylers.booking.entity.QuoteEntity();
+        quote.setQuoteRef("QOLD0001");
+        quote.setUserId("CUSTOMER1");
+        quote.setStylerId("STYLER1");
+        quote.setSubServiceId("1");
+        quote.setStatus(com.macrotel.rapidstylers.booking.entity.QuoteEntity.QUOTED);
+        quote.setPriceCents(90_00L);
+        quote.setDurationMinutes(60);
+        quote.setValidUntil(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(1));
+        QuoteService quotes = new QuoteService();
+        quotes.quoteRepo = mock(com.macrotel.rapidstylers.booking.repo.QuoteRepo.class);
+        when(quotes.quoteRepo.findByQuoteRefForUpdate("QOLD0001")).thenReturn(Optional.of(quote));
+        BookingService bookingService = services.bookingService();
+        ReflectionTestUtils.setField(bookingService, "quoteService", quotes);
+
+        BaseResponse response = bookingService.bookAppointment(data);
+
+        assertEquals("400", response.getStatusCode());
+        assertTrue(response.getMessage().contains("expired"), response.getMessage());
+        verify(appointmentRepo, never()).saveAndFlush(any());
+    }
+
+    @Test
     void bookingQueuesAppointmentNotificationInsteadOfSendingEmailSynchronously() {
         BookAppointmentData data = bookingData();
         data.setAppointmentDate(LocalDate.now().plusDays(1).toString());

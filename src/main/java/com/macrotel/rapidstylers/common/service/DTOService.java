@@ -234,6 +234,7 @@ public class DTOService {
         appointmentDTO.setPlatformFeeCents(bookAppointmentEntity.getPlatformFeeCents());
         appointmentDTO.setStylistShareCents(bookAppointmentEntity.getStylistShareCents());
         appointmentDTO.setPromoCode(bookAppointmentEntity.getPromoCode());
+        appointmentDTO.setQuoteRef(bookAppointmentEntity.getQuoteRef());
         appointmentDTO.setPromoDiscountCents(bookAppointmentEntity.getPromoDiscountCents());
         appointmentDTO.setStylerNote(bookAppointmentEntity.getStylerNote());
         appointmentDTO.setCompletedAt(bookAppointmentEntity.getCompletedAt());

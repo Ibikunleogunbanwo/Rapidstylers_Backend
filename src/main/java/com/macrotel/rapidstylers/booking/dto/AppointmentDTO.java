@@ -36,6 +36,8 @@ public class AppointmentDTO {
     private Long platformFeeCents;
     private Long stylistShareCents;
     private String promoCode;
+    /** Set when the price was agreed through a custom quote. */
+    private String quoteRef;
     private Long promoDiscountCents;
     private String stylerNote;
     /** When the appointment was marked completed — lets the UI gate the styler cancel action. */

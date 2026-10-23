@@ -143,6 +143,30 @@ public class NotificationService {
         }
     }
 
+    /**
+     * Tells one side of a custom quote what changed: an inbox entry now and an
+     * email through the outbox. {@code toStylist} picks whose inbox and address.
+     * Never blocks the quote itself; a failure here is only logged.
+     */
+    public void notifyQuote(String userId, String stylerId, boolean toStylist, String title, String message){
+        try{
+            String text = message == null ? "" : (message.length() > 1000 ? message.substring(0, 1000) : message);
+            if(notificationRepo != null){
+                notificationRepo.save(toStylist
+                        ? NotificationEntity.forStylist(stylerId, "QUOTE", title, text)
+                        : new NotificationEntity(userId, stylerId == null ? "" : stylerId, "QUOTE", title, text));
+            }
+            String email = toStylist
+                    ? stylerRecords.findByStylerId(stylerId).map(StylerEntity::getEmailAddress).orElse(null)
+                    : customerRecords.findByUserId(userId).map(UserEntity::getEmailAddress).orElse(null);
+            if(email != null && !email.isBlank() && outboxEventService != null){
+                outboxEventService.quoteUpdate(toStylist ? stylerId : userId, email, title, text, toStylist);
+            }
+        } catch (Exception ex){
+            LOG.warning("Quote notification failed: " + ex.getMessage());
+        }
+    }
+
     /** Deletes one notification, only if it belongs to the authenticated customer. */
     public BaseResponse deleteNotification(String userId, Long notificationId){
         BaseResponse response = new BaseResponse(true);

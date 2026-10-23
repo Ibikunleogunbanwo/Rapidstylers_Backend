@@ -137,6 +137,13 @@ public class NotificationEventConsumer {
                 acknowledge(acknowledgment);
                 return;
             }
+            if ("QUOTE_UPDATE".equals(eventType)) {
+                Map<String, String> event = readPayload(payload);
+                String email = event.getOrDefault("emailAddress", "");
+                if (!email.isBlank()) emailConfig.sendSimpleMail(email, quoteSubject(event.get("headline")), quoteBody(event));
+                acknowledge(acknowledgment);
+                return;
+            }
             if ("BOOKING_REMINDER".equals(eventType)) {
                 sendReminder(readPayload(payload));
                 acknowledge(acknowledgment);
@@ -362,6 +369,19 @@ public class NotificationEventConsumer {
         emailConfig.sendSimpleMail(email, subject, body);
     }
 
+    static String quoteSubject(String headline) {
+        return "RapidStylers - " + value(headline, "Quote update");
+    }
+
+    /** Escaped on the way in: the detail can carry the customer's or stylist's own words. */
+    static String quoteBody(Map<String, String> event) {
+        String dashboard = "STYLIST".equals(event.get("audience")) ? "your stylist dashboard, under Quotes" : "My quotes in your account";
+        return "<p><strong>" + org.springframework.web.util.HtmlUtils.htmlEscape(value(event.get("headline"), "Quote update")) + "</strong></p>"
+                + "<p>" + org.springframework.web.util.HtmlUtils.htmlEscape(value(event.get("detail"), "")) + "</p>"
+                + "<p>Open " + dashboard + " to see it.</p>"
+                + "<p>Thank you,<br>The RapidStylers Team</p>";
+    }
+
     private String bookingTemplate(String eventType) {
         if (eventType == null) return null;
         return switch (eventType) {
@@ -426,7 +446,7 @@ public class NotificationEventConsumer {
                 + "<p><strong>Total paid: $" + paid + "</strong></p>";
     }
 
-    private String value(String value, String fallback) {
+    private static String value(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }
 

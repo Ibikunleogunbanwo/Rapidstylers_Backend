@@ -153,6 +153,22 @@ public class OutboxEventService {
         outboxEventRepo.save(event);
     }
 
+    /** One email about a custom quote, to the customer or the stylist; the text is built by the quote service. */
+    public void quoteUpdate(String accountId, String email, String headline, String detail, boolean toStylist) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("emailAddress", nullSafe(email));
+        payload.put("headline", nullSafe(headline));
+        payload.put("detail", nullSafe(detail));
+        payload.put("audience", toStylist ? "STYLIST" : "CUSTOMER");
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(OutboxEventType.QUOTE_UPDATE);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("QUOTE");
+        event.setAggregateId(nullSafe(accountId));
+        event.setPayload(toJson(payload));
+        outboxEventRepo.save(event);
+    }
+
     /**
      * Emits a newsletter email (a confirm-your-subscription message, one
      * campaign delivery, or an admin's test copy). The payload carries ids and

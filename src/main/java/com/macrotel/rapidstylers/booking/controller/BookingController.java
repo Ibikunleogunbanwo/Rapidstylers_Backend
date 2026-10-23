@@ -7,6 +7,7 @@ import com.macrotel.rapidstylers.booking.service.AppointmentWorkflowService;
 import com.macrotel.rapidstylers.booking.service.BookingRetries;
 import com.macrotel.rapidstylers.booking.service.BookingService;
 import com.macrotel.rapidstylers.common.web.ApiResponses;
+import com.macrotel.rapidstylers.common.web.Responses;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
 import com.macrotel.rapidstylers.common.web.CurrentAccount;
 import com.macrotel.rapidstylers.payment.service.PayoutReleaseService;
@@ -34,6 +35,9 @@ public class BookingController {
 
     @PostMapping("/booking_estimate")
     public ResponseEntity<BaseResponse> bookingEstimate(@RequestBody BookAppointmentData bookAppointmentData){
+        // Open to visitors, so it never prices a custom quote: that is /quotes/estimate, for the quote's own customer.
+        bookAppointmentData.setUserId(null);
+        bookAppointmentData.setQuoteRef(null);
         BaseResponse baseResponse = bookingService.estimateBooking(bookAppointmentData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
@@ -52,6 +56,20 @@ public class BookingController {
         BaseResponse baseResponse = bookingRetries.book(bookAppointmentData);
         HttpStatus status = ApiResponses.httpStatus(baseResponse);
         return new ResponseEntity<>(baseResponse,status);
+    }
+
+    /** The checkout price for an accepted custom quote; only the customer it was priced for may ask. */
+    @PostMapping("/quotes/estimate")
+    public ResponseEntity<BaseResponse> quoteEstimate(@RequestBody BookAppointmentData bookAppointmentData, HttpServletRequest request){
+        String accountId = CurrentAccount.id(request);
+        if(accountId == null){
+            return CurrentAccount.unauthorized();
+        }
+        bookAppointmentData.setUserId(accountId);
+        if(bookAppointmentData.getQuoteRef() == null || bookAppointmentData.getQuoteRef().isBlank()){
+            return ApiResponses.respond(Responses.errorResponse(new BaseResponse(true), "Quote not found"));
+        }
+        return ApiResponses.respond(bookingService.estimateBooking(bookAppointmentData));
     }
 
     @GetMapping("/styler_appointments")

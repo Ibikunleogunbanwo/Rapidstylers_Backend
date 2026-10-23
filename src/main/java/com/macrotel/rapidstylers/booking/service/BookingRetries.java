@@ -109,7 +109,8 @@ public class BookingRetries {
                 part(data.getServiceAddress()),
                 part(data.getTravelDistanceKm()))
                 // Added only when present, so fingerprints saved before promo codes still match.
-                + (data.getPromoCode() == null || data.getPromoCode().isBlank() ? "" : "\npromo:" + part(data.getPromoCode()).toUpperCase());
+                + (data.getPromoCode() == null || data.getPromoCode().isBlank() ? "" : "\npromo:" + part(data.getPromoCode()).toUpperCase())
+                + (data.getQuoteRef() == null || data.getQuoteRef().isBlank() ? "" : "\nquote:" + part(data.getQuoteRef()));
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);

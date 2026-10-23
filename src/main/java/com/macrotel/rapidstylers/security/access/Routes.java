@@ -275,6 +275,11 @@ public final class Routes {
             "/rapid_stylers/styler/notifications/read_all",
             "/rapid_stylers/styler/notifications/delete",
             "/rapid_stylers/styler/notifications/delete_all",
+
+            // Custom quotes
+            "/rapid_stylers/styler/quotes",
+            "/rapid_stylers/styler/quotes/offer",
+            "/rapid_stylers/styler/quotes/withdraw",
     };
 
     public static final String[] CUSTOMER = {
@@ -294,6 +299,12 @@ public final class Routes {
             "/rapid_stylers/check_promo_code",
             "/rapid_stylers/user_appointments",
             "/rapid_stylers/user_pending_appointments",
+
+            // Custom quotes
+            "/rapid_stylers/quotes",
+            "/rapid_stylers/quotes/request",
+            "/rapid_stylers/quotes/decline",
+            "/rapid_stylers/quotes/estimate",
 
             // Engagement
             "/rapid_stylers/create_review",
