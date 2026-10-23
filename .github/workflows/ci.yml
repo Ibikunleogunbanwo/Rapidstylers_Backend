@@ -173,6 +173,7 @@ jobs:
         run: |
           rsync -az --delete \
             --exclude '.env' \
+            --exclude 'backups' \
             --exclude '.git' \
             --exclude 'target' \
             --exclude '.github' \
