@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.styler.service;
 
+import com.macrotel.rapidstylers.outbox.OutboxEventService;
 import com.macrotel.rapidstylers.catalog.service.CatalogRecords;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.service.ReadCacheService;
@@ -62,6 +63,9 @@ public class StylerProfileService {
     UploadOwnership uploadOwnership = new UploadOwnership();
     @Autowired
     AuditService auditService;
+    /** Security notices by email; optional so hand-built tests need no outbox. */
+    @Autowired(required = false)
+    OutboxEventService outboxEventService;
 
     /** The stylist's own editable profile. */
     public BaseResponse profile(String stylerId) {
@@ -86,11 +90,20 @@ public class StylerProfileService {
                 || customerRecords.findByPhoneNumber(phone).isPresent())) {
             return Responses.errorResponse(response, "Phone number already registered");
         }
+        boolean nameChanged = !Objects.equals(data.getFirstname().trim(), styler.getFirstname())
+                || !Objects.equals(data.getLastname().trim(), styler.getLastname());
+        boolean phoneChanged = !phone.equals(styler.getPhoneNumber());
         styler.setFirstname(data.getFirstname().trim());
         styler.setLastname(data.getLastname().trim());
         styler.setPhoneNumber(phone);
         stylerRepo.save(styler);
         saved(styler, "STYLER_PERSONAL_INFO_UPDATED", "Name or phone number changed");
+        if (phoneChanged || nameChanged) {
+            notice(styler, "Your personal details were updated",
+                    phoneChanged && nameChanged ? "The name and phone number on your RapidStylers account were changed."
+                            : phoneChanged ? "The phone number on your RapidStylers account was changed to " + phone + "."
+                            : "The name on your RapidStylers account was changed.");
+        }
         return ok(styler, "Personal information saved");
     }
 
@@ -127,6 +140,7 @@ public class StylerProfileService {
             }
         }
 
+        boolean renamed = !Objects.equals(AppUtils.sanitizeText(data.getBusinessName().trim()), styler.getBusinessName());
         styler.setBusinessName(AppUtils.sanitizeText(data.getBusinessName().trim()));
         styler.setDescription(data.getDescription() == null ? null : AppUtils.sanitizeText(data.getDescription().trim()));
         styler.setServiceTypeId(data.getServiceTypeId().trim());
@@ -154,6 +168,12 @@ public class StylerProfileService {
             locationCacheService.indexStyler(styler.getStylerId(), styler.getLongitude(), styler.getLatitude());
         }
         saved(styler, "STYLER_BUSINESS_INFO_UPDATED", moved ? "Business details and address changed" : "Business details changed");
+        if (moved || renamed) {
+            notice(styler, "Your business details were updated",
+                    moved && renamed ? "Your business name and address were changed. Clients now see " + oneLine + "."
+                            : moved ? "Your business address was changed. Clients now see " + oneLine + "."
+                            : "Your business name was changed to " + styler.getBusinessName() + ".");
+        }
         return ok(styler, "Business information saved");
     }
 
@@ -217,6 +237,11 @@ public class StylerProfileService {
         } catch (Exception ex) {
             return false;
         }
+    }
+
+    private void notice(StylerEntity styler, String headline, String detail) {
+        if (outboxEventService == null || styler.getEmailAddress() == null || styler.getEmailAddress().isBlank()) return;
+        outboxEventService.accountNotice(styler.getStylerId(), styler.getEmailAddress(), styler.getFirstname(), headline, detail);
     }
 
     private void saved(StylerEntity styler, String action, String detail) {

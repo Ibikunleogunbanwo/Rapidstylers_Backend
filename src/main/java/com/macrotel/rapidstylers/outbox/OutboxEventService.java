@@ -153,6 +153,25 @@ public class OutboxEventService {
         outboxEventRepo.save(event);
     }
 
+    /**
+     * A security notice to an account holder that their sign-in or profile
+     * details changed, so a change they didn't make is noticed quickly.
+     */
+    public void accountNotice(String accountId, String email, String firstname, String headline, String detail) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("emailAddress", nullSafe(email));
+        payload.put("firstname", nullSafe(firstname));
+        payload.put("headline", nullSafe(headline));
+        payload.put("detail", nullSafe(detail));
+        OutboxEventEntity event = new OutboxEventEntity();
+        event.setEventType(OutboxEventType.ACCOUNT_NOTICE);
+        event.setTopic(domainEventsTopic);
+        event.setAggregateType("ACCOUNT");
+        event.setAggregateId(nullSafe(accountId));
+        event.setPayload(toJson(payload));
+        outboxEventRepo.save(event);
+    }
+
     /** One email about a custom quote, to the customer or the stylist; the text is built by the quote service. */
     public void quoteUpdate(String accountId, String email, String headline, String detail, boolean toStylist) {
         Map<String, Object> payload = new LinkedHashMap<>();

@@ -383,4 +383,13 @@ class NotificationEventConsumerTest {
         org.junit.jupiter.api.Assertions.assertTrue(body.contains("under Quotes"));
         org.junit.jupiter.api.Assertions.assertEquals("RapidStylers - Quote update", NotificationEventConsumer.quoteSubject(" "));
     }
+
+    @org.junit.jupiter.api.Test
+    void anAccountNoticeSaysWhatChangedAndWhatToDoIfItWasntThem() {
+        String body = NotificationEventConsumer.accountNoticeBody(java.util.Map.of(
+                "firstname", "<b>Nia</b>", "detail", "Your business name was changed to <i>X</i>."));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Hi &lt;b&gt;Nia&lt;/b&gt;"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("&lt;i&gt;X&lt;/i&gt;"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("If it wasn't you"));
+    }
 }

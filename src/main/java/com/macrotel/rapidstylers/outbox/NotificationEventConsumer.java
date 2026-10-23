@@ -137,6 +137,13 @@ public class NotificationEventConsumer {
                 acknowledge(acknowledgment);
                 return;
             }
+            if ("ACCOUNT_NOTICE".equals(eventType)) {
+                Map<String, String> event = readPayload(payload);
+                String email = event.getOrDefault("emailAddress", "");
+                if (!email.isBlank()) emailConfig.sendSimpleMail(email, quoteSubject(event.get("headline")), accountNoticeBody(event));
+                acknowledge(acknowledgment);
+                return;
+            }
             if ("QUOTE_UPDATE".equals(eventType)) {
                 Map<String, String> event = readPayload(payload);
                 String email = event.getOrDefault("emailAddress", "");
@@ -367,6 +374,17 @@ public class NotificationEventConsumer {
             }
         }
         emailConfig.sendSimpleMail(email, subject, body);
+    }
+
+    /** Says what changed and what to do if it wasn't them. Escaped: the detail can carry what they typed. */
+    static String accountNoticeBody(Map<String, String> event) {
+        String name = value(event.get("firstname"), "there");
+        return "<p>Hi " + org.springframework.web.util.HtmlUtils.htmlEscape(name) + ",</p>"
+                + "<p>" + org.springframework.web.util.HtmlUtils.htmlEscape(value(event.get("detail"), "Your account details were changed.")) + "</p>"
+                + "<p>If this was you, there's nothing else to do.</p>"
+                + "<p><strong>If it wasn't you</strong>, reset your password from the sign-in page right away "
+                + "and contact RapidStylers support so we can secure your account.</p>"
+                + "<p>Thank you,<br>The RapidStylers Team</p>";
     }
 
     static String quoteSubject(String headline) {

@@ -553,6 +553,11 @@ public class AuthService {
             stylerEntity.setPassword(appUtils.encryptPassword(newPassword));
             stylerRecords.save(stylerEntity);
             refreshTokenService.revokeAllForAccount(stylerId, Roles.STYLER);
+            if(outboxEventService != null && stylerEntity.getEmailAddress() != null && !stylerEntity.getEmailAddress().isBlank()){
+                outboxEventService.accountNotice(stylerId, stylerEntity.getEmailAddress(), stylerEntity.getFirstname(),
+                        "Your password was changed",
+                        "The password on your RapidStylers account was just changed, and other devices were signed out.");
+            }
             response.setToken(jwtUtil.generateToken(stylerId, Roles.STYLER));
             response.setRefreshToken(refreshTokenService.issue(stylerId, Roles.STYLER));
 

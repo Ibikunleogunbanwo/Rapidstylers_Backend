@@ -100,6 +100,46 @@ class StylerProfileServiceTest {
     }
 
     @Test
+    void aNewPhoneNumberEmailsTheStylistButResavingTheSameDetailsDoesNot() {
+        com.macrotel.rapidstylers.outbox.OutboxEventService outbox = mock(com.macrotel.rapidstylers.outbox.OutboxEventService.class);
+        profiles.outboxEventService = outbox;
+        StylerPersonalInfoData same = new StylerPersonalInfoData();
+        same.setFirstname("Chloe");
+        same.setLastname("Martin");
+        same.setPhoneNumber("5875550100");
+        profiles.updatePersonalInfo("CM1234", same);
+        verify(outbox, never()).accountNotice(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        StylerPersonalInfoData moved = new StylerPersonalInfoData();
+        moved.setFirstname("Chloe");
+        moved.setLastname("Martin");
+        moved.setPhoneNumber("4035550199");
+        profiles.updatePersonalInfo("CM1234", moved);
+
+        verify(outbox).accountNotice(org.mockito.ArgumentMatchers.eq("CM1234"), org.mockito.ArgumentMatchers.eq("chloe@example.com"),
+                org.mockito.ArgumentMatchers.eq("Chloe"), org.mockito.ArgumentMatchers.eq("Your personal details were updated"),
+                org.mockito.ArgumentMatchers.contains("4035550199"));
+    }
+
+    @Test
+    void aNewBusinessAddressEmailsTheStylistWithWhatClientsNowSee() {
+        com.macrotel.rapidstylers.outbox.OutboxEventService outbox = mock(com.macrotel.rapidstylers.outbox.OutboxEventService.class);
+        profiles.outboxEventService = outbox;
+        chloe.setBusinessName("Chloé Hair");
+        profiles.updateBusinessInfo("CM1234", business());
+        verify(outbox, never()).accountNotice(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        StylerBusinessInfoData data = business();
+        data.setStreetAddress("22 River Rd");
+        when(profiles.geocodingService.geocode(anyString())).thenReturn(Map.of("latitude", 51.1, "longitude", -114.1));
+        profiles.updateBusinessInfo("CM1234", data);
+
+        verify(outbox).accountNotice(org.mockito.ArgumentMatchers.eq("CM1234"), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.eq("Your business details were updated"),
+                org.mockito.ArgumentMatchers.contains("22 River Rd"));
+    }
+
+    @Test
     void aPhoneNumberSomeoneElseHasIsRefused() {
         when(profiles.customerRecords.findByPhoneNumber("4035550199")).thenReturn(Optional.of(new UserEntity()));
         StylerPersonalInfoData data = new StylerPersonalInfoData();
