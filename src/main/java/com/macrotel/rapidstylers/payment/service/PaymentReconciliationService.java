@@ -68,6 +68,10 @@ public class PaymentReconciliationService {
     @Value("${app.payment.reconcile-interval-ms:86400000}")
     private long reconcileIntervalMs;
 
+    /** This deployment's name (live, demo, local), matching the tag StripeService puts on intents. */
+    @Value("${APP_ENV:local}")
+    private String environment = "local";
+
     @Value("${app.admin.alert-email:}")
     private String adminAlertEmail;
 
@@ -165,8 +169,15 @@ public class PaymentReconciliationService {
 
         List<String> issues = new ArrayList<>();
         int matched = 0;
+        int otherEnvironments = 0;
         for (PaymentIntent intent : intents) {
             BookAppointmentEntity local = localByIntent.get(intent.getId());
+            if (local == null && !isOurs(intent)) {
+                // Made by another deployment sharing this Stripe account (the
+                // demo, a local run, a test suite): not missing from here.
+                otherEnvironments++;
+                continue;
+            }
             if (local == null) {
                 issues.add("Stripe intent " + intent.getId() + " has no local appointment");
                 continue;
@@ -205,10 +216,30 @@ public class PaymentReconciliationService {
         report.put("windowHours", windowHours);
         report.put("stripeIntentsChecked", intents.size());
         report.put("matched", matched);
+        report.put("otherEnvironments", otherEnvironments);
         report.put("issueCount", issues.size());
         report.put("issues", issues);
         report.put("ok", issues.isEmpty());
         return report;
+    }
+
+    /**
+     * Whether a payment intent belongs to this deployment. Intents carry the
+     * environment that created them; an intent from another environment, or
+     * one not made by RapidStylers at all, is not ours to reconcile. Older
+     * intents without the tag are still checked, as before.
+     */
+    boolean isOurs(PaymentIntent intent) {
+        Map<String, String> metadata = intent.getMetadata();
+        if (metadata == null || metadata.isEmpty()) return true;
+        String platform = metadata.get("platform");
+        if (platform != null && !"rapidstylers".equals(platform)) return false;
+        String origin = metadata.get("environment");
+        return origin == null || origin.isBlank() || origin.equals(environment());
+    }
+
+    private String environment() {
+        return environment == null || environment.isBlank() ? "local" : environment.trim();
     }
 
     /** Latest report from the most recent run, for the admin endpoint. */

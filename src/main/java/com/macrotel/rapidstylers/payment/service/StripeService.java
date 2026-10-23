@@ -47,6 +47,14 @@ public class StripeService {
      * behavior (app.stripe.secret-key / STRIPE_SECRET_KEY), so existing
      * deployments keep working unchanged while both key sets are added.
      */
+    /**
+     * Which deployment created a payment (live, demo, local). Stamped on every
+     * payment intent so environments sharing one Stripe test account can tell
+     * their own payments from each other's.
+     */
+    @Value("${APP_ENV:local}")
+    String environment = "local";
+
     @Value("${app.stripe.mode:}")
     private String mode;
 
@@ -228,11 +236,16 @@ public class StripeService {
                 .setConfirm(true)
                 .setOffSession(true)
                 .putMetadata("appointmentId", appointmentId == null ? "" : appointmentId)
-                .putMetadata("platform", "rapidstylers");
+                .putMetadata("platform", "rapidstylers")
+                .putMetadata("environment", environment());
         // Keep the charge on the platform account. The stylist transfer is
         // created only after the appointment is completed, so accepting or
         // capturing a booking never makes payout funds eligible early.
                 return PaymentIntent.create(builder.build(), optionsBuilder.build());
+    }
+
+    public String environment() {
+        return environment == null || environment.isBlank() ? "local" : environment.trim();
     }
 
     /** Transfers the stylist's net share after the appointment is completed. */

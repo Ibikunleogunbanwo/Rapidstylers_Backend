@@ -186,4 +186,24 @@ class PaymentReconciliationServiceTest {
         assertEquals("MANUAL", saved.getValue().getTriggerSource());
         assertTrue(saved.getValue().isOk());
     }
+
+    @org.junit.jupiter.api.Test
+    void paymentsFromOtherDeploymentsOnTheSameStripeAccountAreNotFlagged() {
+        ReflectionTestUtils.setField(service, "environment", "live");
+        PaymentIntent fromDemo = intent("pi_demo", "succeeded");
+        fromDemo.setMetadata(java.util.Map.of("platform", "rapidstylers", "environment", "demo"));
+        PaymentIntent notOurs = intent("pi_other", "succeeded");
+        notOurs.setMetadata(java.util.Map.of("platform", "someone-else"));
+        PaymentIntent ownMissing = intent("pi_live", "succeeded");
+        ownMissing.setMetadata(java.util.Map.of("platform", "rapidstylers", "environment", "live"));
+        PaymentIntent legacyUntagged = intent("pi_old", "succeeded");
+
+        Map<String, Object> report = service.buildReport(List.of(fromDemo, notOurs, ownMissing, legacyUntagged));
+
+        assertEquals(2, report.get("otherEnvironments"));
+        List<?> issues = (List<?>) report.get("issues");
+        assertEquals(2, issues.size(), issues.toString());
+        assertTrue(issues.stream().anyMatch(i -> i.toString().contains("pi_live")));
+        assertTrue(issues.stream().anyMatch(i -> i.toString().contains("pi_old")));
+    }
 }
