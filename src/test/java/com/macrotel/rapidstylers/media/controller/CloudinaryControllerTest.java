@@ -52,9 +52,10 @@ class CloudinaryControllerTest {
 
     @Test
     void aCustomerMayOnlyUploadQuotePhotos() {
+        // A signed-in customer, as JwtAuthFilter records one (no credentials involved).
+        String customerId = "CUST1";
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
-                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("CUST1", null,
-                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CUSTOMER"))));
+                new org.springframework.security.authentication.TestingAuthenticationToken(customerId, null, "ROLE_CUSTOMER"));
         try {
             assertEquals("Upload folder is not allowed", controller.getUploadSignature("profile").getBody().getMessage());
             assertEquals("Upload folder is not allowed", controller.getUploadSignature("").getBody().getMessage());
