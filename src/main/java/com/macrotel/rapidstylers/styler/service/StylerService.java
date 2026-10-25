@@ -429,6 +429,9 @@ public class StylerService {
             service.setName(AppUtils.sanitizeText(data.getName().trim()));
             service.setPrice(appUtils.currencyFormat(data.getPrice()));
             service.setDurationMinutes(duration);
+            if(data.getPriceOnQuote() != null){
+                service.setPriceOnQuote(data.getPriceOnQuote());
+            }
             subServiceRepo.save(service);
             evict(ReadCacheService.KEY_STYLER_SUBSERVICES + stylerId);
             if(!Objects.equals(previousPrice, service.getPrice())){

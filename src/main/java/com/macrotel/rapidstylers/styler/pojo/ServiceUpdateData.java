@@ -26,6 +26,9 @@ public class ServiceUpdateData {
     @Max(value = MAX_SERVICE_DURATION_MINUTES, message = "Duration cannot exceed 480 minutes")
     private Integer durationMinutes;
 
+    /** Left out by older clients, which keeps the service's current setting. */
+    private Boolean priceOnQuote;
+
     @AssertTrue(message = SubServiceData.PRICE_RANGE_MESSAGE)
     public boolean isPriceInRange() {
         return SubServiceData.priceInRange(price);

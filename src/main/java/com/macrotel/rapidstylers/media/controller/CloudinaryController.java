@@ -68,7 +68,7 @@ public class CloudinaryController {
     @Value("${cloudinary.api-secret:}")
     private String apiSecret;
 
-    @Value("${cloudinary.allowed-folder-prefixes:profile,cover,id,store,portfolio}")
+    @Value("${cloudinary.allowed-folder-prefixes:profile,cover,id,store,portfolio,quote}")
     private String allowedFolderPrefixes;
 
     @Value("${cloudinary.allowed-formats:jpg,jpeg,png,webp,gif}")
@@ -99,6 +99,9 @@ public class CloudinaryController {
     @Autowired(required = false)
     private UploadOwnership uploadOwnership;
 
+    /** The one folder a customer may upload to. */
+    static final String CUSTOMER_FOLDER = "quote";
+
     @GetMapping("/get_upload_signature")
     public ResponseEntity<BaseResponse> getUploadSignature(
             @RequestParam(value = "folderPrefix", required = false) String folderPrefix) {
@@ -116,6 +119,14 @@ public class CloudinaryController {
             String baseFolder = "rapid_stylers";
             String sanitizedPrefix = sanitizeFolderPrefix(folderPrefix);
             if (!sanitizedPrefix.isBlank() && !allowedPrefixes().contains(sanitizedPrefix)) {
+                response.setStatusCode(ERROR_STATUS_CODE);
+                response.setMessage("Upload folder is not allowed");
+                response.setData(Collections.emptyList());
+                return ApiResponses.respond(response);
+            }
+            String[] signedIn = caller();
+            // Customers upload only reference photos for a quote request.
+            if (signedIn != null && Roles.CUSTOMER.equals(signedIn[1]) && !CUSTOMER_FOLDER.equals(sanitizedPrefix)) {
                 response.setStatusCode(ERROR_STATUS_CODE);
                 response.setMessage("Upload folder is not allowed");
                 response.setData(Collections.emptyList());

@@ -8,6 +8,7 @@ public class SubServiceDTO {
     private String id;
     private String price;
     private Integer durationMinutes;
+    private boolean priceOnQuote;
     private String status;
     private String createdAt;
 }

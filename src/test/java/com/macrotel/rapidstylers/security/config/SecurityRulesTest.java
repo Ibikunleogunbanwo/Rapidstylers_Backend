@@ -80,7 +80,8 @@ class SecurityRulesTest {
             "POST,   /rapid_stylers/delete_cloudinary_image,          ,         401",
             "POST,   /rapid_stylers/delete_cloudinary_image,          ADMIN,    200",
             "POST,   /rapid_stylers/delete_cloudinary_image,          STYLER,   200",
-            "POST,   /rapid_stylers/delete_cloudinary_image,          CUSTOMER, 401",
+            // Customers upload quote reference photos; the controller keeps them to the quote folder and their own files.
+            "POST,   /rapid_stylers/delete_cloudinary_image,          CUSTOMER, 200",
             "POST,   /rapid_stylers/create_identification,            STYLER,   401",
             "GET,    /rapid_stylers/admin/recovery_campaigns,         ADMIN,    200",
             "GET,    /rapid_stylers/admin/recovery_campaigns,         STYLER,   401",
@@ -124,7 +125,7 @@ class SecurityRulesTest {
             "GET,    /rapid_stylers/get_upload_signature,             SIGNUP_UPLOAD, 200",
             // Upload signatures: stylists, admins and the sign-up pass, nobody else
             "GET,    /rapid_stylers/get_upload_signature,             ,         401",
-            "GET,    /rapid_stylers/get_upload_signature,             CUSTOMER, 401",
+            "GET,    /rapid_stylers/get_upload_signature,             CUSTOMER, 200",
             "GET,    /rapid_stylers/get_upload_signature,             STYLER,   200",
             "GET,    /rapid_stylers/get_upload_signature,             ADMIN,    200",
             // A manager does the day-to-day work (Routes.STAFF) ...

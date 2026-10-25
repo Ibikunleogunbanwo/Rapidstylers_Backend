@@ -134,7 +134,7 @@ services:
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
       # Portfolios may only live under these Cloudinary folder prefixes.
-      CLOUDINARY_ALLOWED_FOLDER_PREFIXES: ${CLOUDINARY_ALLOWED_FOLDER_PREFIXES:-profile,cover,id,store,portfolio}
+      CLOUDINARY_ALLOWED_FOLDER_PREFIXES: ${CLOUDINARY_ALLOWED_FOLDER_PREFIXES:-profile,cover,id,store,portfolio,quote}
       # Signed upload constraints — Cloudinary enforces these because they are
       # part of the signature, so a client cannot widen them.
       CLOUDINARY_ALLOWED_FORMATS: ${CLOUDINARY_ALLOWED_FORMATS:-jpg,jpeg,png,webp,gif}

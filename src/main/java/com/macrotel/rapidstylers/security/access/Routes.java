@@ -280,6 +280,7 @@ public final class Routes {
             "/rapid_stylers/styler/quotes",
             "/rapid_stylers/styler/quotes/offer",
             "/rapid_stylers/styler/quotes/withdraw",
+            "/rapid_stylers/styler/quotes/message",
     };
 
     public static final String[] CUSTOMER = {
@@ -305,6 +306,7 @@ public final class Routes {
             "/rapid_stylers/quotes/request",
             "/rapid_stylers/quotes/decline",
             "/rapid_stylers/quotes/estimate",
+            "/rapid_stylers/quotes/message",
 
             // Engagement
             "/rapid_stylers/create_review",
@@ -328,8 +330,9 @@ public final class Routes {
     };
 
     /**
-     * Photo uploads: a signed-in stylist or admin, or a stylist still signing up
-     * who shows the upload pass from their email code. Deleting only ever removes
+     * Photo uploads: a signed-in stylist or admin, a stylist still signing up
+     * who shows the upload pass from their email code, or a customer adding
+     * reference photos to a quote request (the "quote" folder only). Deleting only ever removes
      * an image nothing uses (see ImageReclaimService).
      */
     public static final String[] UPLOAD = {

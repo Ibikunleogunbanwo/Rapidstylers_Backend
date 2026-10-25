@@ -22,4 +22,6 @@ public interface QuoteRepo extends JpaRepository<QuoteEntity, Long> {
     List<QuoteEntity> findByStylerIdOrderByCreatedAtDesc(String stylerId);
 
     List<QuoteEntity> findByUserIdAndStatusIn(String userId, List<String> statuses);
+
+    long countByReferencePhotosContaining(String fragment);
 }

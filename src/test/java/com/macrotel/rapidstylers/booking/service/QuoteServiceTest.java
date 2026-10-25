@@ -36,6 +36,9 @@ class QuoteServiceTest {
     private StylerEligibility eligibility;
     private NotificationService notifications;
     private final List<QuoteEntity> saved = new ArrayList<>();
+    private com.macrotel.rapidstylers.booking.repo.QuoteMessageRepo messages;
+    private final com.macrotel.rapidstylers.media.service.UploadOwnership ownership = new com.macrotel.rapidstylers.media.service.UploadOwnership();
+    private final List<com.macrotel.rapidstylers.booking.entity.QuoteMessageEntity> thread = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -51,6 +54,11 @@ class QuoteServiceTest {
         service.stylerEligibility = eligibility;
         service.notificationService = notifications;
         service.clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        messages = mock(com.macrotel.rapidstylers.booking.repo.QuoteMessageRepo.class);
+        service.quoteMessageRepo = messages;
+        service.uploadOwnership = ownership;
+        com.macrotel.rapidstylers.media.service.CloudinaryService cloudinary = new com.macrotel.rapidstylers.media.service.CloudinaryService();
+        service.cloudinaryService = cloudinary;
 
         UserEntity customer = new UserEntity();
         customer.setUserId("CUST1");
@@ -67,6 +75,12 @@ class QuoteServiceTest {
         when(stylerRecords.findSubService("STY1", 7L)).thenReturn(Optional.of(nails));
         when(quoteRepo.findByQuoteRef(anyString())).thenReturn(Optional.empty());
         when(quoteRepo.findByUserIdAndStatusIn(anyString(), anyList())).thenReturn(List.of());
+        when(messages.findByQuoteRefOrderByIdAsc(anyString())).thenAnswer(call -> List.copyOf(thread));
+        when(messages.countByQuoteRef(anyString())).thenAnswer(call -> (long) thread.size());
+        when(messages.save(any())).thenAnswer(call -> {
+            thread.add(call.getArgument(0));
+            return call.getArgument(0);
+        });
         when(quoteRepo.save(any(QuoteEntity.class))).thenAnswer(call -> {
             saved.add(call.getArgument(0));
             return call.getArgument(0);
@@ -212,6 +226,76 @@ class QuoteServiceTest {
     }
 
     @Test
+    void aRequestKeepsTheCustomersOwnQuotePhotos() {
+        QuoteRequestData data = request();
+        String mine = photo(ownership.folderFor("CUSTOMER", "CUST1"), "nails1");
+        data.setPhotoUrls(List.of(mine));
+
+        BaseResponse response = service.request("CUST1", data);
+
+        assertEquals("200", response.getStatusCode(), response.getMessage());
+        assertEquals(List.of(mine), saved.get(0).photoList());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> view = (Map<String, Object>) response.getData();
+        assertEquals(List.of(mine), view.get("photos"));
+    }
+
+    @Test
+    void someoneElsesPhotoOrAnotherFolderIsRefused() {
+        QuoteRequestData theirs = request();
+        theirs.setPhotoUrls(List.of(photo(ownership.folderFor("CUSTOMER", "CUST2"), "x")));
+        assertEquals("400", service.request("CUST1", theirs).getStatusCode());
+
+        QuoteRequestData profileFolder = request();
+        profileFolder.setPhotoUrls(List.of("https://res.cloudinary.com/demo/image/upload/v1/rapid_stylers/profile/"
+                + ownership.folderFor("CUSTOMER", "CUST1") + "/me.jpg"));
+        assertEquals("400", service.request("CUST1", profileFolder).getStatusCode());
+
+        QuoteRequestData elsewhere = request();
+        elsewhere.setPhotoUrls(List.of("https://example.com/nails.jpg"));
+        assertEquals("400", service.request("CUST1", elsewhere).getStatusCode());
+        assertTrue(saved.isEmpty());
+    }
+
+    @Test
+    void aClientMessageWaitsOnTheStylistUntilTheyReply() {
+        QuoteEntity quote = open("QOPEN001");
+        when(quoteRepo.findByQuoteRefForUpdate("QOPEN001")).thenReturn(Optional.of(quote));
+        when(quoteRepo.findByStylerIdOrderByCreatedAtDesc("STY1")).thenReturn(List.of(quote));
+
+        assertEquals("200", service.message("CUST1", false, message("QOPEN001", "Can you do almond shape?")).getStatusCode());
+        verify(notifications).notifyQuote(eq("CUST1"), eq("STY1"), eq(true), eq("New message on a quote"), contains("almond"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> list = (Map<String, Object>) service.listForStylist("STY1").getData();
+        assertEquals(1L, list.get("waiting"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> item = ((List<Map<String, Object>>) list.get("items")).get(0);
+        assertEquals(true, item.get("needsReply"));
+
+        assertEquals("200", service.message("STY1", true, message("QOPEN001", "Yes, almond works")).getStatusCode());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> after = (Map<String, Object>) service.listForStylist("STY1").getData();
+        assertEquals(1L, after.get("waiting"), "still waiting for a price");
+        assertEquals(2, ((List<?>) ((List<Map<String, Object>>) after.get("items")).get(0).get("messages")).size());
+    }
+
+    @Test
+    void messagesAreForTheTwoSidesOfAnOpenQuoteAndCapped() {
+        QuoteEntity quote = open("QOPEN001");
+        when(quoteRepo.findByQuoteRefForUpdate("QOPEN001")).thenReturn(Optional.of(quote));
+        assertEquals("Quote not found", service.message("CUST2", false, message("QOPEN001", "hi")).getMessage());
+        assertEquals("Quote not found", service.message("STY2", true, message("QOPEN001", "hi")).getMessage());
+
+        for (int i = 0; i < QuoteService.MAX_MESSAGES; i++) {
+            assertEquals("200", service.message("CUST1", false, message("QOPEN001", "note " + i)).getStatusCode());
+        }
+        assertTrue(service.message("CUST1", false, message("QOPEN001", "one more")).getMessage().contains("message limit"));
+
+        quote.setStatus(QuoteEntity.DECLINED);
+        assertTrue(service.message("STY1", true, message("QOPEN001", "late")).getMessage().contains("closed"));
+    }
+
+    @Test
     void durationsReadNaturally() {
         assertEquals("45 min", QuoteService.durationText(45));
         assertEquals("1 hour", QuoteService.durationText(60));
@@ -224,6 +308,17 @@ class QuoteServiceTest {
         data.setSubServiceId("7");
         data.setDescription("Long coffin gel set with hand-painted florals for a wedding");
         data.setPreferredDates("Any weekday evening next week");
+        return data;
+    }
+
+    private static String photo(String ownerFolder, String name) {
+        return "https://res.cloudinary.com/demo/image/upload/v1700000000/rapid_stylers/quote/" + ownerFolder + "/" + name + ".jpg";
+    }
+
+    private static com.macrotel.rapidstylers.booking.pojo.QuoteMessageData message(String ref, String body) {
+        com.macrotel.rapidstylers.booking.pojo.QuoteMessageData data = new com.macrotel.rapidstylers.booking.pojo.QuoteMessageData();
+        data.setQuoteRef(ref);
+        data.setBody(body);
         return data;
     }
 

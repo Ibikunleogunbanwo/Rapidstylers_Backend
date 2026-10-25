@@ -1,8 +1,11 @@
 package com.macrotel.rapidstylers.booking.service;
 
 import com.macrotel.rapidstylers.booking.entity.QuoteEntity;
+import com.macrotel.rapidstylers.booking.entity.QuoteMessageEntity;
+import com.macrotel.rapidstylers.booking.pojo.QuoteMessageData;
 import com.macrotel.rapidstylers.booking.pojo.QuoteOfferData;
 import com.macrotel.rapidstylers.booking.pojo.QuoteRequestData;
+import com.macrotel.rapidstylers.booking.repo.QuoteMessageRepo;
 import com.macrotel.rapidstylers.booking.repo.QuoteRepo;
 import com.macrotel.rapidstylers.common.service.AuditService;
 import com.macrotel.rapidstylers.common.web.BaseResponse;
@@ -11,11 +14,14 @@ import com.macrotel.rapidstylers.config.AppUtils;
 import com.macrotel.rapidstylers.customer.entity.UserEntity;
 import com.macrotel.rapidstylers.customer.service.CustomerRecords;
 import com.macrotel.rapidstylers.engagement.service.NotificationService;
+import com.macrotel.rapidstylers.media.service.CloudinaryService;
+import com.macrotel.rapidstylers.media.service.UploadOwnership;
 import com.macrotel.rapidstylers.payment.service.MoneyUtils;
 import com.macrotel.rapidstylers.styler.entity.StylerEntity;
 import com.macrotel.rapidstylers.styler.entity.SubServiceEntity;
 import com.macrotel.rapidstylers.styler.service.StylerEligibility;
 import com.macrotel.rapidstylers.styler.service.StylerRecords;
+import com.macrotel.rapidstylers.security.access.Roles;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -41,6 +47,9 @@ public class QuoteService {
     static final int MAX_OPEN_PER_CUSTOMER = 5;
     static final int MAX_OPEN_PER_STYLIST = 2;
     private static final int SLOT_MINUTES = 15;
+    static final int MAX_PHOTOS = 3;
+    /** Enough to settle details; anything longer belongs in a booking note or a call. */
+    static final int MAX_MESSAGES = 20;
     private static final List<String> OPEN = List.of(QuoteEntity.REQUESTED, QuoteEntity.QUOTED);
 
     @Autowired
@@ -55,6 +64,12 @@ public class QuoteService {
     NotificationService notificationService;
     @Autowired(required = false)
     AuditService auditService;
+    @Autowired(required = false)
+    QuoteMessageRepo quoteMessageRepo;
+    @Autowired(required = false)
+    CloudinaryService cloudinaryService;
+    @Autowired(required = false)
+    UploadOwnership uploadOwnership;
     Clock clock = Clock.systemUTC();
 
     @Transactional(rollbackFor = Exception.class)
@@ -89,8 +104,18 @@ public class QuoteService {
             return Responses.errorResponse(response, "You already have quote requests waiting with this professional");
         }
 
+        List<String> photos = data.getPhotoUrls() == null ? List.of()
+                : data.getPhotoUrls().stream().filter(url -> url != null && !url.isBlank()).map(String::trim).distinct().toList();
+        if (photos.size() > MAX_PHOTOS) {
+            return Responses.errorResponse(response, "Add up to " + MAX_PHOTOS + " photos");
+        }
+        if (!photos.stream().allMatch(url -> isOwnQuotePhoto(userId, url))) {
+            return Responses.errorResponse(response, "Upload your photos again and resend the request");
+        }
+
         QuoteEntity quote = new QuoteEntity();
         quote.setQuoteRef(newRef());
+        quote.setReferencePhotos(photos.isEmpty() ? null : String.join("\n", photos));
         quote.setUserId(userId);
         quote.setStylerId(data.getStylerId());
         quote.setSubServiceId(data.getSubServiceId());
@@ -183,6 +208,44 @@ public class QuoteService {
         return ok(response, "Quote closed", view(quote, true, now));
     }
 
+    /**
+     * A message on an open quote from either side. {@code fromStylist} says
+     * which; the account must own the quote on that side.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResponse message(String accountId, boolean fromStylist, QuoteMessageData data) {
+        BaseResponse response = new BaseResponse(true);
+        Optional<QuoteEntity> found = quoteRepo.findByQuoteRefForUpdate(data.getQuoteRef());
+        if (found.isEmpty() || !accountId.equals(fromStylist ? found.get().getStylerId() : found.get().getUserId())) {
+            return Responses.errorResponse(response, "Quote not found");
+        }
+        QuoteEntity quote = found.get();
+        LocalDateTime now = now();
+        if (!quote.isOpen(now)) {
+            return Responses.errorResponse(response, "This quote is closed, so messages are off");
+        }
+        if (quoteMessageRepo.countByQuoteRef(quote.getQuoteRef()) >= MAX_MESSAGES) {
+            return Responses.errorResponse(response, "This quote has reached its message limit. Book it or start a new request");
+        }
+        QuoteMessageEntity message = new QuoteMessageEntity();
+        message.setQuoteRef(quote.getQuoteRef());
+        message.setSenderRole(fromStylist ? QuoteMessageEntity.STYLIST : QuoteMessageEntity.CUSTOMER);
+        message.setBody(AppUtils.sanitizeText(data.getBody().trim()));
+        message.setCreatedAt(now);
+        quoteMessageRepo.save(message);
+        notify(quote, !fromStylist, fromStylist ? "New message from " + stylistName(quote.getStylerId()) : "New message on a quote",
+                "\"" + shorten(message.getBody(), 200) + "\" (" + serviceName(quote) + ")");
+        return ok(response, "Message sent", view(quote, fromStylist, now));
+    }
+
+    /** A Cloudinary upload in this customer's own quote folder; anything else could be someone else's photo. */
+    boolean isOwnQuotePhoto(String userId, String url) {
+        if (cloudinaryService == null || uploadOwnership == null || !url.startsWith("https://res.cloudinary.com/")) return false;
+        String publicId = cloudinaryService.extractPublicId(url);
+        return publicId != null && publicId.startsWith("rapid_stylers/quote/")
+                && uploadOwnership.owns(Roles.CUSTOMER, userId, publicId);
+    }
+
     public BaseResponse listForCustomer(String userId) {
         LocalDateTime now = now();
         List<Map<String, Object>> items = new ArrayList<>();
@@ -199,7 +262,7 @@ public class QuoteService {
         long waiting = 0;
         for (QuoteEntity quote : quoteRepo.findByStylerIdOrderByCreatedAtDesc(stylerId)) {
             items.add(view(quote, true, now));
-            if (QuoteEntity.REQUESTED.equals(quote.effectiveStatus(now))) waiting++;
+            if (QuoteEntity.REQUESTED.equals(quote.effectiveStatus(now)) || needsReply(quote, true, now)) waiting++;
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("items", items);
@@ -266,6 +329,17 @@ public class QuoteService {
         item.put("createdAt", utc(quote.getCreatedAt()));
         item.put("quotedAt", utc(quote.getQuotedAt()));
         item.put("appointmentId", quote.getAppointmentId());
+        item.put("photos", quote.photoList());
+        List<Map<String, Object>> messages = new ArrayList<>();
+        for (QuoteMessageEntity message : messagesOf(quote)) {
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("from", message.getSenderRole());
+            line.put("body", message.getBody());
+            line.put("createdAt", utc(message.getCreatedAt()));
+            messages.add(line);
+        }
+        item.put("messages", messages);
+        item.put("needsReply", needsReply(quote, forStylist, now));
         if (forStylist) {
             item.put("clientName", customerRecords.findByUserId(quote.getUserId())
                     .map(UserEntity::getFirstname).filter(name -> name != null && !name.isBlank()).orElse("Client"));
@@ -275,6 +349,19 @@ public class QuoteService {
             item.put("stylistPhoto", styler.map(StylerEntity::getProfileImageUrl).orElse(null));
         }
         return item;
+    }
+
+    private List<QuoteMessageEntity> messagesOf(QuoteEntity quote) {
+        return quoteMessageRepo == null ? List.of() : quoteMessageRepo.findByQuoteRefOrderByIdAsc(quote.getQuoteRef());
+    }
+
+    /** An open quote whose last message came from the other side is waiting on this side. */
+    private boolean needsReply(QuoteEntity quote, boolean forStylist, LocalDateTime now) {
+        if (!quote.isOpen(now)) return false;
+        List<QuoteMessageEntity> messages = messagesOf(quote);
+        if (messages.isEmpty()) return false;
+        String last = messages.get(messages.size() - 1).getSenderRole();
+        return forStylist ? QuoteMessageEntity.CUSTOMER.equals(last) : QuoteMessageEntity.STYLIST.equals(last);
     }
 
     private String serviceName(QuoteEntity quote) {

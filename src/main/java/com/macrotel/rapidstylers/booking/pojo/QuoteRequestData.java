@@ -19,6 +19,9 @@ public class QuoteRequestData {
     private String preferredDates;
     @Pattern(regexp = "^(salon|visitBarber|homeService)?$", message = "Choose a salon visit or a home visit")
     private String serviceTime;
+    /** Reference photos the customer uploaded for this request; checked on the server. */
+    @Size(max = 3, message = "Add up to 3 photos")
+    private java.util.List<@Size(max = 400, message = "Photo link is too long") String> photoUrls;
     @Min(value = 1, message = "At least one person")
     @Max(value = 20, message = "Up to 20 people per quote")
     private Integer noOfPeople;

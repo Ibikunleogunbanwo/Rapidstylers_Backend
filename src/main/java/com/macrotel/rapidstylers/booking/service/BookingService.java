@@ -58,6 +58,8 @@ import static com.macrotel.rapidstylers.config.AppConstants.*;
 public class BookingService {
     /** Also matched by the website, which treats it as "check again" rather than a failure. */
     static final String ALREADY_SUBMITTED = "This booking request is already being processed or was already submitted";
+    /** A "price on quote" service is booked only through an accepted quote. */
+    static final String PRICE_ON_QUOTE = "This service is priced by quote. Request a quote from the professional first";
     @Autowired
     DTOService dtoService;
     /** Sign-up funnel tally; null in unit tests that build this service by hand. */
@@ -135,6 +137,9 @@ public class BookingService {
             }
             TravelPricing pricing;
             String quoteRef = bookAppointmentData.getQuoteRef();
+            if(subService.get().isPriceOnQuote() && (quoteRef == null || quoteRef.isBlank())){
+                return Responses.errorResponse(response, PRICE_ON_QUOTE);
+            }
             if(quoteRef != null && !quoteRef.isBlank()){
                 if(quoteService == null || bookAppointmentData.getUserId() == null){
                     return Responses.errorResponse(response, "Sign in to book this quote");
@@ -268,6 +273,8 @@ public class BookingService {
                     price = MoneyUtils.moneyCents(quote.getPriceCents());
                     durationMinutes = serviceDuration(quote.getDurationMinutes());
                     pricing = calculateTravelPricing(bookAppointmentData, isStylerExist.get(), price, 1);
+                } else if(subService.get().isPriceOnQuote()){
+                    return Responses.errorResponse(response, PRICE_ON_QUOTE);
                 } else {
                     // The client price and duration are never trusted.
                     price = subService.get().getPrice();

@@ -52,6 +52,10 @@ public class ImageReclaimService {
     @Autowired
     CatalogRecords catalogRecords;
 
+    /** Quote reference photos; optional so hand-built tests need none. */
+    @Autowired(required = false)
+    com.macrotel.rapidstylers.booking.service.AppointmentRecords appointmentRecords;
+
     @Autowired
     UploadOwnership uploadOwnership = new UploadOwnership();
 
@@ -82,7 +86,8 @@ public class ImageReclaimService {
      */
     public long referenceCount(String publicId) {
         String fragment = "/" + publicId;
-        return stylerRecords.imageReferences(fragment) + catalogRecords.imageReferences(fragment);
+        return stylerRecords.imageReferences(fragment) + catalogRecords.imageReferences(fragment)
+                + (appointmentRecords == null ? 0 : appointmentRecords.imageReferences(fragment));
     }
 
     /**

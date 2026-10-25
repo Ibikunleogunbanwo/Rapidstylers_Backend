@@ -29,6 +29,8 @@ public class SubServiceData {
     @Min(value = MIN_SERVICE_DURATION_MINUTES, message = "Duration must be at least 15 minutes")
     @Max(value = MAX_SERVICE_DURATION_MINUTES, message = "Duration cannot exceed 480 minutes")
     private Integer durationMinutes;
+    /** True when the price is a "from" price and clients book it through a quote. */
+    private Boolean priceOnQuote;
 
     public Integer getDurationMinutes() {
         return durationMinutes == null ? DEFAULT_SERVICE_DURATION_MINUTES : durationMinutes;

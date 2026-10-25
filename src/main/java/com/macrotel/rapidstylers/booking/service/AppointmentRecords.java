@@ -24,6 +24,13 @@ public class AppointmentRecords {
 
     @Autowired
     BookAppointmentRepo bookAppointmentRepo;
+    /** Quote reference photos count as in use, so the uploader can't delete one a stylist is looking at. */
+    @Autowired(required = false)
+    com.macrotel.rapidstylers.booking.repo.QuoteRepo quoteRepo;
+
+    public long imageReferences(String fragment) {
+        return quoteRepo == null ? 0 : quoteRepo.countByReferencePhotosContaining(fragment);
+    }
 
     public AppointmentRecords() {
     }

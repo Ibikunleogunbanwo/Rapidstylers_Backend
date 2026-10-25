@@ -142,6 +142,7 @@ public class DTOService {
         subServiceDTO.setDurationMinutes(subServiceEntity.getDurationMinutes() == null
                 ? DEFAULT_SERVICE_DURATION_MINUTES : subServiceEntity.getDurationMinutes());
         subServiceDTO.setCreatedAt(subServiceEntity.getCreatedAt());
+        subServiceDTO.setPriceOnQuote(subServiceEntity.isPriceOnQuote());
         return subServiceDTO;
     }
 

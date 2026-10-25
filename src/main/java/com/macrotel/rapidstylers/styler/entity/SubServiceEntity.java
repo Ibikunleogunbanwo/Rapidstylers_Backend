@@ -22,6 +22,9 @@ public class SubServiceEntity implements Serializable {
     private Integer durationMinutes;
     private String status;
     private String createdAt;
+    /** The price is only a starting point: the service is booked through a custom quote. */
+    @Column(name = "price_on_quote", nullable = false)
+    private boolean priceOnQuote;
 
     public SubServiceEntity() {
     }
@@ -34,6 +37,7 @@ public class SubServiceEntity implements Serializable {
         this.durationMinutes = subServiceData.getDurationMinutes() == null
                 ? com.macrotel.rapidstylers.config.AppConstants.DEFAULT_SERVICE_DURATION_MINUTES
                 : subServiceData.getDurationMinutes();
+        this.priceOnQuote = Boolean.TRUE.equals(subServiceData.getPriceOnQuote());
         this.status= "0";
         this.createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM dd, yyyy HH:mm:ss"));
     }

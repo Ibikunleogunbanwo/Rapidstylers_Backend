@@ -1,5 +1,6 @@
 package com.macrotel.rapidstylers.booking.controller;
 
+import com.macrotel.rapidstylers.booking.pojo.QuoteMessageData;
 import com.macrotel.rapidstylers.booking.pojo.QuoteOfferData;
 import com.macrotel.rapidstylers.booking.pojo.QuoteRequestData;
 import com.macrotel.rapidstylers.booking.service.QuoteService;
@@ -63,5 +64,19 @@ public class QuoteController {
         String stylerId = CurrentAccount.id(request);
         if (stylerId == null) return CurrentAccount.unauthorized();
         return ApiResponses.respond(quoteService.withdraw(stylerId, body.getOrDefault("quoteRef", "")));
+    }
+
+    @PostMapping("/quotes/message")
+    public ResponseEntity<BaseResponse> customerMessage(@Valid @RequestBody QuoteMessageData data, HttpServletRequest request) {
+        String userId = CurrentAccount.id(request);
+        if (userId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(quoteService.message(userId, false, data));
+    }
+
+    @PostMapping("/styler/quotes/message")
+    public ResponseEntity<BaseResponse> stylistMessage(@Valid @RequestBody QuoteMessageData data, HttpServletRequest request) {
+        String stylerId = CurrentAccount.id(request);
+        if (stylerId == null) return CurrentAccount.unauthorized();
+        return ApiResponses.respond(quoteService.message(stylerId, true, data));
     }
 }

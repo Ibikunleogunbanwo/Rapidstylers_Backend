@@ -82,7 +82,7 @@ public class SecurityConfig {
                 .mvcMatchers(Routes.STYLER).hasRole(Roles.STYLER)
                 .mvcMatchers(Routes.CUSTOMER).hasRole(Roles.CUSTOMER)
                 .mvcMatchers(Routes.SUPPORT).hasAnyRole(Roles.CUSTOMER, Roles.STYLER)
-                .mvcMatchers(Routes.UPLOAD).hasAnyRole(Roles.ADMIN, Roles.STYLER, Roles.SIGNUP_UPLOAD)
+                .mvcMatchers(Routes.UPLOAD).hasAnyRole(Roles.ADMIN, Roles.STYLER, Roles.SIGNUP_UPLOAD, Roles.CUSTOMER)
                 .anyRequest().hasAnyRole(Roles.ACCOUNTS)
             .and()
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

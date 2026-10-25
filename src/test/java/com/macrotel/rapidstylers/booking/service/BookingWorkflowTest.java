@@ -525,6 +525,27 @@ class BookingWorkflowTest {
     }
 
     @Test
+    void aPriceOnQuoteServiceCannotBeBookedOrPricedWithoutAQuote() {
+        BookAppointmentData data = bookingData();
+        data.setServiceTime("visitBarber");
+        UserEntity customer = new UserEntity();
+        customer.setUserId("CUSTOMER1");
+        SubServiceEntity bridal = service(120);
+        bridal.setPriceOnQuote(true);
+        when(userRepo.findByUserId("CUSTOMER1")).thenReturn(Optional.of(customer));
+        when(stylerRepo.findByStylerIdForUpdate("STYLER1")).thenReturn(Optional.of(approvedStyler()));
+        when(stylerRepo.findByStylerId("STYLER1")).thenReturn(Optional.of(approvedStyler()));
+        when(subServiceRepo.isServiceExistById("STYLER1", 1L)).thenReturn(Optional.of(bridal));
+
+        BaseResponse booked = services.bookingService().bookAppointment(data);
+        BaseResponse priced = services.bookingService().estimateBooking(data);
+
+        assertEquals(BookingService.PRICE_ON_QUOTE, booked.getMessage());
+        assertEquals(BookingService.PRICE_ON_QUOTE, priced.getMessage());
+        verify(appointmentRepo, never()).saveAndFlush(any());
+    }
+
+    @Test
     void anExpiredQuoteCannotBeBooked() {
         BookAppointmentData data = bookingData();
         data.setServiceTime("visitBarber");

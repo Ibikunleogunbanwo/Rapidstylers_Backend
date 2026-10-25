@@ -51,6 +51,21 @@ class CloudinaryControllerTest {
     }
 
     @Test
+    void aCustomerMayOnlyUploadQuotePhotos() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("CUST1", null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CUSTOMER"))));
+        try {
+            assertEquals("Upload folder is not allowed", controller.getUploadSignature("profile").getBody().getMessage());
+            assertEquals("Upload folder is not allowed", controller.getUploadSignature("").getBody().getMessage());
+            ReflectionTestUtils.setField(controller, "allowedFolderPrefixes", "profile,cover,id,store,portfolio,quote");
+            assertEquals(SUCCESS_STATUS_CODE, controller.getUploadSignature("quote").getBody().getStatusCode());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
     void everyFolderTheAppUploadsToIsAllowedByDefault() throws Exception {
         // The stylist cover photo uploads to "cover"; leaving it out of the
         // default list made every cover photo fail before reaching Cloudinary.
@@ -61,7 +76,7 @@ class CloudinaryControllerTest {
                 .matcher(properties);
         org.junit.jupiter.api.Assertions.assertTrue(m.find());
         java.util.Set<String> defaults = java.util.Set.of(m.group(1).split(","));
-        for (String folder : java.util.List.of("profile", "cover", "portfolio", "id")) {
+        for (String folder : java.util.List.of("profile", "cover", "portfolio", "id", "quote")) {
             org.junit.jupiter.api.Assertions.assertTrue(defaults.contains(folder), folder + " missing from " + defaults);
         }
         ReflectionTestUtils.setField(controller, "allowedFolderPrefixes", m.group(1));

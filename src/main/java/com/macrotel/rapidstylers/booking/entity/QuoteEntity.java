@@ -65,6 +65,14 @@ public class QuoteEntity implements Serializable {
     private LocalDateTime closedAt;
     @Column(name = "appointment_id", length = 32)
     private String appointmentId;
+    /** Up to three reference photo URLs from the customer, one per line. */
+    @Column(name = "reference_photos", length = 1500)
+    private String referencePhotos;
+
+    public java.util.List<String> photoList() {
+        return referencePhotos == null || referencePhotos.isBlank() ? java.util.List.of()
+                : java.util.Arrays.stream(referencePhotos.split("\\n")).filter(url -> !url.isBlank()).toList();
+    }
 
     /** The status as of {@code now}: a quoted price past its date reads as expired. */
     public String effectiveStatus(LocalDateTime now) {
