@@ -143,7 +143,14 @@ public class StripeService {
     public String createSetupIntentClientSecret(String customerId) throws StripeException {
         SetupIntentCreateParams params = SetupIntentCreateParams.builder()
                 .setCustomer(customerId)
-                .addPaymentMethodType("card")
+                // stripe-java 34 (API 2026-09-30.endive) removed payment_method_types. Keep the
+                // card-setup flow redirect-free so confirmCardSetup works without a return_url.
+                .setAutomaticPaymentMethods(
+                        SetupIntentCreateParams.AutomaticPaymentMethods.builder()
+                                .setEnabled(true)
+                                .setAllowRedirects(
+                                        SetupIntentCreateParams.AutomaticPaymentMethods.AllowRedirects.NEVER)
+                                .build())
                 .build();
         SetupIntent setupIntent = SetupIntent.create(params);
         return setupIntent.getClientSecret();
